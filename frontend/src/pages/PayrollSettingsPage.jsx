@@ -34,6 +34,8 @@ const PARAMETROS = [
   // Horas extra (services/overtime_service.py): tolerancia para el tiempo no
   // autorizado y jornada para el precio de la hora de quien no tiene horario.
   ["overtime_tolerance_minutes", "minutes", "options"], ["overtime_day_hours", "count", "options"],
+  // Prima dominical (LFT art. 71): 25 % por omision; la empresa puede dar mas.
+  ["sunday_premium_pct", "pct", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -61,7 +63,7 @@ const POLITICA_POR_OMISION = {
   vacation_accrual_monthly: 0, vacation_advance_max_days: 0, vacation_expiry_months: 12,
   vacation_unused_policy: 0, vacation_warning_days_1: 60, vacation_warning_days_2: 30,
   attendance_correction_limit: 2,
-  overtime_tolerance_minutes: 15, overtime_day_hours: 8,
+  overtime_tolerance_minutes: 15, overtime_day_hours: 8, sunday_premium_pct: 25,
   attendance_warning_entry_minutes: 15, attendance_warning_supervisor_minutes: 30, attendance_warning_exit_minutes: 30,
 };
 const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];

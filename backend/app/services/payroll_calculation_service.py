@@ -74,6 +74,9 @@ CODIGO_VACACIONES_PAGADAS = "VAC_PAGADAS"
 # Horas extra (services/overtime_service.py): no se marca gravable porque solo
 # grava una parte; esa la suma este calculo a la base del ISR.
 CODIGO_HORAS_EXTRA = "HORAS_EXTRA"
+# Descanso o festivo trabajado (pago doble) y prima dominical (LFT arts. 71, 73 y
+# 75): tampoco se marcan gravables; su parte gravada la suma el calculo.
+CODIGO_DESCANSO, CODIGO_PRIMA_DOMINICAL = "DESCANSO_TRAB", "PRIMA_DOM"
 ABIERTO, CALCULADO, CERRADO = "open", "calculated", "closed"
 # Columnas que solo mueven calcular/cerrar/reabrir; la captura generica no.
 CAMPOS_DEL_ESTADO = ("period_state", "closed_at", "closed_by", "reopened_at", "reopened_by")
@@ -93,6 +96,8 @@ CONCEPTOS_DEL_CALCULO = {
     CODIGO_PRIMA: ("Prima vacacional", "earning", False, False),
     CODIGO_VACACIONES_PAGADAS: ("Vacaciones no disfrutadas pagadas", "earning", True, False),
     CODIGO_HORAS_EXTRA: ("Horas extra", "earning", False, False),
+    CODIGO_DESCANSO: ("Descanso o festivo trabajado", "earning", False, False),
+    CODIGO_PRIMA_DOMINICAL: ("Prima dominical", "earning", False, False),
     "ISR": ("ISR retenido (subsidio para el empleo aplicado)", "deduction", False, False),
     "IMSS": ("Cuota obrera IMSS", "deduction", False, False),
 }
@@ -376,6 +381,7 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
         from app.services.employee_leave_service import vacaciones_no_usadas_que_vencen
         por_pagar = vacaciones_no_usadas_que_vencen(db, empleados, periodo.period_start, periodo.period_end)
         from app.services.overtime_service import horas_extra_del_periodo
+        prima_dominical_pct = Decimal(str(_vigentes(db, ("sunday_premium_pct",), al_dia).get("sunday_premium_pct", 25)))
         horas_extra = horas_extra_del_periodo(
             db, empleados, periodo, parametros, diarios=diarios,
             horas={i: salarios.precio_de_hora(s) for i, s in sueldos.items() if salarios.precio_de_hora(s)})
@@ -406,6 +412,18 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
             extra = horas_extra.get(empleado.id_user, {})
             monto_extra, extra_gravado = extra.get("amount", _dinero(0)), extra.get("taxable", _dinero(0))
             movimientos.reemplazar(detalle, conceptos[CODIGO_HORAS_EXTRA], monto_extra, user_id)
+            # Descanso o festivo trabajado y autorizado: el doble, ademas del dia.
+            monto_descanso = extra.get("rest_day_amount", _dinero(0))
+            descanso_gravado = extra.get("rest_day_taxable", _dinero(0))
+            movimientos.reemplazar(detalle, conceptos[CODIGO_DESCANSO], monto_descanso, user_id)
+            # Prima dominical (LFT art. 71): cada domingo checado, sin autorizacion;
+            # no grava hasta 1 UMA por domingo (LISR art. 93 fr. XIV).
+            domingos = sum(1 for d in asistencia.get(empleado.id_user, [])
+                           if d.fecha.weekday() == 6 and d.marcas and d.ausencia is None)
+            por_domingo = _dinero(diario * prima_dominical_pct / 100)
+            monto_dominical = _dinero(por_domingo * domingos)
+            dominical_gravado = _dinero(max(por_domingo - Decimal(str(parametros["uma_daily"])), Decimal(0)) * domingos)
+            movimientos.reemplazar(detalle, conceptos[CODIGO_PRIMA_DOMINICAL], monto_dominical, user_id)
 
             if not empleado.hire_date:
                 sin_ingreso.append({"id_user": empleado.id_user, "full_name": empleado.full_name or ""})
@@ -428,7 +446,7 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                                                   parametros["aguinaldo_exempt_umas"])
             prima_gravada = ley.parte_gravada(prima, parametros["uma_daily"],
                                               parametros["vacation_premium_exempt_umas"])
-            gravable = movimientos.percepciones_gravables(detalle) + aguinaldo_gravado + prima_gravada + extra_gravado
+            gravable = movimientos.percepciones_gravables(detalle) + aguinaldo_gravado + prima_gravada + extra_gravado + descanso_gravado + dominical_gravado
             isr_tarifa = ley.isr_por_tarifa(gravable, tramos, factor_tarifa)
             if len(tramos_de_cifras) == 1:
                 subsidio = ley.subsidio_para_el_empleo(
@@ -494,6 +512,12 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                 "overtime_triple_hours": round(extra.get("triple_minutes", 0) / 60, 2),
                 "overtime_pay": float(monto_extra),
                 "overtime_taxable": float(extra_gravado),
+                "rest_days_worked": extra.get("rest_days", 0),
+                "rest_day_pay": float(monto_descanso),
+                "rest_day_taxable": float(descanso_gravado),
+                "sundays_worked": domingos,
+                "sunday_premium": float(monto_dominical),
+                "sunday_premium_taxable": float(dominical_gravado),
                 "taxable_income": float(gravable),
                 "isr_before_subsidy": float(isr_tarifa),
                 "employment_subsidy": float(subsidio),

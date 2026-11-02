@@ -5041,7 +5041,9 @@
     "pending": "pendientes",
     "pending_hint": "Días con una sola checada: no se pagan hasta que se corrijan.",
     "pending_close": "Hay días pendientes de justificar (una sola checada, no se pagaron). ¿Cerrar de todos modos?",
-    "overtime": "Horas extra"
+    "overtime": "Horas extra",
+    "rest_day": "Descanso trabajado",
+    "sunday_premium": "Prima dominical"
   },
   "payroll_settings": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -5119,7 +5121,8 @@
       "attendance_warning_supervisor_minutes": "Aviso al supervisor si sigue sin checar entrada (minutos)",
       "attendance_warning_exit_minutes": "Aviso al empleado si no checa salida (minutos después)",
       "overtime_tolerance_minutes": "Tolerancia para el tiempo no autorizado (minutos)",
-      "overtime_day_hours": "Horas de jornada para quien no tiene horario"
+      "overtime_day_hours": "Horas de jornada para quien no tiene horario",
+      "sunday_premium_pct": "Prima dominical (% del salario diario)"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",
@@ -5356,7 +5359,18 @@
     "paid_in": "Pagada en el periodo",
     "no_registered": "No hay horas extra en el rango.",
     "saved": "Horas extra registradas.",
-    "confirm_delete": "¿Quitar este registro de horas extra?"
+    "confirm_delete": "¿Quitar este registro de horas extra?",
+    "kind": "Tipo",
+    "kind_overtime": "Horas extra",
+    "kind_rest_day": "Descanso o festivo trabajado",
+    "rest_title": "Descansos y festivos trabajados sin autorizar",
+    "rest_hint": "Checaron en su día de descanso o en un festivo. Si se aprueba, se paga el doble además del día; la prima dominical se paga sola.",
+    "day_type": "Tipo de día",
+    "holiday": "Festivo",
+    "rest_day": "Descanso",
+    "no_rest_days": "Nadie trabajó en su descanso sin autorización.",
+    "came": "Vino",
+    "double_day": "Doble del día"
   },
   "salaries": {
     "title": "Cómo gana cada empleado",

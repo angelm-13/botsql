@@ -30,6 +30,15 @@ ISR (LISR art. 93 fr. I)
 Quien gana el salario minimo: lo doble no grava. Los demas: la mitad de lo
 doble no grava, con tope de 5 UMA por semana. Lo triple grava completo.
 
+Descanso o festivo trabajado (LFT arts. 73 y 75)
+------------------------------------------------
+Mismo registro con `kind` = rest_day y el mismo flujo de autorizacion: si
+checo en su dia de descanso o en un festivo y nadie lo autorizo, aparece como
+"descanso trabajado sin autorizar". Verificado = checo ese dia. Se paga el
+doble de su diario ademas del dia (que ya se paga). Exento igual que lo doble
+de las horas extra y en la misma bolsa semanal de 5 UMA (LISR art. 93 fr. I);
+no cuenta para las 9 horas dobles.
+
 Cuando
 ------
 En el periodo donde cae el dia, o en el siguiente que se calcule si se aprobo
@@ -45,7 +54,7 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from app.models import EmployeeSchedule, Overtime, User, WorkSchedule, WorkScheduleDay
-from app.models.overtime import AUTORIZADA, COMPENSAR, DETECTADA, MANUAL, PAGAR
+from app.models.overtime import AUTORIZADA, COMPENSAR, DESCANSO, DETECTADA, HORA_EXTRA, MANUAL, PAGAR
 from app.models.session import transaction_context
 from app.services import payroll_tax_rules as ley
 from app.utils.errors import AppError
@@ -53,7 +62,9 @@ from app.utils.errors import AppError
 TOLERANCIA = "overtime_tolerance_minutes"
 JORNADA = "overtime_day_hours"
 # clave -> (valor por omision, valores permitidos), igual que las demas politicas.
-POLITICA_DE_HORAS_EXTRA = {TOLERANCIA: (15, range(0, 241)), JORNADA: (8, range(1, 13))}
+PRIMA_DOMINICAL = "sunday_premium_pct"
+POLITICA_DE_HORAS_EXTRA = {TOLERANCIA: (15, range(0, 241)), JORNADA: (8, range(1, 13)),
+                           PRIMA_DOMINICAL: (25, range(25, 101))}
 LIMITE_DOBLES = 9 * 60   # minutos dobles por semana (LFT art. 68)
 UMAS_EXENTAS_POR_SEMANA = 5
 
@@ -87,25 +98,33 @@ def _minutos_de_jornada(db, ids, desde: date, hasta: date) -> dict:
     return salida
 
 
-def _extra_checado(db, ids, desde: date, hasta: date) -> dict:
-    """{(id_user, dia): minutos despues de su hora de salida segun su ultima checada}."""
+def _lo_checado(db, ids, desde: date, hasta: date) -> tuple[dict, dict]:
+    """({(id_user, dia): minutos despues de su hora de salida segun su ultima checada},
+        {(id_user, dia): es_festivo} de los dias de descanso o festivos en que checo)."""
     from app.services.attendance_record_service import asistencia_por_empleado
-    extra = {}
+    extra, descansos = {}, {}
     for id_user, lista in asistencia_por_empleado(db, desde, hasta, ids=list(ids)).items():
         for d in lista:
             if d.laboral and d.salida and len(d.marcas) >= 2:
                 minutos = int((datetime.combine(d.fecha, d.marcas[-1]) - datetime.combine(d.fecha, d.salida))
                               .total_seconds() // 60)
                 extra[(id_user, d.fecha)] = max(minutos, 0)
-    return extra
+            if d.trabajo_en_descanso and d.ausencia is None:
+                descansos[(id_user, d.fecha)] = d.festivo
+    return extra, descansos
 
 
-def _verificar(registros, extra: dict) -> dict:
-    """{id_overtime: (minutos pagables, estado)}. Las de un mismo dia comparten lo checado."""
+def _verificar(registros, extra: dict, descansos: dict) -> dict:
+    """{id_overtime: (minutos pagables, estado)}. Las de un mismo dia comparten lo checado.
+    Un descanso trabajado esta verificado si checo ese dia."""
     salida, restante = {}, dict(extra)
     for r in sorted(registros, key=lambda r: (r.work_date, r.id_overtime)):
         if r.origin == MANUAL:
             salida[r.id_overtime] = (r.minutes, "manual")
+            continue
+        if r.kind == DESCANSO:
+            trabajado = (r.id_user, r.work_date) in descansos
+            salida[r.id_overtime] = (r.minutes if trabajado else 0, "verified" if trabajado else "not_worked")
             continue
         clave = (r.id_user, r.work_date)
         pagables = min(r.minutes, restante.get(clave, 0))
@@ -146,7 +165,7 @@ def horas_extra_del_periodo(db, empleados, periodo, parametros, diarios=None, ho
     desde = _semana(min(r.work_date for r in candidatas))
     hasta = max(_semana(max(r.work_date for r in candidatas)) + timedelta(days=6), periodo.period_end)
     todas = [r for r in _registros(db, ids, desde, hasta) if r.settlement == PAGAR]
-    pagables = _verificar(todas, _extra_checado(db, ids, desde, hasta))
+    pagables = _verificar(todas, *_lo_checado(db, ids, desde, hasta))
     jornada = _minutos_de_jornada(db, ids, desde, hasta)
     politica = _politica(db, periodo.period_end)
     diarios = diarios or {e.id_user: Decimal(str(e.base_salary or 0)) for e in empleados}
@@ -162,6 +181,12 @@ def horas_extra_del_periodo(db, empleados, periodo, parametros, diarios=None, ho
         acumulado, dobles_semana, filas = 0, Decimal(0), []
         for r in lista:
             minutos = pagables[r.id_overtime][0]
+            if r.kind == DESCANSO:
+                # El doble del dia, ademas del dia que ya se paga; no cuenta para las 9 h.
+                monto_doble = diario * 2 if minutos else Decimal(0)
+                dobles_semana += monto_doble
+                filas.append((r, 0, 0, monto_doble, monto_doble))
+                continue
             dobles = max(min(minutos, LIMITE_DOBLES - acumulado), 0)
             triples = minutos - dobles
             acumulado += minutos
@@ -176,14 +201,22 @@ def horas_extra_del_periodo(db, empleados, periodo, parametros, diarios=None, ho
                 continue
             exento = exento_semana * monto_doble / dobles_semana if dobles_semana else Decimal(0)
             fila = resultado.setdefault(id_user, {"double_minutes": 0, "triple_minutes": 0, "amount": Decimal(0),
-                                                  "taxable": Decimal(0), "ids": []})
-            fila["double_minutes"] += dobles
-            fila["triple_minutes"] += triples
-            fila["amount"] += monto
-            fila["taxable"] += monto - exento
+                                                  "taxable": Decimal(0), "rest_days": 0,
+                                                  "rest_day_amount": Decimal(0), "rest_day_taxable": Decimal(0),
+                                                  "ids": []})
+            if r.kind == DESCANSO:
+                fila["rest_days"] += 1 if monto else 0
+                fila["rest_day_amount"] += monto
+                fila["rest_day_taxable"] += monto - exento
+            else:
+                fila["double_minutes"] += dobles
+                fila["triple_minutes"] += triples
+                fila["amount"] += monto
+                fila["taxable"] += monto - exento
             fila["ids"].append(r.id_overtime)
     for fila in resultado.values():
-        fila["amount"], fila["taxable"] = ley.dinero(fila["amount"]), ley.dinero(fila["taxable"])
+        for clave in ("amount", "taxable", "rest_day_amount", "rest_day_taxable"):
+            fila[clave] = ley.dinero(fila[clave])
     return resultado
 
 
@@ -202,6 +235,11 @@ def registrar(user_data: dict, payload: dict) -> dict:
     payload = dict(payload or {})
     origen = payload.get("origin") or AUTORIZADA
     liquidacion = payload.get("settlement") or PAGAR
+    tipo = payload.get("kind") or HORA_EXTRA
+    if tipo not in (HORA_EXTRA, DESCANSO):
+        raise AppError("errors.invalid_field", 400, {"field": "kind"})
+    if tipo == DESCANSO and not payload.get("minutes"):
+        payload["minutes"] = 8 * 60   # informativo: el descanso se paga por dia
     if origen not in (AUTORIZADA, DETECTADA, MANUAL):
         raise AppError("errors.invalid_field", 400, {"field": "origin"})
     if liquidacion not in (PAGAR, COMPENSAR):
@@ -222,7 +260,8 @@ def registrar(user_data: dict, payload: dict) -> dict:
         _, es_rh = _exigir_que_pueda(db, user_data, id_user)
         if origen == MANUAL and not es_rh:
             raise AppError("errors.permission_denied", 403, {"entity": "overtime", "action": "manual"})
-        registro = Overtime(id_user=id_user, work_date=dia, minutes=minutos, origin=origen, settlement=liquidacion,
+        registro = Overtime(id_user=id_user, work_date=dia, minutes=minutos, kind=tipo, origin=origen,
+                            settlement=liquidacion,
                             notes=notas or None, created_by=user_data.get("id_user"))
         db.add(registro)
         db.flush()
@@ -259,12 +298,13 @@ def del_rango(user_data: dict, desde, hasta) -> dict:
         empleados = {u.id_user: u.full_name or f"#{u.id_user}" for u in db.scalars(consulta)}
         ids = list(empleados)
         registros = _registros(db, ids, desde, hasta)
-        extra = _extra_checado(db, ids, desde, hasta)
-        pagables = _verificar(registros, extra)
+        extra, descansos = _lo_checado(db, ids, desde, hasta)
+        pagables = _verificar(registros, extra, descansos)
         politica = _politica(db, hasta)
         cubierto = defaultdict(int)
+        descansos_registrados = {(r.id_user, r.work_date) for r in registros if r.kind == DESCANSO}
         for r in registros:
-            if r.origin != MANUAL:
+            if r.origin != MANUAL and r.kind == HORA_EXTRA:
                 cubierto[(r.id_user, r.work_date)] += pagables[r.id_overtime][0]
         filas = [{**r.serialize(), "full_name": empleados[r.id_user],
                   "checked_minutes": extra.get((r.id_user, r.work_date), 0),
@@ -274,4 +314,8 @@ def del_rango(user_data: dict, desde, hasta) -> dict:
                           "minutes": m - cubierto[(u, d)]}
                          for (u, d), m in sorted(extra.items(), key=lambda x: (x[0][1], empleados[x[0][0]]))
                          if m - cubierto[(u, d)] > politica[TOLERANCIA]]
-        return {"overtime": filas, "unauthorized": sin_autorizar, "tolerance_minutes": politica[TOLERANCIA]}
+        descansos_sin_autorizar = [{"id_user": u, "full_name": empleados[u], "work_date": d.isoformat(), "holiday": festivo}
+                                   for (u, d), festivo in sorted(descansos.items(), key=lambda x: (x[0][1], empleados[x[0][0]]))
+                                   if (u, d) not in descansos_registrados]
+        return {"overtime": filas, "unauthorized": sin_autorizar, "unauthorized_rest_days": descansos_sin_autorizar,
+                "tolerance_minutes": politica[TOLERANCIA]}

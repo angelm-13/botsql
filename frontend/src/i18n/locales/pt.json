@@ -3597,7 +3597,9 @@
     "pending": "pendentes",
     "pending_hint": "Dias com uma só marcação: não são pagos até serem corrigidos.",
     "pending_close": "Há dias pendentes de justificar (uma só marcação, não pagos). Fechar mesmo assim?",
-    "overtime": "Horas extras"
+    "overtime": "Horas extras",
+    "rest_day": "Descanso trabalhado",
+    "sunday_premium": "Adicional dominical"
   },
   "payroll_settings": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -3675,7 +3677,8 @@
       "attendance_warning_supervisor_minutes": "Aviso ao supervisor se continuar sem entrada (minutos)",
       "attendance_warning_exit_minutes": "Aviso ao funcionário sem marcação de saída (minutos depois)",
       "overtime_tolerance_minutes": "Tolerância para tempo não autorizado (minutos)",
-      "overtime_day_hours": "Horas de jornada para quem não tem horário"
+      "overtime_day_hours": "Horas de jornada para quem não tem horário",
+      "sunday_premium_pct": "Adicional dominical (% do salário diário)"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -3912,7 +3915,18 @@
     "paid_in": "Paga no período",
     "no_registered": "Não há horas extras no intervalo.",
     "saved": "Horas extras registradas.",
-    "confirm_delete": "Remover este registro de horas extras?"
+    "confirm_delete": "Remover este registro de horas extras?",
+    "kind": "Tipo",
+    "kind_overtime": "Horas extras",
+    "kind_rest_day": "Descanso ou feriado trabalhado",
+    "rest_title": "Descansos e feriados trabalhados sem autorização",
+    "rest_hint": "Marcaram ponto no dia de descanso ou em feriado. Se aprovado, paga-se o dobro além do dia; o adicional dominical é pago sozinho.",
+    "day_type": "Tipo de dia",
+    "holiday": "Feriado",
+    "rest_day": "Descanso",
+    "no_rest_days": "Ninguém trabalhou no descanso sem autorização.",
+    "came": "Veio",
+    "double_day": "Dobro do dia"
   },
   "salaries": {
     "title": "Como cada funcionário recebe",

@@ -9,6 +9,8 @@ from app.models.work_schedule import _auditoria, to_json_value
 # services/overtime_service.py.
 
 AUTORIZADA, DETECTADA, MANUAL = "authorized", "detected", "manual"
+# Hora extra, o dia de descanso o festivo trabajado (LFT arts. 73 y 75).
+HORA_EXTRA, DESCANSO = "overtime", "rest_day"
 PAGAR, COMPENSAR = "pay", "compensate"
 
 
@@ -28,12 +30,16 @@ class Overtime(Base):
         CheckConstraint("origin IN ('authorized', 'detected', 'manual')", name='ck_overtime_origin'),
         CheckConstraint("settlement IN ('pay', 'compensate')", name='ck_overtime_settlement'),
         CheckConstraint('minutes > 0', name='ck_overtime_minutes'),
+        CheckConstraint("kind IN ('overtime', 'rest_day')", name='ck_overtime_kind'),
     )
 
     id_overtime: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     id_user: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     work_date: Mapped[object] = mapped_column(Date, nullable=False)
     minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    # rest_day = trabajo en su descanso o en festivo (migracion 20261102100000):
+    # se paga doble ademas del dia; `minutes` solo es informativo.
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default=HORA_EXTRA, server_default=HORA_EXTRA)
     origin: Mapped[str] = mapped_column(String(20), nullable=False, default=AUTORIZADA, server_default=AUTORIZADA)
     settlement: Mapped[str] = mapped_column(String(20), nullable=False, default=PAGAR, server_default=PAGAR)
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
@@ -46,7 +52,7 @@ class Overtime(Base):
 
     def serialize(self) -> dict:
         return {'id_overtime': self.id_overtime, 'id_user': self.id_user, 'work_date': to_json_value(self.work_date),
-                'minutes': self.minutes, 'origin': self.origin, 'settlement': self.settlement, 'notes': self.notes,
+                'minutes': self.minutes, 'kind': self.kind, 'origin': self.origin, 'settlement': self.settlement, 'notes': self.notes,
                 'id_payroll_period': self.id_payroll_period, **_auditoria(self)}
 
     def serialize_summary(self) -> dict:

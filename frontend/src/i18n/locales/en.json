@@ -4925,7 +4925,9 @@
     "pending": "pending",
     "pending_hint": "Days with a single check: not paid until corrected.",
     "pending_close": "There are days pending justification (a single check, not paid). Close anyway?",
-    "overtime": "Overtime"
+    "overtime": "Overtime",
+    "rest_day": "Rest day worked",
+    "sunday_premium": "Sunday premium"
   },
   "payroll_settings": {
     "eyebrow": "HUMAN RESOURCES",
@@ -5003,7 +5005,8 @@
       "attendance_warning_supervisor_minutes": "Warn the supervisor if still no check-in (minutes)",
       "attendance_warning_exit_minutes": "Warn the employee if no check-out (minutes after)",
       "overtime_tolerance_minutes": "Tolerance for unauthorized time (minutes)",
-      "overtime_day_hours": "Shift hours for employees without schedule"
+      "overtime_day_hours": "Shift hours for employees without schedule",
+      "sunday_premium_pct": "Sunday premium (% of daily salary)"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -5240,7 +5243,18 @@
     "paid_in": "Paid in period",
     "no_registered": "No overtime in the range.",
     "saved": "Overtime registered.",
-    "confirm_delete": "Remove this overtime record?"
+    "confirm_delete": "Remove this overtime record?",
+    "kind": "Type",
+    "kind_overtime": "Overtime",
+    "kind_rest_day": "Rest day or holiday worked",
+    "rest_title": "Rest days and holidays worked without authorization",
+    "rest_hint": "They checked in on their rest day or a holiday. If approved, double pay is added to the day; the Sunday premium is paid automatically.",
+    "day_type": "Day type",
+    "holiday": "Holiday",
+    "rest_day": "Rest day",
+    "no_rest_days": "Nobody worked on a rest day without authorization.",
+    "came": "Came in",
+    "double_day": "Double day"
   },
   "salaries": {
     "title": "How each employee is paid",

@@ -3591,7 +3591,9 @@
     "pending": "offen",
     "pending_hint": "Tage mit nur einer Stempelung: werden erst nach Korrektur bezahlt.",
     "pending_close": "Es gibt offene Tage (nur eine Stempelung, nicht bezahlt). Trotzdem abschließen?",
-    "overtime": "Überstunden"
+    "overtime": "Überstunden",
+    "rest_day": "Ruhetag gearbeitet",
+    "sunday_premium": "Sonntagszuschlag"
   },
   "payroll_settings": {
     "eyebrow": "PERSONAL",
@@ -3669,7 +3671,8 @@
       "attendance_warning_supervisor_minutes": "Hinweis an Vorgesetzte, wenn weiter kein Kommen-Stempel (Minuten)",
       "attendance_warning_exit_minutes": "Hinweis an die Person ohne Gehen-Stempel (Minuten danach)",
       "overtime_tolerance_minutes": "Toleranz für ungenehmigte Zeit (Minuten)",
-      "overtime_day_hours": "Arbeitsstunden ohne Arbeitszeitplan"
+      "overtime_day_hours": "Arbeitsstunden ohne Arbeitszeitplan",
+      "sunday_premium_pct": "Sonntagszuschlag (% des Tageslohns)"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -3906,7 +3909,18 @@
     "paid_in": "Bezahlt im Zeitraum",
     "no_registered": "Keine Überstunden im Zeitraum.",
     "saved": "Überstunden erfasst.",
-    "confirm_delete": "Diesen Überstundeneintrag entfernen?"
+    "confirm_delete": "Diesen Überstundeneintrag entfernen?",
+    "kind": "Art",
+    "kind_overtime": "Überstunden",
+    "kind_rest_day": "Ruhetag oder Feiertag gearbeitet",
+    "rest_title": "Ruhe- und Feiertage ohne Genehmigung gearbeitet",
+    "rest_hint": "Am Ruhetag oder Feiertag gestempelt. Wird es genehmigt, kommt der doppelte Tageslohn hinzu; der Sonntagszuschlag wird automatisch gezahlt.",
+    "day_type": "Art des Tages",
+    "holiday": "Feiertag",
+    "rest_day": "Ruhetag",
+    "no_rest_days": "Niemand hat ohne Genehmigung am Ruhetag gearbeitet.",
+    "came": "Gekommen",
+    "double_day": "Doppelter Tag"
   },
   "salaries": {
     "title": "Wie jede Person bezahlt wird",
