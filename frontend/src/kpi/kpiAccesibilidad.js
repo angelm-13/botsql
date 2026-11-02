@@ -3,14 +3,14 @@
 import { formatConUnidad, unidadInfo } from "./kpiDatos.js";
 
 // Un patron por categoria, en el orden en que se leen (el color rojo/verde de `colores_categoria` ya no es lo unico
-// que las distingue). Son los trazos que dibuja `components/kpi-widgets/PatronesSvg.jsx`.
+// que las distingue). Son los trazos que dibuja `components/kpi-widgets/PatronesSvg.jsx` y `patronesDeRelleno.jsx`.
 export const PATRONES = ["diagonal", "puntos", "horizontal", "cruz", "diagonal_inversa", "vertical"];
 
 export function patronDeIndice(indice) {
   return PATRONES[((indice % PATRONES.length) + PATRONES.length) % PATRONES.length];
 }
 
-// El relleno (`fill`) de la categoria `indice`: el patron `${idBase}-${indice}` que define `DefinicionDePatrones`.
+// El relleno (`fill`) de la categoria `indice`: el patron `${idBase}-${indice}` que define `patronesDeRelleno`.
 export function rellenoConPatron(idBase, indice) {
   return `url(#${idBase}-${indice})`;
 }

@@ -1,7 +1,8 @@
 import { useId, useState } from "react";
 import PropTypes from "prop-types";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { DefinicionDePatrones, MuestraDePatron } from "./PatronesSvg";
+import { MuestraDePatron } from "./PatronesSvg";
+import { patronesDeRelleno } from "./patronesDeRelleno";
 import { rellenoConPatron } from "../../kpi/kpiAccesibilidad";
 
 function TooltipDona({ active, payload, formatearValor }) {
@@ -34,7 +35,7 @@ export default function DonaWidget({ datos, animar, formatearValor, conPatrones,
       <div className="kpi-preview-dona-grafica">
       <ResponsiveContainer width="100%" height={190}>
         <PieChart>
-          {conPatrones && <DefinicionDePatrones idBase={idBase} colores={datos.map((entrada) => entrada.color)} />}
+          {conPatrones && <defs>{patronesDeRelleno(idBase, datos.map((entrada) => entrada.color))}</defs>}
           <Pie
             data={datos}
             dataKey="valor"

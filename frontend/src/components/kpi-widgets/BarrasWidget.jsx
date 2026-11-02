@@ -3,7 +3,7 @@ import PropTypes from "prop-types";
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { DefinicionDePatrones } from "./PatronesSvg";
+import { patronesDeRelleno } from "./patronesDeRelleno";
 import { rellenoConPatron } from "../../kpi/kpiAccesibilidad";
 import {
   ANCHO_GRAFICA_POR_OMISION, ANGULO_ETIQUETA, disenoDeBarras, recortarEtiqueta,
@@ -77,7 +77,7 @@ export default function BarrasWidget({
             layout={horizontal ? "vertical" : "horizontal"}
             margin={horizontal ? { top: 4, right: 16, left: 0, bottom: 0 } : { top: 4, right: 8, left: diseno.margenIzquierdo, bottom: 0 }}
           >
-            {coloresDeFila && <DefinicionDePatrones idBase={idBase} colores={coloresDeFila} />}
+            {coloresDeFila && <defs>{patronesDeRelleno(idBase, coloresDeFila)}</defs>}
             <CartesianGrid strokeDasharray="2 4" stroke="var(--kpi-grid)" vertical={horizontal} horizontal={!horizontal} />
             {horizontal ? (
               <>
