@@ -4,6 +4,9 @@
 -- actual (incluye las capacidades de Alan); corre despues de 20261102120000
 -- para que exista la tabla.
 --
+-- Regenerada el 2026-11-02 tras integrar initAlan: incluye la capacidad my_leaves
+-- de su resiembra 20261102100000, que esta (por correr despues) habria omitido.
+--
 -- Permisos por modulo y accion CRUD. GENERADO por
 -- backend/scripts/seed_module_permissions.py desde app/modules/registry.py.
 -- No editar a mano: el registro es la fuente de verdad y cualquier cambio aqui
@@ -40,8 +43,8 @@
 -- servicio. Conceder `inventario` a un rol NO le da el almacen de logistica ni
 -- el del restaurante.
 --
--- 14 modulos, 7 roles, 26 capacidades,
--- 389 filas.
+-- 14 modulos, 7 roles, 27 capacidades,
+-- 396 filas.
 --
 --   facturacion      9 entidades
 --     Administrator (administrar), Gerente Comercial (consultar)
@@ -302,6 +305,7 @@ SELECT * FROM (VALUES
     ('Administrator', 'inventory_adjustment', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Administrator / consultar
     ('Administrator', 'kronos_device', 0, 4, 0, 0, 'settings', 'Recursos humanos', 'hr', 'Conexion al dispositivo Kronos', 790, 'rh'),   -- Administrator / consultar
     ('Administrator', 'multiemisor_csd', 4, 4, 4, 4, 'sidebar', 'Facturacion', 'billing', 'Multiemisor y CSD', 190, 'multiemisor_csd'),   -- Administrator / administrar
+    ('Administrator', 'my_leaves', 4, 4, 4, 0, 'sidebar', 'Recursos humanos', 'hr', 'Mis vacaciones', 790, 'rh'),   -- Administrator / capturar
     ('Administrator', 'pos_admin', 4, 4, 4, 4, 'sidebar', 'Punto de venta', 'pos', 'Admin del punto de venta', 640, 'pos'),   -- Administrator / administrar
     ('Administrator', 'pos_terminal', 4, 4, 4, 0, 'sidebar', 'Punto de venta', 'pos', 'Caja del punto de venta', 640, 'pos'),   -- Administrator / capturar
     ('Administrator', 'project_authorization', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar
@@ -348,6 +352,7 @@ SELECT * FROM (VALUES
     ('Supervisor', 'task_type', 4, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de tarea', 342, 'operaciones'),   -- Supervisor / capturar
     ('Supervisor', 'template', 4, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Supervisor / capturar
     ('Supervisor', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Supervisor / consultar
+    ('Supervisor', 'my_leaves', 4, 4, 4, 0, 'sidebar', 'Recursos humanos', 'hr', 'Mis vacaciones', 790, 'rh'),   -- Supervisor / capturar
     ('Supervisor', 'warehouse_prevoucher', 4, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Prevales de material', 290, 'inventario'),   -- Supervisor / capturar
     ('Supervisor', 'warehouse_voucher_holder', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Supervisor / consultar
     ('Gerente Comercial', 'purchase_order', 4, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Ordenes de compra', 530, 'compras'),   -- Gerente Comercial / capturar
@@ -435,6 +440,7 @@ SELECT * FROM (VALUES
     ('Gerente Comercial', 'work_schedule', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 790, 'rh'),   -- Gerente Comercial / consultar
     ('Gerente Comercial', 'work_schedule_day', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 790, 'rh'),   -- Gerente Comercial / consultar
     ('Gerente Comercial', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'my_leaves', 4, 4, 4, 0, 'sidebar', 'Recursos humanos', 'hr', 'Mis vacaciones', 790, 'rh'),   -- Gerente Comercial / capturar
     ('Gerente Comercial', 'project_document_delete', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
     ('Gerente Comercial', 'project_document_upload', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
     ('Gerente Comercial', 'project_oversight', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
@@ -471,6 +477,7 @@ SELECT * FROM (VALUES
     ('Gerente Tecnico', 'task_type', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de tarea', 342, 'operaciones'),   -- Gerente Tecnico / editar
     ('Gerente Tecnico', 'template', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Gerente Tecnico / editar
     ('Gerente Tecnico', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'my_leaves', 4, 4, 4, 0, 'sidebar', 'Recursos humanos', 'hr', 'Mis vacaciones', 790, 'rh'),   -- Gerente Tecnico / capturar
     ('Gerente Tecnico', 'project_authorization', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
     ('Gerente Tecnico', 'project_document_delete', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
     ('Gerente Tecnico', 'project_document_upload', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
@@ -505,6 +512,7 @@ SELECT * FROM (VALUES
     ('Jefe de taller', 'template', 4, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Jefe de taller / capturar
     ('Jefe de taller', 'daily_activity_log', 4, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Bitacora diaria de taller', 390, 'operaciones'),   -- Jefe de taller / capturar
     ('Jefe de taller', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Jefe de taller / consultar
+    ('Jefe de taller', 'my_leaves', 4, 4, 4, 0, 'sidebar', 'Recursos humanos', 'hr', 'Mis vacaciones', 790, 'rh'),   -- Jefe de taller / capturar
     ('Jefe de taller', 'project_execution', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Jefe de taller / consultar
     ('Jefe de taller', 'warehouse_voucher_holder', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Jefe de taller / consultar
     ('Almacenista', 'purchase_order', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Ordenes de compra', 530, 'compras'),   -- Almacenista / consultar
@@ -547,6 +555,7 @@ SELECT * FROM (VALUES
     ('Almacenista', 'logistics_unit', 4, 4, 4, 0, 'sidebar', 'Logistica', 'logistics', 'Unidades', 450, 'logistica'),   -- Almacenista / capturar
     ('Almacenista', 'logistics_warehouse', 4, 4, 4, 0, 'sidebar', 'Logistica', 'logistics', 'Almacenes', 430, 'logistica'),   -- Almacenista / capturar
     ('Almacenista', 'inventory_adjustment', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Almacenista / consultar
+    ('Almacenista', 'my_leaves', 4, 4, 4, 0, 'sidebar', 'Recursos humanos', 'hr', 'Mis vacaciones', 790, 'rh'),   -- Almacenista / capturar
     ('Almacenista', 'purchase_planning', 0, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Por comprar', 290, 'inventario'),   -- Almacenista / editar
     ('Almacenista', 'purchase_receive', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 340, 'compras'),   -- Almacenista / editar
     ('Almacenista', 'warehouse_incident_report', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Almacenista / consultar
@@ -582,6 +591,7 @@ SELECT * FROM (VALUES
     ('Compras', 'task_note', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Compras / consultar
     ('Compras', 'task_type', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de tarea', 342, 'operaciones'),   -- Compras / consultar
     ('Compras', 'template', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Compras / consultar
+    ('Compras', 'my_leaves', 4, 4, 4, 0, 'sidebar', 'Recursos humanos', 'hr', 'Mis vacaciones', 790, 'rh'),   -- Compras / capturar
     ('Compras', 'purchase_planning', 0, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Por comprar', 290, 'inventario'),   -- Compras / editar
     ('Compras', 'warehouse_voucher_holder', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario')   -- Compras / consultar
 ) AS v (role_name, entity_name, scope_create, scope_read, scope_update, scope_delete,
@@ -675,7 +685,7 @@ SELECT c.table_name, c.column_name, 1
    -- marcar columnas de una tabla que esa capacidad no gobierna. La lista sale
    -- del registro, no escrita a mano, para que una capacidad nueva con nombre
    -- de tabla no vuelva a colarse.
-   AND c.table_name NOT IN ('daily_activity_log', 'incident_supervision', 'inventory_adjustment', 'kronos_device', 'multiemisor_csd', 'pos_admin', 'pos_terminal', 'project_authorization', 'project_document_delete', 'project_document_upload', 'project_execution', 'project_oversight', 'project_supply', 'purchase_authorize', 'purchase_planning', 'purchase_receive', 'restaurant_admin', 'restaurant_cashier', 'restaurant_kitchen', 'restaurant_waiter', 'warehouse_incident_report', 'warehouse_prevoucher', 'warehouse_voucher', 'warehouse_voucher_authorize', 'warehouse_voucher_confirm', 'warehouse_voucher_holder')
+   AND c.table_name NOT IN ('daily_activity_log', 'incident_supervision', 'inventory_adjustment', 'kronos_device', 'multiemisor_csd', 'my_leaves', 'pos_admin', 'pos_terminal', 'project_authorization', 'project_document_delete', 'project_document_upload', 'project_execution', 'project_oversight', 'project_supply', 'purchase_authorize', 'purchase_planning', 'purchase_receive', 'restaurant_admin', 'restaurant_cashier', 'restaurant_kitchen', 'restaurant_waiter', 'warehouse_incident_report', 'warehouse_prevoucher', 'warehouse_voucher', 'warehouse_voucher_authorize', 'warehouse_voucher_confirm', 'warehouse_voucher_holder')
    -- Las administra el sistema: `created_by` lo fija el servicio con el
    -- usuario de la sesion, y las tres fechas las escribe el ORM. Publicarlas
    -- como configurables invita a capturarlas a mano.
@@ -711,7 +721,7 @@ UPDATE field f
        last_update_date = now()
  WHERE f.deletion_date IS NULL
    AND EXISTS (SELECT 1 FROM matriz_de_permisos m WHERE m.entity_name = f.table_name)
-   AND f.table_name NOT IN ('daily_activity_log', 'incident_supervision', 'inventory_adjustment', 'kronos_device', 'multiemisor_csd', 'pos_admin', 'pos_terminal', 'project_authorization', 'project_document_delete', 'project_document_upload', 'project_execution', 'project_oversight', 'project_supply', 'purchase_authorize', 'purchase_planning', 'purchase_receive', 'restaurant_admin', 'restaurant_cashier', 'restaurant_kitchen', 'restaurant_waiter', 'warehouse_incident_report', 'warehouse_prevoucher', 'warehouse_voucher', 'warehouse_voucher_authorize', 'warehouse_voucher_confirm', 'warehouse_voucher_holder')
+   AND f.table_name NOT IN ('daily_activity_log', 'incident_supervision', 'inventory_adjustment', 'kronos_device', 'multiemisor_csd', 'my_leaves', 'pos_admin', 'pos_terminal', 'project_authorization', 'project_document_delete', 'project_document_upload', 'project_execution', 'project_oversight', 'project_supply', 'purchase_authorize', 'purchase_planning', 'purchase_receive', 'restaurant_admin', 'restaurant_cashier', 'restaurant_kitchen', 'restaurant_waiter', 'warehouse_incident_report', 'warehouse_prevoucher', 'warehouse_voucher', 'warehouse_voucher_authorize', 'warehouse_voucher_confirm', 'warehouse_voucher_holder')
    AND NOT EXISTS (
      SELECT 1 FROM information_schema.columns c
       WHERE c.table_schema = 'public'

@@ -4,7 +4,7 @@ from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Int
 from app.models.base import Base
 from app.models.work_schedule import _auditoria, to_json_value
 
-# Bajas de empleados (migracion 20261102110000). El calculo del finiquito o la
+# Bajas de empleados (migracion 20261102120000). El calculo del finiquito o la
 # liquidacion vive en services/termination_service.py; no se guarda: se calcula
 # con los datos del dia (checadas, vacaciones, nomina ya pagada).
 

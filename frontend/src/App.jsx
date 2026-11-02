@@ -188,8 +188,8 @@ export default function App() {
           />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
-          {/* Como /change-password: cualquier usuario con sesion; el backend decide que ve. */}
-          <Route path="/my_leaves" element={<MyLeavesPage />} />
+          {/* Autoservicio de vacaciones: lo guarda la capacidad `my_leaves` del Gestor. */}
+          <Route path="/my_leaves" element={<RoleAccessRoute entityName="my_leaves"><MyLeavesPage /></RoleAccessRoute>} />
           <Route path="/role_permissions" element={<RoleAccessRoute entityName="entity_permission"><RolePermissionManagerPage /></RoleAccessRoute>} />
           <Route path="/kpi_permissions" element={<RoleAccessRoute entityName="nm_permission_kpi"><KpiPermissionManagerPage /></RoleAccessRoute>} />
           <Route path="/facturama-config" element={<RoleAccessRoute entityName="fiscal_stamp"><FacturamaConfigPage /></RoleAccessRoute>} />

@@ -291,7 +291,7 @@ class Capacidad:
     """Un derecho con nombre propio que no corresponde a ninguna tabla."""
 
     def __init__(self, clave, etiqueta, modulo, *, bits=CONSULTA, menu="hidden",
-                 licencia_independiente=False):
+                 licencia_independiente=False, autoservicio=False):
         self.clave = clave
         self.etiqueta = etiqueta
         self.modulo = modulo
@@ -305,6 +305,11 @@ class Capacidad:
         # facturacion). Si es False (el default), viaja con la licencia del
         # modulo padre, como cualquier otro permiso normal de rol.
         self.licencia_independiente = licencia_independiente
+        # Si es True, la capacidad se ejerce sobre lo PROPIO de quien la tiene
+        # -sus vacaciones, no las tablas del modulo-, asi que se concede a roles
+        # sin acceso al modulo sin ser "una fila que no puede ejercer". El plan
+        # sigue mandando: viaja con la licencia de `modulo` como cualquier otra.
+        self.autoservicio = autoservicio
 
 
 CAPACIDADES = (
@@ -436,6 +441,15 @@ CAPACIDADES = (
     # Quitarlo no simplificaba el menu: le quitaba al sistema una opcion de
     # configuracion que alguien habia elegido a proposito.
     Capacidad("kronos_device", "Conexion al dispositivo Kronos", "rh", menu="settings"),
+    # El autoservicio de vacaciones: el empleado ve su saldo y pide, y su jefe
+    # autoriza las de su equipo. Se mostraba a todo usuario con sesion, fijo en
+    # el codigo (Shell.jsx/App.jsx) y sin fila en el Gestor, asi que no habia
+    # forma de esconderlo a un rol. Por omision lo llevan los 7 roles -era lo que
+    # ya veian-; los roles que el registro no declara lo reciben en
+    # 20261102110000. CAPTURA: ver (leer), pedir (crear), cancelar o revisar
+    # (actualizar), para poder dejar a un rol en "solo ver" desde el Gestor.
+    Capacidad("my_leaves", "Mis vacaciones", "rh", bits=CAPTURA, menu="sidebar",
+              autoservicio=True),
     Capacidad("restaurant_waiter", "Meseros", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_kitchen", "Cocina", "restaurante", bits=EDITAR, menu="sidebar"),
@@ -558,7 +572,8 @@ ROLES = (
     # por instalacion, una vez.
     Rol(2, "Supervisor", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["incident_supervision", "warehouse_prevoucher", "warehouse_voucher_holder"],
+    }, ["incident_supervision", "warehouse_prevoucher", "warehouse_voucher_holder",
+        "my_leaves"],
         excepciones={"task": CONSULTA, "incident": CONSULTA}),
 
     # Ve y busca el almacen sin modificarlo -`inventario` en CONSULTA- y
@@ -592,7 +607,7 @@ ROLES = (
         "compras": CAPTURA, "configuracion": CONSULTA,
     }, ["project_oversight", "incident_supervision", "purchase_authorize",
         "warehouse_voucher_holder", "warehouse_incident_report",
-        "project_document_upload", "project_document_delete"]),
+        "project_document_upload", "project_document_delete", "my_leaves"]),
 
     # El tecnico es de CAMPO: autoriza, deniega y bloquea proyectos y los edita, y
     # pide material con prevales (`warehouse_prevoucher`). De compras y almacen solo
@@ -601,13 +616,14 @@ ROLES = (
         "operaciones": EDITAR, "inventario": CONSULTA, "compras": CONSULTA,
         "configuracion": CONSULTA,
     }, ["project_authorization", "incident_supervision", "warehouse_prevoucher",
-        "warehouse_voucher_holder", "project_document_upload", "project_document_delete"]),
+        "warehouse_voucher_holder", "project_document_upload", "project_document_delete",
+        "my_leaves"]),
 
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
     }, ["project_execution", "incident_supervision", "daily_activity_log",
-        "warehouse_voucher_holder"]),
+        "warehouse_voucher_holder", "my_leaves"]),
 
     # Opera el almacen entero: da de alta productos, levanta vales, los
     # asigna, autoriza/entrega, confirma devoluciones y ajusta inventario.
@@ -623,7 +639,7 @@ ROLES = (
     }, ["inventory_adjustment", "warehouse_voucher",
         "warehouse_voucher_authorize", "warehouse_voucher_confirm",
         "warehouse_incident_report",
-        "purchase_planning", "purchase_receive"]),
+        "purchase_planning", "purchase_receive", "my_leaves"]),
 
     # Quien compra. Ve los proyectos y el almacen para saber que hay que comprar,
     # y no escribe en ninguno de los dos: todo en CONSULTA. Lo que hace es
@@ -641,7 +657,7 @@ ROLES = (
     Rol(8, "Compras", {
         "operaciones": CONSULTA, "inventario": CONSULTA, "compras": CAPTURA,
         "configuracion": CONSULTA,
-    }, ["purchase_planning", "warehouse_voucher_holder"],
+    }, ["purchase_planning", "warehouse_voucher_holder", "my_leaves"],
         excepciones={"purchase_policy": CONSULTA}),
 
     # Cuatro roles retirados, y por que
@@ -879,9 +895,11 @@ def _validar():
                     f"'{capacidad}'."
                 )
             modulo = CAPACIDAD_POR_CLAVE[capacidad].modulo
-            if modulo not in rol.modulos and not _solo_por_capacidad(modulo):
+            if (modulo not in rol.modulos and not _solo_por_capacidad(modulo)
+                    and not CAPACIDAD_POR_CLAVE[capacidad].autoservicio):
                 # Restaurante y punto de venta se operan solo por capacidades,
-                # asi que no necesitan acceso de tabla al modulo.
+                # asi que no necesitan acceso de tabla al modulo. Una capacidad
+                # de autoservicio tampoco: se ejerce sobre lo propio.
                 raise RuntimeError(
                     f"El rol '{rol.nombre}' tiene la capacidad '{capacidad}' del modulo "
                     f"'{modulo}' sin acceso a ese modulo: es una fila que no puede "

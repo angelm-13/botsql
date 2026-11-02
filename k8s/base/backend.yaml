@@ -145,10 +145,12 @@ spec:
                 name: app-secrets
           ports:
             - containerPort: 5001
+          # Requests = lo que usa de verdad (medido 2026-11-02 en 9 ambientes: ~1m de CPU en
+          # reposo y 270-300Mi de memoria). Con 128Mi el scheduler contaba menos de la mitad.
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 50m
+              memory: 256Mi
             limits:
               cpu: 500m
               # WeasyPrint (generacion de PDF de facturas/cotizaciones) tiene un
@@ -245,9 +247,11 @@ spec:
           # sumado a los 3 procesos del worker, rebasaba el limite: OOMKilled cada
           # pocas horas (2026-10-20: 8 reinicios en adser-prod, 18 en comala-prod,
           # 23 en torredigital-prod; Last State OOMKilled en los tres).
+          # Requests: CPU 100m -> 50m (en reposo usa ~1m; sube a 40-150m solo mientras corre
+          # una tarea). La memoria ya era realista (230-310Mi medidos).
           resources:
             requests:
-              cpu: 100m
+              cpu: 50m
               memory: 256Mi
             limits:
               cpu: 400m
@@ -330,10 +334,12 @@ spec:
           envFrom:
             - secretRef:
                 name: app-secrets
+          # Medido 2026-11-02: usa 91-95Mi en los 9 ambientes, o sea 96Mi de limite lo deja a
+          # 1-5Mi del OOM (0 reinicios hasta hoy, pero sin margen). Limite 128Mi, request 64Mi.
           resources:
             requests:
-              cpu: 25m
-              memory: 32Mi
+              cpu: 10m
+              memory: 64Mi
             limits:
               cpu: 100m
-              memory: 96Mi
+              memory: 128Mi

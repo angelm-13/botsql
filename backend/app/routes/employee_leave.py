@@ -163,10 +163,12 @@ def employee_leave_balances(user_data):
 
 
 
-# Solicitudes del propio empleado: solo exigen sesion; quien puede ver, pedir,
-# cancelar o revisar que lo decide employee_leave_service (lo propio, su equipo o RH).
+# Solicitudes del propio empleado ("Mis vacaciones"): exigen la capacidad
+# `my_leaves`, que el Gestor concede o quita por rol; sobre QUE solicitudes se
+# actua (lo propio, su equipo o RH) lo sigue decidiendo employee_leave_service.
 @bp_employee_leave.route('/mine', methods=['GET'])
 @token_required
+@require_entity_permission('my_leaves', 'read')
 def my_employee_leaves(user_data):
     """Saldo y ausencias del propio empleado."""
     from app.services.employee_leave_service import mis_ausencias
@@ -175,6 +177,7 @@ def my_employee_leaves(user_data):
 
 @bp_employee_leave.route('/request', methods=['POST'])
 @token_required
+@require_entity_permission('my_leaves', 'create')
 def request_employee_leave(user_data):
     """El empleado pide vacaciones o un permiso; queda pendiente de autorizar."""
     from app.services.employee_leave_service import solicitar
@@ -183,6 +186,7 @@ def request_employee_leave(user_data):
 
 @bp_employee_leave.route('/<id_employee_leave>/cancel', methods=['POST'])
 @token_required
+@require_entity_permission('my_leaves', 'update')
 def cancel_employee_leave(user_data, id_employee_leave):
     """El empleado cancela su solicitud pendiente."""
     from app.services.employee_leave_service import cancelar
@@ -191,6 +195,7 @@ def cancel_employee_leave(user_data, id_employee_leave):
 
 @bp_employee_leave.route('/pending', methods=['GET'])
 @token_required
+@require_entity_permission('my_leaves', 'read')
 def pending_employee_leaves(user_data):
     """Solicitudes por autorizar: las del equipo del supervisor, o todas para RH."""
     from app.services.employee_leave_service import por_autorizar
@@ -199,6 +204,7 @@ def pending_employee_leaves(user_data):
 
 @bp_employee_leave.route('/<id_employee_leave>/approve', methods=['POST'])
 @token_required
+@require_entity_permission('my_leaves', 'update')
 def approve_employee_leave(user_data, id_employee_leave):
     """Aprueba una solicitud (su supervisor o RH); se vuelven a validar saldo y fechas."""
     from app.services.employee_leave_service import revisar
@@ -207,6 +213,7 @@ def approve_employee_leave(user_data, id_employee_leave):
 
 @bp_employee_leave.route('/<id_employee_leave>/reject', methods=['POST'])
 @token_required
+@require_entity_permission('my_leaves', 'update')
 def reject_employee_leave(user_data, id_employee_leave):
     """Rechaza una solicitud (su supervisor o RH), con nota opcional."""
     from app.services.employee_leave_service import revisar
