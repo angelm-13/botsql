@@ -562,5 +562,29 @@
   ],
   "unidad": "numero",
   "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 48,
+  "clave": "proyectos_por_estado_comercial",
+  "etiqueta": "Proyectos por estado comercial",
+  "modulo": "operaciones",
+  "grupo": "crm",
+  "dimensiones": [
+   "estado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 49,
+  "clave": "proyectos_con_entrega_vencida",
+  "etiqueta": "Proyectos con entrega vencida",
+  "modulo": "operaciones",
+  "grupo": "crm",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
  }
 ]

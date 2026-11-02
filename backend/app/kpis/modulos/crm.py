@@ -16,10 +16,11 @@ dia anterior.
 
 from __future__ import annotations
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 
 from app.models.customer_supplier import CustomerSupplier
 from app.models.proyect import Proyect
+from app.services.project_management_service import MANAGEMENT_STATUSES
 from app.utils.tiempo import dia_local, hoy_negocio
 
 # `customer_supplier.type`: la misma tabla guarda clientes y proveedores. Un KPI de clientes cuenta solo los primeros.
@@ -32,6 +33,17 @@ ESTATUS_DE_PROYECTO_QUE_NO_ACTIVA = ("completed", "denied", "draft")
 
 # `proyect.management_status` (la vida comercial) que saca a un proyecto de lo vivo. Admite NULL: un NULL NO es cancelado.
 ESTATUS_COMERCIAL_CANCELADO = "cancelado"
+
+# `proyect.proyect_status` con los que un proyecto YA NO puede estar vencido de entrega: terminado (`completed`),
+# recolectado (`collected`, el ultimo paso antes de terminar) o rechazado (`denied`). `blocked` y `stopped` SI cuentan: un
+# proyecto detenido al que se le paso la fecha esta vencido.
+ESTATUS_DE_PROYECTO_SIN_ENTREGA_PENDIENTE = ("completed", "collected", "denied")
+
+# Categoria de lo que no tiene estado o trae uno fuera del catalogo (dato viejo, captura manual): se cuenta aparte en vez
+# de perderse o de contarse como otra cosa.
+SIN_ESTADO = "sin_estado"
+COLOR_SIN_ESTADO = "#a9b7c9"
+ETIQUETA_SIN_ESTADO = "Sin estado"
 
 
 def _es_hoy(fecha_fin) -> bool:
@@ -108,6 +120,76 @@ def clientes_activos_query(session, fecha_inicio, fecha_fin, filtros_dimension, 
     return [(None, fecha_fin, session.scalar(stmt) or 0)]
 
 
+# --- proyectos ---------------------------------------------------------------------------------
+
+# Estado comercial (`proyect.management_status`), en el orden en que se leen. Las claves son las del catalogo del servicio
+# (`MANAGEMENT_STATUSES`); las etiquetas son neutrales: sirven igual a un taller, una obra o un despacho.
+COMERCIAL_CATEGORIAS = (*MANAGEMENT_STATUSES, SIN_ESTADO)
+COMERCIAL_ETIQUETAS = {
+    "pendiente_orden_compra": "Pendiente de orden de compra",
+    "autorizado": "Autorizado",
+    "cancelado": "Cancelado",
+    "cobrado": "Cobrado",
+    SIN_ESTADO: ETIQUETA_SIN_ESTADO,
+}
+# Ambar (falta algo), azul (en marcha), coral (se cayo), verde (cobrado) y gris azulado para lo sin estado.
+COMERCIAL_COLORES = {
+    "pendiente_orden_compra": "#f0a93b",
+    "autorizado": "#2f8fe0",
+    "cancelado": "#ef6f5c",
+    "cobrado": "#22b573",
+    SIN_ESTADO: COLOR_SIN_ESTADO,
+}
+
+
+def proyectos_por_estado_comercial_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto de hoy: proyectos vigentes por estado comercial (`proyect.management_status`).
+
+    * Vigencia: `deletion_date IS NULL`. Cuenta proyectos de cualquier cliente y de cualquier estado de taller.
+    * Siempre regresa las cuatro categorias del catalogo, con 0 cuando no hay: el agregado "ultimo" toma el ultimo dia
+      con filas, y una categoria ausente se lee como "no calculada", no como cero.
+    * Un `management_status` NULL (la columna lo admite) o fuera del catalogo se cuenta en `sin_estado`, que solo sale
+      cuando hay alguno: no ensucia la dona con una rebanada vacia.
+    * Foto de AHORA: solo se emite si `fecha_fin` es hoy (`_es_hoy`); no hay historia de estados para reconstruir un dia pasado.
+
+    Dimension "estado" (categoria). Sin alcance de proyecto: es un conteo de todos los proyectos.
+    """
+    if not _es_hoy(fecha_fin):
+        return []
+    categoria = case((Proyect.management_status.in_(MANAGEMENT_STATUSES), Proyect.management_status), else_=SIN_ESTADO)
+    stmt = (
+        select(categoria.label("categoria"), func.count(Proyect.id_proyect))
+        .where(Proyect.deletion_date.is_(None))
+        .group_by(categoria)
+    )
+    conteos = dict(session.execute(stmt).all())
+    categorias = [*MANAGEMENT_STATUSES, *([SIN_ESTADO] if conteos.get(SIN_ESTADO) else [])]
+    return [(categoria, fecha_fin, conteos.get(categoria, 0)) for categoria in categorias]
+
+
+def proyectos_con_entrega_vencida_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto de hoy: proyectos vigentes cuya fecha de entrega (`delivery_date`) ya paso y siguen abiertos.
+
+    Vencido = `delivery_date` anterior a hoy (el mismo dia de la entrega todavia no esta vencido) y el proyecto no esta
+    terminado, recolectado ni rechazado (`ESTATUS_DE_PROYECTO_SIN_ENTREGA_PENDIENTE`) ni cancelado comercialmente
+    (`management_status = 'cancelado'`; un NULL no es cancelado). Un proyecto bloqueado o detenido SI cuenta.
+    Un proyecto sin `delivery_date` nunca vence: no hay fecha que se haya pasado.
+
+    Siempre escribe una fila (0 si nada esta vencido) y solo si `fecha_fin` es hoy (`_es_hoy`).
+    Dimension "global". Sin alcance de proyecto.
+    """
+    if not _es_hoy(fecha_fin):
+        return []
+    stmt = select(func.count(Proyect.id_proyect)).where(
+        Proyect.deletion_date.is_(None),
+        Proyect.delivery_date.isnot(None),
+        Proyect.delivery_date < fecha_fin,
+        Proyect.proyect_status.notin_(ESTATUS_DE_PROYECTO_SIN_ENTREGA_PENDIENTE),
+        or_(Proyect.management_status.is_(None), Proyect.management_status != ESTATUS_COMERCIAL_CANCELADO),
+    )
+    return [(None, fecha_fin, session.scalar(stmt) or 0)]
+
+
 # --- definiciones ------------------------------------------------------------------------------
 
 def definiciones():
@@ -148,6 +230,46 @@ def definiciones():
             descripcion=(
                 "Foto de hoy: clientes con al menos un proyecto vivo, es decir, que no está terminado, rechazado, en "
                 "borrador ni cancelado. Un proyecto bloqueado o detenido cuenta. Un cliente con varios proyectos cuenta una vez."
+            ),
+        ),
+        KpiDefinition(
+            clave="proyectos_por_estado_comercial",
+            etiqueta="Proyectos por estado comercial",
+            modulo="operaciones",
+            grupo="crm",
+            dimensiones=("estado",),
+            etiqueta_dimension="Estado comercial",
+            query_builder=proyectos_por_estado_comercial_query,
+            agregacion="ultimo",
+            unidad="numero",
+            alcance_proyecto=False,
+            direccion="neutral",
+            graficas_permitidas=("dona", "barras"),
+            grafica_default="dona",
+            colores_categoria=COMERCIAL_COLORES,
+            orden_categorias=COMERCIAL_CATEGORIAS,
+            etiquetas_categoria=COMERCIAL_ETIQUETAS,
+            descripcion=(
+                "Foto de hoy: cuántos proyectos hay pendientes de orden de compra, autorizados, cancelados y cobrados. "
+                "«Sin estado» solo sale si algún proyecto no lo tiene."
+            ),
+        ),
+        KpiDefinition(
+            clave="proyectos_con_entrega_vencida",
+            etiqueta="Proyectos con entrega vencida",
+            modulo="operaciones",
+            grupo="crm",
+            dimensiones=("global",),
+            query_builder=proyectos_con_entrega_vencida_query,
+            agregacion="ultimo",
+            unidad="numero",
+            alcance_proyecto=False,
+            direccion="bajo_es_mejor",
+            graficas_permitidas=("numero", "linea"),
+            grafica_default="numero",
+            descripcion=(
+                "Foto de hoy: proyectos cuya fecha de entrega ya pasó y siguen abiertos. No cuentan los terminados, "
+                "recolectados, rechazados ni cancelados; uno bloqueado o detenido sí."
             ),
         ),
     )

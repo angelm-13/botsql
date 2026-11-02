@@ -240,15 +240,15 @@ test("al buscar un sin desglose sale en su modulo y en Variables (con etiqueta s
   assert.equal(apariciones.filter((fila) => fila.includes("kpi-selector-modulo-tag")).length, 1, "solo la de Variables lleva la etiqueta");
 });
 
-// --- con los 47 KPIs del registry ----------------------------------------------------------------
+// --- con los 49 KPIs del registry ----------------------------------------------------------------
 const REGISTRY = JSON.parse(readFileSync(new URL("./fixtures/catalogo_del_registry.json", import.meta.url), "utf8"))
   .map((kpi) => ({ ...kpi, descripcion: `Descripcion de ${kpi.etiqueta}` }));
 const SIN_DESGLOSE_DE_RESTAURANTE = ["Ventas del restaurante", "Ticket promedio", "Propinas del restaurante", "Propina como % de la venta", "Tiempo de entrega", "Cuentas sin cobrar"];
 
-test("con los 47 KPIs del registry: conteos por pestana y los 6 sin desglose de restaurante dentro de Restaurante", () => {
+test("con los 49 KPIs del registry: conteos por pestana y los 6 sin desglose de restaurante dentro de Restaurante", () => {
   const botones = botonesDeModulo(pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false }));
   assert.deepEqual(botones.map((b) => [b.clave, b.texto.match(/(\d+)$/)[1]]), [
-    ["operaciones", "12"], ["crm", "2"], ["asistencias", "7"], ["inventario", "4"], ["facturacion", "4"], ["laboratorio", "3"], ["documentos", "1"], ["restaurante", "14"], ["variables", "11"],
+    ["operaciones", "12"], ["crm", "4"], ["asistencias", "7"], ["inventario", "4"], ["facturacion", "4"], ["laboratorio", "3"], ["documentos", "1"], ["restaurante", "14"], ["variables", "12"],
   ]);
   const restaurante = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "restaurante" });
   assert.equal(filas(restaurante).length, 14, "la pestana Restaurante trae TODOS sus KPIs");
@@ -258,8 +258,8 @@ test("con los 47 KPIs del registry: conteos por pestana y los 6 sin desglose de 
   assert.equal(filas(combinables).length, 6, "los 6 sin desglose, juntos al final");
   assert.ok(!filas(combinables).some((fila) => fila.includes("Mesas ocupadas")), "los de desglose quedan arriba");
   const variables = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "variables" });
-  assert.equal(filas(variables).length, 11);
-  assert.ok(filas(variables).every((fila) => fila.includes("kpi-selector-modulo-tag")), "las 11 tarjetas de Variables llevan su modulo");
+  assert.equal(filas(variables).length, 12);
+  assert.ok(filas(variables).every((fila) => fila.includes("kpi-selector-modulo-tag")), "las 12 tarjetas de Variables llevan su modulo");
   assert.deepEqual(etiquetaDeModulo(variables, "Ticket promedio"), ["restaurante", "Modulo restaurante"]);
   assert.deepEqual(etiquetaDeModulo(variables, "Incidencias pendientes"), ["operaciones", "Modulo operaciones"]);
 });
@@ -299,7 +299,7 @@ test("las pestanas sin KPIs permitidos no aparecen y los contadores son solo de 
   assert.ok(!botones.some((b) => b.clave === "inventario"), "sin KPIs permitidos de inventario no hay pestana");
 });
 
-test("el superusuario ve todo: los 47 KPIs en 7 modulos, mas Asistencias (junto a Operaciones) y Variables", () => {
+test("el superusuario ve todo: los 49 KPIs en 7 modulos, mas Asistencias (junto a Operaciones) y Variables", () => {
   // Un superusuario lo tiene todo permitido: el catalogo es el registry completo.
   const html = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false });
   assert.deepEqual(botonesDeModulo(html).map((b) => b.clave), ["operaciones", "crm", "asistencias", "inventario", "facturacion", "laboratorio", "documentos", "restaurante", "variables"]);
@@ -324,9 +324,9 @@ test("la pestana Asistencias trae los siete KPIs de checadas y Operaciones ya no
   const operaciones = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "operaciones" });
   assert.equal(filas(operaciones).length, 12);
   for (const etiqueta of ETIQUETAS_DE_CHECADAS) assert.ok(!filaDe(operaciones, etiqueta), `${etiqueta} ya no esta en Operaciones`);
-  // Variables no cambia: las mismas 11, ninguna de checadas.
+  // Variables no cambia: las mismas 12, ninguna de checadas.
   const variables = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "variables" });
-  assert.equal(filas(variables).length, 11);
+  assert.equal(filas(variables).length, 12);
   for (const etiqueta of ETIQUETAS_DE_CHECADAS) assert.ok(!filaDe(variables, etiqueta));
 });
 
@@ -359,7 +359,7 @@ test("un rol sin ninguno de los siete, o solo con KPIs de Operaciones, no ve la 
   const todo = pintarSelector({ catalogo: sinChecadas, seleccionados: [], multiple: false });
   assert.ok(!botonesDeModulo(todo).some((b) => b.clave === "asistencias"));
   assert.ok(!todo.includes('data-grupo="asistencias"'));
-  const soloOperaciones = REGISTRY.filter((k) => k.modulo === "operaciones" && !CHECADAS.includes(k.clave));
+  const soloOperaciones = REGISTRY.filter((k) => k.modulo === "operaciones" && !k.grupo);
   const html = pintarSelector({ catalogo: soloOperaciones, seleccionados: [], multiple: false });
   assert.deepEqual(gruposVisibles(html), ["operaciones"]);
   assert.deepEqual(botonesDeModulo(html), [], "una sola pestana: sin fila de botones");

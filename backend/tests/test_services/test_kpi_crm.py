@@ -10,7 +10,9 @@ import unittest
 from datetime import date, datetime
 
 from app.kpis.modulos import crm
-from app.kpis.modulos.crm import clientes_activos_query, clientes_nuevos_query
+from app.kpis.modulos.crm import (
+    clientes_activos_query, clientes_nuevos_query, proyectos_con_entrega_vencida_query, proyectos_por_estado_comercial_query,
+)
 from app.kpis.registry import KPI_POR_CLAVE
 from app.models.session import transaction_context
 from tests.kpi_crm_base import CrmBase
@@ -121,6 +123,125 @@ class ClientesActivosTest(CrmBase):
 
     def test_sin_clientes_activos_escribe_cero_para_no_dejar_pegado_el_valor_de_ayer(self):
         self.assertEqual([(None, HOY, 0)], self._activos())
+
+
+class ProyectosPorEstadoComercialTest(CrmBase):
+    def _por_estado(self, fecha_fin=HOY, actor_project=None):
+        with ahora_local(AHORA), transaction_context() as db:
+            return [tuple(f) for f in proyectos_por_estado_comercial_query(db, fecha_fin, fecha_fin, {}, actor_project)]
+
+    def test_siempre_regresa_las_cuatro_categorias_en_orden_y_con_cero(self):
+        # Solo existe el proyecto interno del admin (id 1), pendiente de orden de compra por omision.
+        self.assertEqual([
+            ("pendiente_orden_compra", HOY, 1), ("autorizado", HOY, 0), ("cancelado", HOY, 0), ("cobrado", HOY, 0),
+        ], self._por_estado())
+
+    def test_cuenta_los_proyectos_vigentes_por_estado_comercial_de_cualquier_cliente_y_estado_de_taller(self):
+        inquilino = self._cliente("Inquilino 1")
+        proveedor = self._cliente("Proveedor", tipo="supplier")
+        self._proyecto(inquilino, estado="draft", comercial="pendiente_orden_compra")
+        self._proyecto(inquilino, estado="in_progress", comercial="autorizado")
+        self._proyecto(proveedor, estado="completed", comercial="autorizado")
+        self._proyecto(inquilino, estado="denied", comercial="cancelado")
+        self._proyecto(inquilino, estado="completed", comercial="cobrado")
+        self._proyecto(inquilino, comercial="autorizado", baja=datetime(2026, 5, 1))      # de baja: no cuenta
+        # (el proyecto interno del admin, id 1, es de un proveedor y esta pendiente de orden de compra por omision)
+        self.assertEqual([
+            ("pendiente_orden_compra", HOY, 2), ("autorizado", HOY, 2), ("cancelado", HOY, 1), ("cobrado", HOY, 1),
+        ], self._por_estado())
+
+    def test_un_estado_comercial_nulo_sale_como_sin_estado_y_solo_cuando_hay(self):
+        self._proyecto(self._cliente("Inquilino 1"), comercial=None)
+        self.assertEqual(
+            ("sin_estado", HOY, 1), self._por_estado()[-1],
+            "al final, despues de las cuatro del catalogo",
+        )
+        self.assertEqual(5, len(self._por_estado()))
+
+    def test_actor_project_se_ignora(self):
+        self._proyecto(self._cliente("Inquilino 1"), comercial="autorizado")
+        self.assertEqual(self._por_estado(actor_project=None), self._por_estado(actor_project=999))
+
+    def test_es_una_foto_de_hoy_un_rango_pasado_no_inventa_filas(self):
+        self._proyecto(self._cliente("Inquilino 1"))
+        self.assertEqual([], self._por_estado(fecha_fin=date(2026, 10, 20)))
+
+
+class ProyectosConEntregaVencidaTest(CrmBase):
+    AYER = date(2026, 10, 27)
+
+    def _vencidos(self, fecha_fin=HOY, actor_project=None):
+        with ahora_local(AHORA), transaction_context() as db:
+            return [tuple(f) for f in proyectos_con_entrega_vencida_query(db, fecha_fin, fecha_fin, {}, actor_project)]
+
+    def test_cuenta_solo_los_proyectos_abiertos_cuya_fecha_de_entrega_ya_paso(self):
+        inquilino = self._cliente("Inquilino 1")
+        self._proyecto(inquilino, entrega=self.AYER)                       # vencido
+        self._proyecto(inquilino, entrega=date(2026, 9, 1))                # vencido hace mas
+        self._proyecto(inquilino, entrega=HOY)                             # vence hoy: todavia no
+        self._proyecto(inquilino, entrega=date(2026, 11, 15))              # en el futuro
+        self._proyecto(inquilino, entrega=None)                            # sin fecha: nunca vence
+        self.assertEqual([(None, HOY, 2)], self._vencidos())
+
+    def test_no_cuentan_terminados_recolectados_rechazados_ni_cancelados(self):
+        inquilino = self._cliente("Inquilino 1")
+        for estado in ("completed", "collected", "denied"):
+            self._proyecto(inquilino, estado=estado, entrega=self.AYER)
+        self._proyecto(inquilino, comercial="cancelado", entrega=self.AYER)
+        self.assertEqual([(None, HOY, 0)], self._vencidos())
+
+    def test_bloqueado_y_detenido_cuentan_si_paso_la_fecha(self):
+        inquilino = self._cliente("Inquilino 1")
+        for estado in ("blocked", "stopped"):
+            self._proyecto(inquilino, estado=estado, entrega=self.AYER)
+        self.assertEqual([(None, HOY, 2)], self._vencidos())
+
+    def test_un_estado_comercial_nulo_no_es_cancelado_y_un_proyecto_de_baja_no_cuenta(self):
+        inquilino = self._cliente("Inquilino 1")
+        self._proyecto(inquilino, comercial=None, entrega=self.AYER)
+        self._proyecto(inquilino, entrega=self.AYER, baja=datetime(2026, 10, 1))
+        self.assertEqual([(None, HOY, 1)], self._vencidos())
+
+    def test_actor_project_se_ignora_y_sin_vencidos_escribe_cero(self):
+        self.assertEqual([(None, HOY, 0)], self._vencidos(actor_project=999))
+
+    def test_es_una_foto_de_hoy_un_rango_pasado_no_inventa_filas(self):
+        self._proyecto(self._cliente("Inquilino 1"), entrega=date(2026, 9, 1))
+        self.assertEqual([], self._vencidos(fecha_fin=date(2026, 10, 20)))
+
+
+class DefinicionesDeProyectosTest(unittest.TestCase):
+    def test_son_de_operaciones_con_grupo_crm_y_sin_alcance_de_proyecto(self):
+        for clave in ("proyectos_por_estado_comercial", "proyectos_con_entrega_vencida"):
+            kpi = KPI_POR_CLAVE[clave]
+            self.assertEqual("operaciones", kpi.modulo, f"{clave}: el modulo real no cambia (licencias, permisos, job)")
+            self.assertEqual("crm", kpi.grupo, clave)
+            self.assertFalse(kpi.alcance_proyecto, clave)
+            self.assertEqual("ultimo", kpi.agregacion, f"{clave}: es una foto, sumar las noches la multiplicaria")
+            self.assertEqual("snapshot", kpi.modo, clave)
+
+    def test_la_dona_de_estado_comercial_es_neutral_con_colores_y_etiquetas_de_cada_categoria(self):
+        kpi = KPI_POR_CLAVE["proyectos_por_estado_comercial"]
+        self.assertEqual(("estado",), kpi.dimensiones)
+        self.assertEqual("dona", kpi.grafica_default)
+        self.assertEqual("neutral", kpi.direccion)
+        categorias = set(crm.COMERCIAL_CATEGORIAS)
+        self.assertEqual(categorias, set(kpi.colores_categoria))
+        self.assertEqual(categorias, set(kpi.etiquetas_categoria))
+        self.assertEqual(crm.COMERCIAL_CATEGORIAS, kpi.orden_categorias)
+        self.assertEqual({"pendiente_orden_compra", "autorizado", "cancelado", "cobrado"}, set(crm.MANAGEMENT_STATUSES))
+
+    def test_las_etiquetas_son_neutrales_sin_terminos_de_coworking(self):
+        kpi = KPI_POR_CLAVE["proyectos_por_estado_comercial"]
+        textos = " ".join([kpi.etiqueta, kpi.descripcion, *kpi.etiquetas_categoria.values()]).lower()
+        for palabra in ("coworking", "inquilino", "oficina", "renta", "espacio", "membres"):
+            self.assertNotIn(palabra, textos)
+
+    def test_la_entrega_vencida_es_un_numero_donde_menos_es_mejor(self):
+        kpi = KPI_POR_CLAVE["proyectos_con_entrega_vencida"]
+        self.assertEqual(("global",), kpi.dimensiones)
+        self.assertEqual("bajo_es_mejor", kpi.direccion)
+        self.assertEqual("numero", kpi.grafica_default)
 
 
 class DefinicionesDeClientesTest(unittest.TestCase):

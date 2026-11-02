@@ -68,6 +68,26 @@ class JobDeCrmTest(BackendTestCase):
         self._correr(("clientes_activos",))
         self.assertEqual([(HOY, {}, Decimal("1"))], [tuple(f) for f in self._snapshots("clientes_activos")])
 
+    def test_proyectos_por_estado_comercial_escribe_una_fila_por_categoria_sin_multiplicar_por_proyecto(self):
+        inquilino = self._cliente("Inquilino 4")
+        for _ in range(3):
+            self._proyecto(inquilino, comercial="autorizado")
+        self._proyecto(inquilino, comercial="cobrado", estado="completed")
+        self._correr(("proyectos_por_estado_comercial",))
+        filas = {tuple(f[1].items())[0][1]: (f[0], f[2]) for f in self._snapshots("proyectos_por_estado_comercial")}
+        # El proyecto interno del admin (id 1) esta pendiente de orden de compra por omision.
+        self.assertEqual({
+            "pendiente_orden_compra": (HOY, Decimal("1")), "autorizado": (HOY, Decimal("3")),
+            "cancelado": (HOY, Decimal("0")), "cobrado": (HOY, Decimal("1")),
+        }, filas, "una fila por categoria, con la llave 'estado' y sin id_proyect: 3 autorizados, no 3 x N")
+
+    def test_proyectos_con_entrega_vencida_se_escribe_una_sola_vez(self):
+        inquilino = self._cliente("Inquilino 4")
+        for _ in range(3):
+            self._proyecto(inquilino, entrega=date(2026, 10, 1))
+        self._correr(("proyectos_con_entrega_vencida",))
+        self.assertEqual([(HOY, {}, Decimal("3"))], [tuple(f) for f in self._snapshots("proyectos_con_entrega_vencida")])
+
 
 if __name__ == "__main__":
     unittest.main()

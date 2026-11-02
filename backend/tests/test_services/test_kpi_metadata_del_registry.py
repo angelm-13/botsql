@@ -64,10 +64,11 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
         for clave in ("material_por_estado", "incidencias_abiertas_vs_cerradas"):
             with self.subTest(clave=clave):
                 self.assertIsNone(KPI_POR_CLAVE[clave].orden_categorias)
-        # Solo los de categorias con un orden de lectura propio: las ordinales de antiguedad y los
-        # estados de la pieza (de lo normal a lo grave).
+        # Solo los de categorias con un orden de lectura propio: las ordinales de antiguedad, los
+        # estados de la pieza (de lo normal a lo grave) y los de proyectos de la pestana CRM.
         self.assertEqual(
-            ["prestamos_abiertos_por_antiguedad", "piezas_por_estado", "pedidos_del_dia", "mesas_ocupadas"],
+            ["prestamos_abiertos_por_antiguedad", "piezas_por_estado", "pedidos_del_dia", "mesas_ocupadas",
+             "proyectos_por_estado_comercial"],
             [kpi.clave for kpi in KPI_REGISTRY if kpi.orden_categorias is not None],
         )
 

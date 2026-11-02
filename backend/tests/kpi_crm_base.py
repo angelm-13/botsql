@@ -6,7 +6,7 @@ directamente: `backend/ci/run_postgres_tests.sh` clasifica el archivo por la cla
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import text, update
 
 from app.models import CustomerSupplier, Department, Level, Permission, Proyect, Status, Subdepartment, User
 from app.models.session import engine, transaction_context
@@ -63,6 +63,11 @@ class Siembra:
                 proyect_description=f"Oficina {self._siguiente}", proyect_status=estado, management_status=comercial,
                 delivery_date=entrega, deletion_date=baja,
             ))
+            db.flush()
+            if comercial is None:
+                # El ORM completa un `management_status` None con el valor por omision (`pendiente_orden_compra`): un NULL
+                # de verdad (que la columna admite) hay que escribirlo despues.
+                db.execute(update(Proyect).where(Proyect.id_proyect == self._siguiente).values(management_status=None))
         return self._siguiente
 
 
