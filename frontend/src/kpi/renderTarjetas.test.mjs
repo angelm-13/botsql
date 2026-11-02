@@ -141,6 +141,17 @@ test("el cuerpo se pinta con datos, con comparacion y vacio para cada tipo de gr
   }
 });
 
+test("un KPI global en barras o linea ya guardado SIN agrupar_por (widget 139) pinta su serie por dia, no 'Sin datos'", () => {
+  // `ingresos_totales` es global: el servidor manda `por_empleado` vacio y la serie en `por_periodo`.
+  const snapshot = { rango_a: { total: 8, n_filas: 3, calculado: true, por_empleado: {}, por_periodo: { "2026-09-05": 1, "2026-09-13": 1, "2026-10-09": 6 } }, rango_b: null };
+  for (const tipo of ["barras", "linea", "area"]) {
+    const widget = { id_kpi_dashboard_widget: 139, tipo_grafica: tipo, ids_kpi_definition: [4], parametros: PARAMETROS["viejo, fechas absolutas"] };
+    const html = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot }) });
+    assert.ok(!html.includes("Sin datos en el periodo"), `${tipo}: no debe decir 'Sin datos' con filas en el rango`);
+    assert.match(html, /3 puntos de datos/, `${tipo}: una barra o punto por dia`);
+  }
+});
+
 test("un 0 calculado, 'sin datos en el periodo' y 'no calculado' se ven distintos, tambien en el numero", () => {
   const rango = (extra) => ({ rango_a: { total: 0, por_empleado: {}, por_periodo: {}, ...extra }, rango_b: null });
   for (const tipo of ["numero", "barras", "dona"]) {

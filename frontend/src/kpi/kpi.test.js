@@ -22,7 +22,7 @@ import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
 } from "./kpiSelector.js";
 import {
-  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  agruparPorEfectivo, armarParametros, columnasDeWidget, debeAgruparPorPeriodo, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
   tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
 } from "./kpiParametros.js";
 import {
@@ -417,6 +417,34 @@ test("armarParametros: lo mismo que guardaba el editor antes (numeros, colores v
   // Sin bajo stock el umbral no se guarda; sin comparar no hay rango B.
   const simple = armarParametros({ ...BORRADOR, comparar: false, agruparPor: "entidad", empleadosSeleccionados: [], coloresKpi: {} }, {});
   assert.deepEqual(simple, { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31" });
+});
+
+// --- KPI global en barras/linea/area: la serie es por dia -------------------------------------------------------------
+const GLOBAL = { id_kpi_definition: 337, clave: "clientes_nuevos", dimensiones: ["global"] };
+const POR_PERSONA = { id_kpi_definition: 3, clave: "x", dimensiones: ["empleado"] };
+
+test("debeAgruparPorPeriodo: solo un KPI global en barras, linea o area; ni el numero, la dona, la tabla ni uno con desglose", () => {
+  for (const tipo of ["barras", "linea", "area"]) assert.equal(debeAgruparPorPeriodo(tipo, [GLOBAL]), true, tipo);
+  for (const tipo of ["numero", "dona", "tabla"]) assert.equal(debeAgruparPorPeriodo(tipo, [GLOBAL]), false, tipo);
+  assert.equal(debeAgruparPorPeriodo("barras", [POR_PERSONA]), false);
+  assert.equal(debeAgruparPorPeriodo("barras", [GLOBAL, POR_PERSONA]), false);
+  assert.equal(debeAgruparPorPeriodo("barras", []), false);
+  assert.equal(debeAgruparPorPeriodo("barras", [undefined]), false, "un KPI que no esta en el catalogo no fuerza nada");
+});
+
+test("agruparPorEfectivo (camino de LECTURA): un widget global ya guardado sin agrupar_por se consulta por periodo", () => {
+  assert.equal(agruparPorEfectivo({ fecha_inicio: "2026-08-05" }, "barras", [GLOBAL]), "periodo");
+  assert.equal(agruparPorEfectivo(undefined, "linea", [GLOBAL]), "periodo");
+  assert.equal(agruparPorEfectivo({}, "barras", [POR_PERSONA]), "entidad");
+  assert.equal(agruparPorEfectivo({ agrupar_por: "periodo" }, "barras", [POR_PERSONA]), "periodo", "lo guardado se respeta");
+});
+
+test("armarParametros (camino de GUARDADO): un KPI global en barras guarda agrupar_por=periodo aunque el borrador diga entidad", () => {
+  const borrador = { ...BORRADOR, tipoGrafica: "barras", idsKpiSeleccionados: ["337"], comparar: false, empleadosSeleccionados: [], coloresKpi: {}, agruparPor: "entidad" };
+  assert.equal(armarParametros(borrador, { kpiInfos: [GLOBAL] }).agrupar_por, "periodo");
+  assert.equal(armarParametros(borrador, { kpiInfos: [POR_PERSONA] }).agrupar_por, undefined);
+  assert.equal(armarParametros({ ...borrador, tipoGrafica: "numero" }, { kpiInfos: [GLOBAL] }).agrupar_por, undefined);
+  assert.equal(widgetDeBorrador(borrador, { kpiInfos: [GLOBAL] }).parametros.agrupar_por, "periodo");
 });
 
 test("armarParametros: una tabla (KPI vivo) no guarda periodo ni filtros", () => {

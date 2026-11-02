@@ -38,7 +38,7 @@ import {
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  armarParametros, columnasDeWidget, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
+  agruparPorEfectivo, armarParametros, columnasDeWidget, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
@@ -1200,7 +1200,8 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady, refresco = 0 }) {
   const fechaFinB = parametros.fecha_fin_b;
   const empleadosKey = Array.isArray(parametros.empleados) ? parametros.empleados.join(",") : "";
   const equiposKey = Array.isArray(parametros.id_teams) ? parametros.id_teams.join(",") : "";
-  const agruparPor = parametros.agrupar_por === "periodo" ? "periodo" : "entidad";
+  // Un KPI global en barras/linea/area se consulta por dia aunque el widget guardado no lo diga (ver agruparPorEfectivo).
+  const agruparPor = agruparPorEfectivo(parametros, widget.tipo_grafica, kpiInfos);
   // Un widget "tabla" solo tiene sentido con un unico KPI "vivo" (hoy,
   // material_prestado_actual) -- ver KpiWidgetPanel, que ya restringe la
   // seleccion a eso para este tipo de grafica. Cualquier otra combinacion
@@ -1706,7 +1707,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
   const parametros = widget.parametros || {};
-  const agruparPorPeriodo = parametros.agrupar_por === "periodo";
+  const agruparPorPeriodo = agruparPorEfectivo(parametros, widget.tipo_grafica, kpiInfos) === "periodo";
   const labelForId = agruparPorPeriodo
     ? (id) => id
     : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel, etiquetasDeSnapshots(snapshots));
@@ -2075,7 +2076,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     if (tituloConHtml(titulo)) rechazar(tx("chart_title_html", "El título no puede llevar etiquetas HTML."));
     // Lo que se valida es lo que se va a guardar (armarParametros): con un
     // chip relativo, las fechas ya vienen calculadas al dia de hoy.
-    const parametros = armarParametros(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado });
+    const parametros = armarParametros(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado, kpiInfos: kpisSeleccionadosInfo });
     if (!esTabla) {
       if (!parametros.fecha_inicio || !parametros.fecha_fin) rechazar(tx("range_required", "Elige el rango de fechas."));
       if (diffDias(parametros.fecha_inicio, parametros.fecha_fin) > KPI_RANGO_DIAS_MAX) {
@@ -2514,7 +2515,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                     <span className="muted">{kpisSeleccionadosInfo[0].descripcion}</span>
                   )}
                   <VistaPreviaEditor
-                    widget={widgetDeBorrador(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado })}
+                    widget={widgetDeBorrador(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado, kpiInfos: kpisSeleccionadosInfo })}
                     kpiCatalog={kpiCatalog}
                     userLabel={userLabel}
                     productLabel={productLabel}

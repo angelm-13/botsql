@@ -45,14 +45,33 @@ export function tituloDeWidget(parametros, nombreDeLosKpis) {
   return normalizarTitulo(parametros?.titulo) || nombreDeLosKpis;
 }
 
+// Tipos de grafica que dibujan una serie (barras, linea, area): con un KPI global esa serie solo puede ser por dia.
+const TIPOS_DE_SERIE = ["barras", "linea", "area"];
+
+/** Un KPI global (sin desglose: "clientes nuevos", ingresos totales) en barras, linea o area solo tiene una serie: la de cada dia.
+ * El servidor, en el modo por entidad, devuelve `por_empleado` vacio para un KPI global y la grafica salia como "Sin datos en el
+ * periodo" aunque hubiera filas; y el editor no ofrece "Agrupar por" en un KPI global, asi que el usuario no puede corregirlo.
+ * `kpiInfos`: los KPIs elegidos; con alguno sin desglose por dia (o ninguno conocido) no se fuerza nada. */
+export function debeAgruparPorPeriodo(tipoGrafica, kpiInfos) {
+  const infos = (kpiInfos || []).filter(Boolean);
+  return TIPOS_DE_SERIE.includes(tipoGrafica) && infos.length > 0 && infos.every((info) => info.dimensiones?.[0] === "global");
+}
+
+/** `"periodo"` o `"entidad"` con el que se consulta y se pinta un widget: lo guardado, salvo que el KPI global lo fuerce.
+ * Sirve tambien a los widgets ya guardados sin `agrupar_por` (se corrigen al leer, sin editarlos). */
+export function agruparPorEfectivo(parametros, tipoGrafica, kpiInfos) {
+  return parametros?.agrupar_por === "periodo" || debeAgruparPorPeriodo(tipoGrafica, kpiInfos) ? "periodo" : "entidad";
+}
+
 /** Los `parametros` de un widget a partir del borrador del editor.
  *
  * - `esTabla`: un widget de tabla (KPI "vivo") son datos de "ahora": no guarda
  *   periodo, filtros ni colores.
  * - `tieneBajoStock`: el umbral solo se guarda si el KPI "articulos_bajo_stock"
  *   esta entre los elegidos (se captura en el widget, no en una columna).
+ * - `kpiInfos`: los KPIs elegidos (del catalogo); un KPI global en barras/linea/area guarda `agrupar_por: "periodo"`.
  */
-export function armarParametros(estado, { esTabla = false, tieneBajoStock = false, hoy = new Date() } = {}) {
+export function armarParametros(estado, { esTabla = false, tieneBajoStock = false, kpiInfos = [], hoy = new Date() } = {}) {
   // Una tabla son datos de "ahora": sin periodo ni filtros. Lo unico que guarda es su tamano
   // (`columnas`, `filas`), y solo cuando es doble: ausente = 1, que es como se ven las tablas
   // anteriores.
@@ -104,7 +123,7 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
     estado.idsKpiSeleccionados.filter((id) => estado.coloresKpi[id]).map((id) => [id, estado.coloresKpi[id]]),
   );
   if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
-  if (estado.agruparPor === "periodo") parametros.agrupar_por = "periodo";
+  if (agruparPorEfectivo({ agrupar_por: estado.agruparPor }, estado.tipoGrafica, kpiInfos) === "periodo") parametros.agrupar_por = "periodo";
   const titulo = normalizarTitulo(estado.titulo);
   if (titulo) parametros.titulo = titulo;
   if (tieneBajoStock && estado.umbralBajoStock !== "" && Number.isFinite(Number(estado.umbralBajoStock))) {
