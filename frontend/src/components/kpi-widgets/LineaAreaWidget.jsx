@@ -25,7 +25,7 @@ export default function LineaAreaWidget({
         />
         <YAxis
           tick={EJE} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje}
-          {...(soloEnteros ? { allowDecimals: false, domain: [0, "dataMax"] } : {})}
+          {...(soloEnteros ? { allowDecimals: false, domain: [0, "auto"] } : {})}
         />
         <Tooltip content={<TooltipRico series={series} />} />
         {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}

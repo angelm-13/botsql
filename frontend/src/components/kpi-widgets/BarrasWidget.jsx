@@ -64,8 +64,8 @@ export default function BarrasWidget({
   // barras "crecieran" de nuevo a cada clic.
   const [yaAnimo, setYaAnimo] = useState(false);
   const marcaDeEje = { fontSize: 11, fill: "var(--kpi-texto-suave)" };
-  // Un conteo no tiene marcas con decimales: el eje numerico solo marca enteros y arranca en 0.
-  const ejeNumerico = soloEnteros ? { allowDecimals: false, domain: [0, "dataMax"] } : {};
+  // Un conteo no tiene marcas con decimales: el eje numerico solo marca enteros y arranca en 0 (el tope lo redondea Recharts: 0, 25, 50, 75, no el maximo exacto).
+  const ejeNumerico = soloEnteros ? { allowDecimals: false, domain: [0, "auto"] } : {};
   const recortar = (valor) => recortarEtiqueta(rotulo(valor), diseno.maxCaracteres);
   return (
     <>

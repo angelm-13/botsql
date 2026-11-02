@@ -53,6 +53,9 @@ test("barras (verticales) con valores 2, 1, 1: con soloEnteros el eje no tiene d
   const con = marcas(pintarBarras({ datos, series, campoEtiqueta: "name", soloEnteros: true }));
   assert.ok(con.length > 0 && con.every((m) => !m.includes(".")), `eje entero: ${con}`);
   assert.equal(con[0], "0", "arranca en 0");
+  // El tope no es el maximo exacto (88, 19...) sino un numero redondo: con valores 70 y 88 salen marcas de 25 en 25.
+  const grandes = marcas(pintarBarras({ datos: [{ id: "a", name: "A", a: 70 }, { id: "b", name: "B", a: 88 }], series, campoEtiqueta: "name", soloEnteros: true }));
+  assert.ok(grandes.every((m) => !m.includes(".")) && !grandes.includes("88"), `tope redondo, no el maximo: ${grandes}`);
 });
 
 test("barras horizontales (desde 13 categorias): el eje numerico X tambien es entero", () => {
