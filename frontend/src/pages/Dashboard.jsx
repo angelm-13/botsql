@@ -1778,7 +1778,9 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
       nombres: nombresDeLaGrafica, datos: props.datos, claveValor: "valor", campoEtiqueta: "categoria",
       formatear: props.formatearValor, textos: textosDescripcion,
     });
-    return <Componente {...props} descripcion={descripcion} animar={animar} />;
+    const textoRecorteDona = (mostradas, total) => tx("showing_n_of_total", "Mostrando {n} de {total}")
+      .replace("{n}", mostradas).replace("{total}", total);
+    return <Componente {...props} descripcion={descripcion} animar={animar} textoRecorte={textoRecorteDona} />;
   }
 
   const props = propsSeries({

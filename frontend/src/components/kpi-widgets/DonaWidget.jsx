@@ -26,7 +26,7 @@ TooltipDona.defaultProps = { active: false, payload: null };
  * dimension abierta a una dona de estado con catalogo cerrado. El color
  * nunca es la unica senal: la leyenda siempre trae el nombre de la
  * categoria en texto junto al punto de color. */
-export default function DonaWidget({ datos, animar, formatearValor, conPatrones, descripcion, totalCentro }) {
+export default function DonaWidget({ datos, animar, formatearValor, conPatrones, descripcion, totalCentro, recorte, textoRecorte }) {
   const [resaltado, setResaltado] = useState(null);
   const idBase = useId().replace(/:/g, "");
 
@@ -82,6 +82,7 @@ export default function DonaWidget({ datos, animar, formatearValor, conPatrones,
           </li>
         ))}
       </ul>
+      {recorte && <p className="kpi-barras-recorte">{textoRecorte(recorte.mostradas, recorte.total)}</p>}
     </div>
   );
 }
@@ -100,5 +101,9 @@ DonaWidget.propTypes = {
   descripcion: PropTypes.string,
   // El total al centro (`totalCentroDeDona`): solo cuando las rebanadas suman un total con sentido.
   totalCentro: PropTypes.shape({ texto: PropTypes.string.isRequired, detalle: PropTypes.string.isRequired, fuente: PropTypes.number.isRequired }),
+  // Un KPI que no se suma (porcentaje, promedio) no agrupa "Otros": `recorte` = { mostradas, total } cuando hay mas rebanadas de las que caben.
+  recorte: PropTypes.shape({ mostradas: PropTypes.number.isRequired, total: PropTypes.number.isRequired }),
+  // (mostradas, total) -> "Mostrando 12 de 15"; lo pone la pantalla para poder traducirlo.
+  textoRecorte: PropTypes.func,
 };
-DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor), conPatrones: false, descripcion: "", totalCentro: null };
+DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor), conPatrones: false, descripcion: "", totalCentro: null, recorte: null, textoRecorte: (mostradas, total) => `Mostrando ${mostradas} de ${total}` };

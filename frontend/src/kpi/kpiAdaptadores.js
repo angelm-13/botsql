@@ -7,9 +7,9 @@
 // que producir exactamente los mismos datos que antes. Lo unico que cambia
 // es QUIEN los pinta.
 import {
-  COLOR_OTHERS, CATEGORICAL, buildMultiSeriesData, buildPieData, buildSeriesData,
+  COLOR_OTHERS, CATEGORICAL, DIMENSIONES_ABIERTAS, buildMultiSeriesData, buildPieData, buildSeriesData, entradasPorModo,
   colorDeCategoriaEstado, colorDePersona, colorEfectivoDeKpi, esKpiPorPersona, esUnidadDeConteo, formatConUnidad,
-  kpiSeriesLabel, ordenarPorCategorias, unidadInfo,
+  kpiSeriesLabel, ordenarPorCategorias, unidadInfo, valoresNoSumables,
 } from "./kpiDatos.js";
 import { anchoDelEje, ejeSoloEnteros, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
 import { etiquetasDePersonas } from "./kpiNombreCorto.js";
@@ -189,7 +189,13 @@ export function totalCentroDeDona(datos, kpiInfo, formatNumber, textos = {}) {
 /** Props de DonaWidget. */
 export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos, relleno = "solido" }) {
   const dimension = kpiInfo?.dimensiones?.[0];
-  const crudas = buildPieData(snapshot, labelForId, textos.otros, agruparPorPeriodo, dimension, kpiInfo?.dimension_abierta);
+  const noSumable = valoresNoSumables(kpiInfo);
+  const crudas = buildPieData(snapshot, labelForId, textos.otros, agruparPorPeriodo, dimension, kpiInfo?.dimension_abierta, noSumable);
+  // Un KPI que no se suma no agrupa el sobrante en "Otros": si hay mas rebanadas de las que caben, se dice cuantas se muestran.
+  const totalDeRebanadas = Object.keys(entradasPorModo(snapshot?.rango_a, agruparPorPeriodo)).length;
+  const recorte = noSumable && (kpiInfo?.dimension_abierta ?? DIMENSIONES_ABIERTAS.has(dimension)) && totalDeRebanadas > crudas.length
+    ? { mostradas: crudas.length, total: totalDeRebanadas }
+    : null;
   const rebanadas = agruparPorPeriodo ? crudas : ordenarPorCategorias(crudas, kpiInfo?.orden_categorias);
   const coloresCategoria = kpiInfo?.colores_categoria;
   // Dimension "persona": cada rebanada lleva el color de SU persona; "Otros" (id null) y "Sin asignar" en gris.
@@ -207,7 +213,7 @@ export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, fo
   // Las texturas salen solo si el usuario las eligio (`relleno`), en cualquier dona por categorias.
   const conPatrones = relleno === "textura" && datos.length > 0;
   return {
-    datos, conPatrones, formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad),
+    datos, conPatrones, recorte, formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad),
     totalCentro: totalCentroDeDona(datos, kpiInfo, formatNumber, textos),
   };
 }

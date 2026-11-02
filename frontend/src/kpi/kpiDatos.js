@@ -312,7 +312,18 @@ export function kpiSeriesLabel(kpiInfo, index) {
 // alguien una categoria real detras de un "Otros" que nunca hacia falta.
 export const DIMENSIONES_ABIERTAS = new Set(["empleado", "producto"]);
 
-export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo, dimension, abiertaDeclarada) {
+// Cuantas rebanadas se dibujan de un KPI que NO se suma (un porcentaje, un promedio): sin "Otros", las N primeras.
+export const MAXIMO_DE_REBANADAS_SIN_OTROS = 12;
+
+/** Si los valores del KPI se pueden sumar entre categorias. Un porcentaje o un promedio (`promedio_ponderado`) no: 4 personas al 83 % no son
+ * un "Otros" del 333 %, y la API no manda el peso de cada una para promediarlas bien. */
+export function valoresNoSumables(kpiInfo) {
+  return kpiInfo?.unidad === "porcentaje" || kpiInfo?.agregacion === "promedio_ponderado";
+}
+
+/** Las rebanadas de una dona. `noSumable` (ver `valoresNoSumables`): en una dimension abierta NO se agrupa el sobrante en "Otros" (sumar
+ * porcentajes no tiene sentido): salen todas las rebanadas hasta `MAXIMO_DE_REBANADAS_SIN_OTROS`, ordenadas de mayor a menor. */
+export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo, dimension, abiertaDeclarada, noSumable = false) {
   const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
   const entradas = agruparPorPeriodo
     ? Object.entries(porA).sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
@@ -320,6 +331,9 @@ export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriod
   const abierta = abiertaDeclarada ?? DIMENSIONES_ABIERTAS.has(dimension);
   if (!abierta) {
     return entradas.map(([id, valor]) => ({ id, name: labelForId(id), value: valor }));
+  }
+  if (noSumable) {
+    return entradas.slice(0, MAXIMO_DE_REBANADAS_SIN_OTROS).map(([id, valor]) => ({ id, name: labelForId(id), value: valor }));
   }
   const principales = entradas.slice(0, CATEGORICAL.length);
   const restoTotal = entradas.slice(CATEGORICAL.length).reduce((suma, [, valor]) => suma + valor, 0);
