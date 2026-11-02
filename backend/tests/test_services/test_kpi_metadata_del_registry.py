@@ -290,19 +290,22 @@ class GrupoDelSelectorTest(unittest.TestCase):
                 agregacion="suma", grupo=grupo,
             )
 
-        with mock.patch.object(registry, "KPI_REGISTRY", (kpi("asistencias"),)):
-            registry._validar()  # no revienta
+        for bueno in ("asistencias", "crm"):
+            with self.subTest(grupo=bueno), mock.patch.object(registry, "KPI_REGISTRY", (kpi(bueno),)):
+                registry._validar()  # no revienta
         for malo in ("asistenciass", "operaciones", ""):
             with self.subTest(grupo=malo), mock.patch.object(registry, "KPI_REGISTRY", (kpi(malo),)):
                 with self.assertRaisesRegex(RuntimeError, "grupo desconocido"):
                     registry._validar()
 
-    def test_un_grupo_no_se_llama_como_un_modulo_real(self):
+    def test_un_grupo_solo_se_llama_como_un_modulo_real_si_es_crm_a_proposito(self):
         # La pestana se identifica por una sola clave: la de su grupo o, si no tiene, la de su modulo. Si un grupo
-        # se llamara como un modulo, el selector fundiria las dos pestanas en una.
+        # se llamara como un modulo, el selector fundiria las dos pestanas en una. Con "crm" eso es justo lo que se
+        # quiere: los KPIs de clientes (`modulo="crm"`) y los de proyectos y tareas (`grupo="crm"`) comparten pestana.
+        # Cualquier otro grupo que coincida con un modulo seria un descuido.
         from app.modules.registry import MODULO_POR_CLAVE
 
-        self.assertEqual(set(), set(registry.GRUPOS_DE_SELECTOR) & set(MODULO_POR_CLAVE))
+        self.assertEqual({"crm"}, set(registry.GRUPOS_DE_SELECTOR) & set(MODULO_POR_CLAVE))
 
     def test_el_grupo_no_es_una_columna_de_kpi_definition(self):
         # Vive en el registry y la API lo entrega desde ahi (como `direccion` o `descripcion`): no hay migracion.

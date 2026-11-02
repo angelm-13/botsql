@@ -103,7 +103,12 @@ UNIDADES = ("numero", "porcentaje", "moneda", "dias", "piezas", "minutos")
 # en vez de en la de su `modulo`, pero su modulo no cambia: licencias (`modulo_habilitado`), permisos, el job y el
 # PDF siguen leyendo `modulo`. Vocabulario cerrado, igual que las demas listas de aqui: un `grupo` mal escrito
 # dejaria al KPI en una pestana que el frontend no conoce, y revienta al importar.
-GRUPOS_DE_SELECTOR = ("asistencias",)
+#
+# "crm" es la unica que SI se llama como un modulo real (`crm`, el de los clientes) y es a proposito: la pestana CRM
+# junta los KPIs de clientes (`modulo="crm"`, que ya salen en ella por su modulo) con los de proyectos y tareas
+# (`modulo="operaciones"`, `grupo="crm"`), que en el Gestor de roles se ven bajo CRM. Como la clave de la pestana es
+# la misma, el selector las junta en una sola en vez de partirlas.
+GRUPOS_DE_SELECTOR = ("asistencias", "crm")
 
 # Vocabulario cerrado de dimensiones: las claves del catalogo de
 # `app/kpis/dimensiones.py` (las cinco de siempre, en su orden, y despues las de

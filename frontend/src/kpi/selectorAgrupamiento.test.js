@@ -25,6 +25,8 @@ const CHECADAS = [
   "checadas_con_duracion_anomala",
 ];
 const delCatalogo = (...lista) => CATALOGO.filter((k) => lista.includes(k.clave));
+// El orden fijo de las pestañas, solo con las que el catálogo trae (un módulo sin KPIs no tiene pestaña).
+const ORDEN_PRESENTE = ORDEN_DE_MODULOS.filter((pestana) => CATALOGO.some((kpi) => pestanaDeKpi(kpi) === pestana));
 
 const SIN_DESGLOSE_DE_RESTAURANTE = [
   "ventas_restaurante", "ticket_promedio", "propinas_restaurante", "propina_pct_de_venta", "tiempo_de_entrega", "cuentas_sin_cobrar",
@@ -63,7 +65,7 @@ test("cada KPI está en SU pestaña (su grupo si lo tiene, si no su módulo), co
   }
   const totales = Object.fromEntries(grupos.filter((g) => !g.esVariables).map((g) => [g.clave, g.kpis.length]));
   assert.deepEqual(totales, { operaciones: 12, asistencias: 7, inventario: 4, facturacion: 4, laboratorio: 3, documentos: 1, restaurante: 14 });
-  assert.deepEqual(grupos.map((g) => g.clave), [...ORDEN_DE_MODULOS, "variables"], "orden fijo y Variables al final");
+  assert.deepEqual(grupos.map((g) => g.clave), [...ORDEN_PRESENTE, "variables"], "orden fijo y Variables al final");
 });
 
 test("los sin desglose van al final de su pestaña, como combinables; los de restaurante ya no se pierden en Variables", () => {
@@ -154,7 +156,7 @@ test("un módulo nuevo (logística, RH, POS) cae solo en su pestaña, sin tocar 
     { id_kpi_definition: 103, clave: "rotacion", etiqueta: "Rotación", modulo: "rh", dimensiones: ["global"], unidad: "porcentaje" },
   ];
   const grupos = agruparKpis([...CATALOGO, ...nuevos]);
-  assert.deepEqual(grupos.map((g) => g.clave), [...ORDEN_DE_MODULOS, "logistica", "pos", "rh", "variables"], "después de los conocidos, por nombre; Variables al final");
+  assert.deepEqual(grupos.map((g) => g.clave), [...ORDEN_PRESENTE, "logistica", "pos", "rh", "variables"], "después de los conocidos, por nombre; Variables al final");
   assert.deepEqual(ids(grupoDe(grupos, "logistica").kpis), [101]);
   assert.deepEqual(ids(grupoDe(grupos, "pos").combinables), [102], "solo sin desglose: igual tiene su pestaña");
   assert.equal(grupoDe(grupos, "pos").conDesglose.length, 0);
@@ -269,7 +271,39 @@ test("la regla de unidades dentro de Asistencias no cambia: otra unidad se bloqu
   assert.equal(estadoDeOpcion({ kpi: otraUnidad, seleccionados: elegido, catalogo: CATALOGO, multiple: false }).motivo, null);
 });
 
-test("un grupo y un módulo con la misma clave se fundirían: el orden fijo lista Asistencias justo después de Operaciones", () => {
-  assert.deepEqual(ORDEN_DE_MODULOS.slice(0, 2), ["operaciones", "asistencias"]);
+test("el orden fijo lista CRM justo después de Operaciones y Asistencias a continuación", () => {
+  assert.deepEqual(ORDEN_DE_MODULOS.slice(0, 3), ["operaciones", "crm", "asistencias"]);
   assert.equal(new Set(ORDEN_DE_MODULOS).size, ORDEN_DE_MODULOS.length, "sin claves repetidas");
+});
+
+// --- pestaña CRM: el módulo `crm` (clientes) y el grupo `crm` (proyectos y tareas, de operaciones) son UNA pestaña ----
+const KPI_CRM = (id, clave, modulo, grupo, dimension = "estado") => ({
+  id_kpi_definition: id, clave, etiqueta: clave, modulo, grupo, dimensiones: [dimension], unidad: "numero",
+});
+const DE_CLIENTES = KPI_CRM(901, "clientes_nuevos", "crm", "crm", "global");
+const DE_PROYECTOS = KPI_CRM(902, "proyectos_por_estado_comercial", "operaciones", "crm");
+const DE_TAREAS = KPI_CRM(903, "tareas_bloqueadas_por_responsable", "operaciones", "crm", "empleado");
+const DE_OPERACIONES = KPI_CRM(904, "incidencias_abiertas_por_empleado", "operaciones", null, "empleado");
+
+test("los KPIs de clientes (módulo crm) y los de proyectos y tareas (grupo crm) comparten UNA pestaña CRM; su módulo real no cambia", () => {
+  const catalogo = [DE_OPERACIONES, DE_CLIENTES, DE_PROYECTOS, DE_TAREAS];
+  const grupos = agruparKpis(catalogo);
+  assert.deepEqual(grupos.map((g) => g.clave), ["operaciones", "crm", "variables"], "Operaciones, CRM justo después, y Variables al final");
+  assert.deepEqual(claves(grupoDe(grupos, "crm").kpis).sort(), ["clientes_nuevos", "proyectos_por_estado_comercial", "tareas_bloqueadas_por_responsable"]);
+  assert.deepEqual(claves(grupoDe(grupos, "operaciones").kpis), ["incidencias_abiertas_por_empleado"], "los de proyectos y tareas ya no están en Operaciones");
+  assert.deepEqual(claves(grupoDe(grupos, "crm").combinables), ["clientes_nuevos"], "el único sin desglose va como combinable");
+  assert.equal(DE_PROYECTOS.modulo, "operaciones", "licencias, permisos y job siguen leyendo el módulo");
+  assert.equal(pestanaDeKpi(DE_PROYECTOS), "crm");
+  assert.equal(pestanaDeKpi(DE_CLIENTES), "crm");
+});
+
+test("un rol con solo los KPIs de clientes, o solo los de proyectos y tareas, ve igualmente una pestaña CRM", () => {
+  assert.deepEqual(resumenDeModulos([DE_CLIENTES, { ...DE_CLIENTES, id_kpi_definition: 905, clave: "clientes_activos" }], "", []).map((m) => [m.clave, m.total]), [["crm", 2]]);
+  assert.deepEqual(resumenDeModulos([DE_PROYECTOS, DE_TAREAS], "", []).map((m) => [m.clave, m.total]), [["crm", 2]]);
+  assert.equal(grupoInicial(agruparKpis([DE_PROYECTOS, DE_TAREAS]), [DE_PROYECTOS, DE_TAREAS], []), "crm");
+});
+
+test("sin ningún KPI de CRM no hay pestaña CRM (por plan o por permiso)", () => {
+  assert.equal(agruparKpis([DE_OPERACIONES]).some((g) => g.clave === "crm"), false);
+  assert.equal(resumenDeModulos([DE_OPERACIONES], "", []).some((m) => m.clave === "crm"), false);
 });

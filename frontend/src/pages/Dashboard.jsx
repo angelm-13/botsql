@@ -4,7 +4,7 @@ import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
   Check, ClipboardList, Clock, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
   Loader2, Pencil, Plus, Receipt,
-  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, UserCheck, Utensils,
+  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, UserCheck, Users, Utensils,
 } from "lucide-react";
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable } from "@dnd-kit/sortable";
@@ -123,10 +123,12 @@ const CHART_TYPE_ICONS = {
 //
 // "asistencias" NO es un modulo del plan: es el `grupo` con el que el registry saca los KPIs de checadas en su propia
 // pestana del selector (su modulo real sigue siendo "operaciones"). Tiene entrada aqui porque el selector pide icono
-// y nombre por clave de pestana.
+// y nombre por clave de pestana. "crm" es modulo y grupo a la vez: junta los KPIs de clientes (modulo "crm") con los de
+// proyectos y tareas (modulo "operaciones", grupo "crm"). El icono de cada TARJETA sigue siendo el de su modulo real.
 const KPI_MODULE_META = {
   facturacion: { icon: Receipt, label: "Facturación" },
   operaciones: { icon: ClipboardList, label: "Operaciones" },
+  crm: { icon: Users, label: "CRM" },
   inventario: { icon: Boxes, label: "Inventario" },
   laboratorio: { icon: FlaskConical, label: "Laboratorio" },
   documentos: { icon: FileText, label: "Documentos" },
