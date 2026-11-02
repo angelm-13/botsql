@@ -66,6 +66,18 @@ def validar_relleno(valor) -> str:
     return valor
 
 
+# Orientacion de las barras: `auto` (como siempre: horizontal desde 13 categorias de una serie), `horizontal` o `vertical`.
+# Sin la llave es `auto`: un widget guardado antes de esta opcion no cambia.
+ORIENTACIONES = ('auto', 'horizontal', 'vertical')
+
+
+def validar_orientacion(valor) -> str:
+    """`parametros.orientacion`: `auto`, `horizontal` o `vertical`; cualquier otra cosa (otro texto, un numero, `null`) es 400."""
+    if valor not in ORIENTACIONES:
+        raise AppError('errors.invalid_field', 400, {'field': 'orientacion', 'allowed': list(ORIENTACIONES)})
+    return valor
+
+
 def validar_titulo(valor) -> str | None:
     """El titulo propio de un grafico (`parametros.titulo`), ya recortado, o `None` si no hay titulo.
 
@@ -239,6 +251,8 @@ class KpiDashboardWidgetService(CrudService):
             validar_orden_tabla(parametros['orden_tabla'])
         if 'relleno' in parametros:
             validar_relleno(parametros['relleno'])
+        if 'orientacion' in parametros:
+            validar_orientacion(parametros['orientacion'])
         if 'titulo' in parametros:
             titulo = validar_titulo(parametros['titulo'])
             if titulo is None:
