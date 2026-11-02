@@ -323,6 +323,14 @@ CAPACIDADES = (
     # proyecto ni lo autoriza-; ver cuales proyectos se ven lo decide la celda
     # `proyect.scope_read` del mismo rol.
     Capacidad("project_supply", "Confirmar material de proyectos", "operaciones", menu="hidden"),
+    # Adjuntos del expediente del proyecto. Subir: el responsable del proyecto lo
+    # hace siempre (es regla de dueno, depende de cada proyecto, no de un rol);
+    # esta capacidad lo extiende a quien el Gestor decida, aunque no sea el
+    # responsable. Borrar: SOLO con esta capacidad -un archivo mal puesto no lo
+    # quita cualquiera que vea el proyecto-; el Gestor dice a quien se la concede.
+    # Ninguna da acceso a ver proyectos: eso lo sigue mandando `proyect.scope_read`.
+    Capacidad("project_document_upload", "Subir adjuntos a proyectos ajenos", "operaciones", menu="hidden"),
+    Capacidad("project_document_delete", "Eliminar adjuntos de proyectos", "operaciones", menu="hidden"),
     Capacidad("incident_supervision", "Supervisar incidencias ajenas", "operaciones"),
     # El ajuste es el unico movimiento sin documento detras y sin tope: crea o
     # destruye existencia por cualquier cantidad. Es la operacion con la que se
@@ -581,7 +589,8 @@ ROLES = (
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "compras": CAPTURA, "configuracion": CONSULTA,
     }, ["project_oversight", "incident_supervision", "purchase_authorize",
-        "warehouse_voucher_holder", "warehouse_incident_report"]),
+        "warehouse_voucher_holder", "warehouse_incident_report",
+        "project_document_upload", "project_document_delete"]),
 
     # El tecnico es de CAMPO: autoriza, deniega y bloquea proyectos y los edita, y
     # pide material con prevales (`warehouse_prevoucher`). De compras y almacen solo
@@ -590,7 +599,7 @@ ROLES = (
         "operaciones": EDITAR, "inventario": CONSULTA, "compras": CONSULTA,
         "configuracion": CONSULTA,
     }, ["project_authorization", "incident_supervision", "warehouse_prevoucher",
-        "warehouse_voucher_holder"]),
+        "warehouse_voucher_holder", "project_document_upload", "project_document_delete"]),
 
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {
