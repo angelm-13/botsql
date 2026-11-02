@@ -9,6 +9,9 @@ import {
   ANCHO_GRAFICA_POR_OMISION, ANGULO_ETIQUETA, disenoDeBarras, recortarEtiqueta,
 } from "../../kpi/kpiEtiquetasEje";
 
+// Hasta cuantas barras llevan cada una su propio patron; con mas, todas la misma textura fina.
+export const MAXIMO_DE_PATRONES_DISTINTOS = 6;
+
 export function TooltipRico({ active, payload, label, series }) {
   if (!active || !payload || !payload.length) return null;
   return (
@@ -59,6 +62,8 @@ export default function BarrasWidget({
   const horizontal = diseno.modo === "horizontal";
   // Con categorias de color fijo (rojo/verde...) cada barra lleva ademas un patron: el color no es la unica senal.
   const coloresDeFila = conPatrones && colorPorFila ? visibles.map((fila) => colorPorFila(fila)) : null;
+  // Con pocas categorias cada barra lleva un patron distinto; con muchas, UNA textura fina para todas (ver patronesDeRelleno).
+  const texturaFina = visibles.length > MAXIMO_DE_PATRONES_DISTINTOS;
   // Las barras se dibujan UNA vez. Recharts las vuelve a animar cada vez que le llega un `datos` nuevo
   // (aqui se recalcula en cada render de la tarjeta), y con un filtro entre tarjetas eso hacia que las
   // barras "crecieran" de nuevo a cada clic.
@@ -79,7 +84,7 @@ export default function BarrasWidget({
             layout={horizontal ? "vertical" : "horizontal"}
             margin={horizontal ? { top: 4, right: 16, left: 0, bottom: 0 } : { top: 4, right: 8, left: diseno.margenIzquierdo, bottom: 0 }}
           >
-            {coloresDeFila && <defs>{patronesDeRelleno(idBase, coloresDeFila)}</defs>}
+            {coloresDeFila && <defs>{patronesDeRelleno(idBase, coloresDeFila, { fino: texturaFina })}</defs>}
             <CartesianGrid strokeDasharray="2 4" stroke="var(--kpi-grid)" vertical={horizontal} horizontal={!horizontal} />
             {horizontal ? (
               <>

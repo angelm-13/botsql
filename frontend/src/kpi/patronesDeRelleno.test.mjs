@@ -106,3 +106,42 @@ test("con textura, una dimension sin color por categoria (producto) tambien llev
   assertCadaRellenoTienePatron(html, 2);
   assert.equal(datos(true).conPatrones, false, "las barras por periodo son fechas, no categorias");
 });
+
+/** Cada <pattern> de la grafica (el primer <svg>): su ancho y lo que dibuja encima del color (los trazos, sin el relleno base). */
+function patronesDeLaGrafica(html) {
+  const grafica = html.match(/<svg[\s\S]*?<\/svg>/)[0];
+  return [...grafica.matchAll(/<pattern[^>]*\swidth="(\d+)"[^>]*>([\s\S]*?)<\/pattern>/g)]
+    .map(([, ancho, contenido]) => ({ ancho: Number(ancho), trazos: contenido.replace(/<rect[^>]*\/?>(<\/rect>)?/, "") }));
+}
+
+test("barras de hasta 6 categorias: un patron DISTINTO por barra; con mas, UNA textura fina para todas", () => {
+  const persona = { id_kpi_definition: 17, dimensiones: ["empleado"], unidad: "numero" };
+  const barras = (n) => pintarBarras(propsSeries({
+    tipo: "barras", snapshots: [snapshot(Object.fromEntries(Array.from({ length: n }, (_, i) => [String(i + 1), 20 - i])))], kpiInfos: [persona],
+    labelForId: (id) => `Persona ${id}`, agruparPorPeriodo: false, formatNumber, textos, relleno: "textura",
+  }));
+
+  const seis = patronesDeLaGrafica(barras(6));
+  assert.equal(seis.length, 6);
+  assert.ok(seis.every((p) => p.ancho === 8), "mosaico de siempre");
+  assert.equal(new Set(seis.map((p) => p.trazos)).size, 6, "seis patrones distintos");
+
+  const siete = patronesDeLaGrafica(barras(7));
+  assert.equal(siete.length, 7);
+  assert.ok(siete.every((p) => p.ancho === 5), "mosaico mas fino");
+  assert.equal(new Set(siete.map((p) => p.trazos)).size, 1, "la misma textura en todas");
+  assert.match(siete[0].trazos, /stroke-opacity="0\.45"/, "mas tenue que los patrones de siempre");
+
+  // Las 15 personas (barras horizontales): tambien una sola textura fina, y cada barra con su relleno.
+  const quince = barras(15);
+  assert.equal(new Set(patronesDeLaGrafica(quince).map((p) => p.trazos)).size, 1);
+  assertCadaRellenoTienePatron(quince, 15);
+});
+
+test("la dona conserva sus patrones distintos, aunque tenga mas de 6 rebanadas", () => {
+  const datos = Array.from({ length: 8 }, (_, i) => ({ categoria: `c${i}`, valor: 8 - i, color: `#00${i}000` }));
+  const patrones = patronesDeLaGrafica(pintarDona({ datos, conPatrones: true }));
+  assert.equal(patrones.length, 8);
+  assert.ok(patrones.every((p) => p.ancho === 8));
+  assert.equal(new Set(patrones.map((p) => p.trazos)).size, 6, "los 6 patrones, que se repiten desde la septima");
+});
