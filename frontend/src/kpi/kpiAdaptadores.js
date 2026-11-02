@@ -8,7 +8,7 @@
 // es QUIEN los pinta.
 import {
   COLOR_OTHERS, CATEGORICAL, buildMultiSeriesData, buildPieData, buildSeriesData,
-  colorDeCategoriaEstado, colorDePersona, colorEfectivoDeKpi, esKpiPorPersona, formatConUnidad, hayColoresRepetidos,
+  colorDeCategoriaEstado, colorDePersona, colorEfectivoDeKpi, esKpiPorPersona, esUnidadDeConteo, formatConUnidad, hayColoresRepetidos,
   kpiSeriesLabel, ordenarPorCategorias, unidadInfo,
 } from "./kpiDatos.js";
 import { anchoDelEje, ejeSoloEnteros, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
@@ -153,12 +153,23 @@ export function fuenteDelTotalDeDona(texto) {
   return Math.max(FUENTE_MINIMA_DEL_TOTAL, Math.min(FUENTE_MAXIMA_DEL_TOTAL, Math.floor(ANCHO_DEL_HUECO_DE_DONA / (0.62 * largo))));
 }
 
-/** El total al centro de la dona, o `null` cuando no tiene sentido. Solo si las rebanadas SUMAN un total: el KPI declara
- * `agregacion: "suma"` (un promedio, un porcentaje o una foto "ultimo" no se suman entre categorias). Incluye "Otros".
+/** Si las rebanadas de una dona SUMAN un total con sentido. Dos casos:
+ * - el KPI declara `agregacion: "suma"` (flujos: tareas creadas, ventas...), salvo un porcentaje;
+ * - una foto de HOY (`agregacion: "ultimo"`) por ESTADO y en unidades de conteo: los estados son excluyentes (cada tarea o proyecto
+ *   esta en uno solo), asi que sumarlos es el total de la foto ("24 tareas"). Una foto por equipo, persona o producto no: una persona en
+ *   dos equipos contaria dos veces.
+ * Un promedio o un porcentaje (`promedio_ponderado`) no se suma jamas: 4 personas al 83 % no son un 333 %. */
+export function sumaConSentido(kpiInfo) {
+  if (!kpiInfo || kpiInfo.unidad === "porcentaje") return false;
+  if (kpiInfo.agregacion === "suma") return true;
+  return kpiInfo.agregacion === "ultimo" && kpiInfo.dimensiones?.[0] === "estado" && esUnidadDeConteo(kpiInfo.unidad);
+}
+
+/** El total al centro de la dona, o `null` cuando no tiene sentido (`sumaConSentido`). Incluye "Otros".
  * `texto` es el numero (con el prefijo de su unidad, "$1,200"), `detalle` lo que cuenta: el sufijo de la unidad
  * ("piezas", "min") y, para una cantidad sin unidad, "registros". `textos`: { registros, total }. */
 export function totalCentroDeDona(datos, kpiInfo, formatNumber, textos = {}) {
-  if (kpiInfo?.agregacion !== "suma" || kpiInfo?.unidad === "porcentaje") return null;
+  if (!sumaConSentido(kpiInfo)) return null;
   const total = (datos || []).reduce((suma, entrada) => suma + (Number(entrada.valor) || 0), 0);
   if (!Number.isFinite(total)) return null;
   const { prefijo, sufijo } = unidadInfo(kpiInfo?.unidad);

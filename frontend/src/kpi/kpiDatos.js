@@ -28,6 +28,11 @@ export const UNIDAD_INFO = {
   minutos: { etiquetaSelector: "Min", prefijo: "", sufijo: " min" },
 };
 
+// Unidades que SIEMPRE son conteos (piezas, registros): no admiten decimales y se pueden sumar entre categorias. "numero" es la que el
+// selector rotula "Cantidad". Porcentajes, pesos, dias y minutos no entran: pueden traer decimales o no ser aditivos.
+export const UNIDADES_DE_CONTEO = ["numero", "piezas"];
+export const esUnidadDeConteo = (unidad) => UNIDADES_DE_CONTEO.includes(unidad);
+
 export function unidadInfo(unidad) {
   return UNIDAD_INFO[unidad] || UNIDAD_INFO.numero;
 }

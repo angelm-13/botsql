@@ -1,6 +1,6 @@
 // Lo que hace que una grafica no dependa SOLO del color: patrones por categoria, unidad en el eje y una descripcion
 // para lectores de pantalla. Puro y sin React -- ver kpiAccesibilidad.test.js.
-import { formatConUnidad, unidadInfo } from "./kpiDatos.js";
+import { esUnidadDeConteo, formatConUnidad, unidadInfo } from "./kpiDatos.js";
 
 // Un patron por categoria, en el orden en que se leen (el color rojo/verde de `colores_categoria` ya no es lo unico
 // que las distingue). Son los trazos que dibuja `components/kpi-widgets/PatronesSvg.jsx` y `patronesDeRelleno.jsx`.
@@ -21,14 +21,11 @@ export function unidadDeLaGrafica(kpiInfos) {
   return unidades.size === 1 ? [...unidades][0] : null;
 }
 
-// Unidades que SIEMPRE son conteos (piezas, registros): su eje no tiene marcas con decimales ("1,5 tareas" no existe). La unidad
-// "numero" es la que el selector rotula "Cantidad". Porcentajes, pesos, dias y minutos pueden traer decimales: no entran.
-const UNIDADES_DE_CONTEO = ["numero", "piezas"];
-
+// Las unidades de conteo (`esUnidadDeConteo`, en kpiDatos.js) no tienen marcas con decimales en su eje ("1,5 tareas" no existe).
 // Si el eje numerico de una grafica debe marcar solo enteros: la unidad compartida (`unidadDeLaGrafica`) es un conteo. Varias
 // unidades distintas en un mismo eje (unidad `null`) no se fuerza.
 export function ejeSoloEnteros(unidad) {
-  return UNIDADES_DE_CONTEO.includes(unidad);
+  return esUnidadDeConteo(unidad);
 }
 
 // Formato de las marcas del eje Y con la unidad ("50%", "$1,200", "30 min"), o null cuando no hay unidad que mostrar
