@@ -6,16 +6,13 @@
 # aplica a TODO el Ingress, asi que /api necesita su propio objeto separado de
 # /auth, /graphql y /.
 #
-# El certificado empieza en letsencrypt-staging (no gasta el limite de emision
-# de Let's Encrypt; su certificado no es valido para el navegador). Cambia a
-# letsencrypt-prod cuando el DNS ya apunte a master1 y el certificado de
-# staging salga READY=True. Nunca al reves.
+# El certificado ya usa letsencrypt-prod (valido para el navegador).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: integraws-prod-app
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging # cambiar a letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-prod # emisor de produccion
 spec:
   ingressClassName: nginx
   tls:
