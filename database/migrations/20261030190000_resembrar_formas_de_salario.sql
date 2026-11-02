@@ -3,6 +3,9 @@
 -- Generada con seed_module_permissions.py desde el registro actual; corre despues
 -- de 20261030110000 para que exista la tabla. Las horas extra (overtime) no estan
 -- en el registro: sus rutas deciden (supervisor del empleado o RH).
+-- Regenerada el 2026-11-02 tras integrar initAlan: incluye las capacidades
+-- project_document_upload/delete de su resiembra 20261029100000, que esta (por
+-- correr despues) habria revertido.
 --
 -- Permisos por modulo y accion CRUD. GENERADO por
 -- backend/scripts/seed_module_permissions.py desde app/modules/registry.py.
@@ -40,8 +43,8 @@
 -- servicio. Conceder `inventario` a un rol NO le da el almacen de logistica ni
 -- el del restaurante.
 --
--- 14 modulos, 7 roles, 24 capacidades,
--- 381 filas.
+-- 14 modulos, 7 roles, 26 capacidades,
+-- 387 filas.
 --
 --   facturacion      9 entidades
 --     Administrator (administrar), Gerente Comercial (consultar)
@@ -304,6 +307,8 @@ SELECT * FROM (VALUES
     ('Administrator', 'pos_admin', 4, 4, 4, 4, 'sidebar', 'Punto de venta', 'pos', 'Admin del punto de venta', 640, 'pos'),   -- Administrator / administrar
     ('Administrator', 'pos_terminal', 4, 4, 4, 0, 'sidebar', 'Punto de venta', 'pos', 'Caja del punto de venta', 640, 'pos'),   -- Administrator / capturar
     ('Administrator', 'project_authorization', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar
+    ('Administrator', 'project_document_delete', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar
+    ('Administrator', 'project_document_upload', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar
     ('Administrator', 'project_execution', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar
     ('Administrator', 'project_oversight', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar
     ('Administrator', 'project_supply', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar
@@ -431,6 +436,8 @@ SELECT * FROM (VALUES
     ('Gerente Comercial', 'work_schedule', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 790, 'rh'),   -- Gerente Comercial / consultar
     ('Gerente Comercial', 'work_schedule_day', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 790, 'rh'),   -- Gerente Comercial / consultar
     ('Gerente Comercial', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'project_document_delete', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'project_document_upload', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
     ('Gerente Comercial', 'project_oversight', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
     ('Gerente Comercial', 'purchase_authorize', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 340, 'compras'),   -- Gerente Comercial / editar
     ('Gerente Comercial', 'warehouse_incident_report', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Gerente Comercial / consultar
@@ -466,6 +473,8 @@ SELECT * FROM (VALUES
     ('Gerente Tecnico', 'template', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Gerente Tecnico / editar
     ('Gerente Tecnico', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
     ('Gerente Tecnico', 'project_authorization', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'project_document_delete', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'project_document_upload', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
     ('Gerente Tecnico', 'warehouse_prevoucher', 4, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Prevales de material', 290, 'inventario'),   -- Gerente Tecnico / capturar
     ('Gerente Tecnico', 'warehouse_voucher_holder', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Gerente Tecnico / consultar
     ('Jefe de taller', 'department', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Departamentos', 830, 'configuracion'),   -- Jefe de taller / consultar
@@ -667,7 +676,7 @@ SELECT c.table_name, c.column_name, 1
    -- marcar columnas de una tabla que esa capacidad no gobierna. La lista sale
    -- del registro, no escrita a mano, para que una capacidad nueva con nombre
    -- de tabla no vuelva a colarse.
-   AND c.table_name NOT IN ('daily_activity_log', 'incident_supervision', 'inventory_adjustment', 'kronos_device', 'multiemisor_csd', 'pos_admin', 'pos_terminal', 'project_authorization', 'project_execution', 'project_oversight', 'project_supply', 'purchase_authorize', 'purchase_planning', 'purchase_receive', 'restaurant_admin', 'restaurant_cashier', 'restaurant_kitchen', 'restaurant_waiter', 'warehouse_incident_report', 'warehouse_prevoucher', 'warehouse_voucher', 'warehouse_voucher_authorize', 'warehouse_voucher_confirm', 'warehouse_voucher_holder')
+   AND c.table_name NOT IN ('daily_activity_log', 'incident_supervision', 'inventory_adjustment', 'kronos_device', 'multiemisor_csd', 'pos_admin', 'pos_terminal', 'project_authorization', 'project_document_delete', 'project_document_upload', 'project_execution', 'project_oversight', 'project_supply', 'purchase_authorize', 'purchase_planning', 'purchase_receive', 'restaurant_admin', 'restaurant_cashier', 'restaurant_kitchen', 'restaurant_waiter', 'warehouse_incident_report', 'warehouse_prevoucher', 'warehouse_voucher', 'warehouse_voucher_authorize', 'warehouse_voucher_confirm', 'warehouse_voucher_holder')
    -- Las administra el sistema: `created_by` lo fija el servicio con el
    -- usuario de la sesion, y las tres fechas las escribe el ORM. Publicarlas
    -- como configurables invita a capturarlas a mano.
@@ -703,7 +712,7 @@ UPDATE field f
        last_update_date = now()
  WHERE f.deletion_date IS NULL
    AND EXISTS (SELECT 1 FROM matriz_de_permisos m WHERE m.entity_name = f.table_name)
-   AND f.table_name NOT IN ('daily_activity_log', 'incident_supervision', 'inventory_adjustment', 'kronos_device', 'multiemisor_csd', 'pos_admin', 'pos_terminal', 'project_authorization', 'project_execution', 'project_oversight', 'project_supply', 'purchase_authorize', 'purchase_planning', 'purchase_receive', 'restaurant_admin', 'restaurant_cashier', 'restaurant_kitchen', 'restaurant_waiter', 'warehouse_incident_report', 'warehouse_prevoucher', 'warehouse_voucher', 'warehouse_voucher_authorize', 'warehouse_voucher_confirm', 'warehouse_voucher_holder')
+   AND f.table_name NOT IN ('daily_activity_log', 'incident_supervision', 'inventory_adjustment', 'kronos_device', 'multiemisor_csd', 'pos_admin', 'pos_terminal', 'project_authorization', 'project_document_delete', 'project_document_upload', 'project_execution', 'project_oversight', 'project_supply', 'purchase_authorize', 'purchase_planning', 'purchase_receive', 'restaurant_admin', 'restaurant_cashier', 'restaurant_kitchen', 'restaurant_waiter', 'warehouse_incident_report', 'warehouse_prevoucher', 'warehouse_voucher', 'warehouse_voucher_authorize', 'warehouse_voucher_confirm', 'warehouse_voucher_holder')
    AND NOT EXISTS (
      SELECT 1 FROM information_schema.columns c
       WHERE c.table_schema = 'public'
