@@ -6,10 +6,9 @@
 # comala-prod; por eso el Ingress del base se elimina y se usa
 # ingress-single-origin.yaml.
 #
-# Las imagenes se jalan (pull) de ghcr.io con el tag REEMPLAZAR_SHA: hay que
-# sustituirlo por el SHA de un build en verde que ya incluya a integraws en
-# deploy/clients.yaml (el frontend lleva <sha>-integraws-prod, se construye
-# uno por cliente). El certificado arranca en letsencrypt-staging (ver
+# Las imagenes se jalan (pull) de ghcr.io y el overlay corre el build f333bc2
+# (el frontend lleva f333bc2-integraws-prod, se construye uno por cliente).
+# El certificado arranca en letsencrypt-staging (ver
 # ingress-single-origin.yaml).
 #
 # Pasos completos, reglas y lo que va fuera del repo (secrets): k8s/README.md.
@@ -26,16 +25,16 @@ namespace: integraws-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: REEMPLAZAR_SHA
+    newTag: f333bc2
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: REEMPLAZAR_SHA
+    newTag: f333bc2
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: REEMPLAZAR_SHA
+    newTag: f333bc2
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: REEMPLAZAR_SHA-integraws-prod
+    newTag: f333bc2-integraws-prod
 
 resources:
   - ../../base
