@@ -8,7 +8,7 @@
 #
 # Las imagenes se jalan (pull) de ghcr.io y el overlay corre el build f333bc2
 # (el frontend lleva f333bc2-integraws-prod, se construye uno por cliente).
-# El certificado arranca en letsencrypt-staging (ver
+# El certificado usa letsencrypt-prod (ver
 # ingress-single-origin.yaml).
 #
 # Pasos completos, reglas y lo que va fuera del repo (secrets): k8s/README.md.
