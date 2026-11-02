@@ -1422,7 +1422,8 @@
     "work_schedules": "Horários",
     "employee_leaves": "Férias e licenças",
     "my_leaves": "Minhas férias",
-    "payroll_groups": "Grupos de pagamento"
+    "payroll_groups": "Grupos de pagamento",
+    "terminations": "Desligamentos"
   },
   "placeholders": {
     "bank": {
@@ -2604,7 +2605,10 @@
     "attendance_correction_limit_reached": "As correções deste mês para este funcionário acabaram. Só o RH pode corrigir, como exceção.",
     "payroll_period_pending_justification": "Há dias pendentes de justificar no período.",
     "overtime_already_paid": "Já foi paga em um período fechado; não pode ser removida.",
-    "employee_salary_overlap": "Esse funcionário já tem salário nessas datas. Ponha data final no anterior."
+    "employee_salary_overlap": "Esse funcionário já tem salário nessas datas. Ponha data final no anterior.",
+    "termination_duplicate": "Esse funcionário já tem um desligamento registrado.",
+    "termination_before_hire_date": "A data de desligamento é anterior à admissão ou não há data de admissão.",
+    "termination_without_salary": "O funcionário não tem salário lançado."
   },
   "logistics": {
     "module": "Logística",
@@ -3951,5 +3955,47 @@
     "hint_fixed": "Se o período tem a mesma periodicidade, paga-se o valor menos cada dia não pago; senão, o diário por dia pago.",
     "list_hint": "Para um aumento, ponha data final no salário atual e lance o novo a partir do dia seguinte. Quem não aparece recebe pelo salário diário do usuário.",
     "empty": "Ninguém tem forma de salário lançada: todos recebem pelo salário diário."
+  },
+  "terminations": {
+    "eyebrow": "Recursos humanos",
+    "title": "Desligamentos",
+    "subtitle": "Rescisão de quem sai da empresa, calculada com os dados do dia.",
+    "new": "Registrar desligamento",
+    "employee": "Funcionário",
+    "date": "Data do desligamento (último dia trabalhado)",
+    "reason": "Motivo",
+    "reason_resignation": "Pedido de demissão",
+    "reason_mutual_agreement": "Acordo mútuo",
+    "reason_justified_dismissal": "Demissão por justa causa",
+    "reason_unjustified_dismissal": "Demissão sem justa causa",
+    "twenty_days": "Pagar também 20 dias por ano (LFT art. 50)",
+    "twenty_days_short": "com 20 dias por ano",
+    "notes": "Notas",
+    "form_hint": "Calcula-se ao salvar: dias pendentes, 13º e férias proporcionais, prêmio de antiguidade e indenização conforme o motivo. Desativar o usuário é à parte.",
+    "calculate": "Calcular",
+    "settlement": "Rescisão",
+    "liquidation": "Indenização",
+    "daily": "Diário",
+    "integrated": "Integrado",
+    "years": "Anos",
+    "pending_from": "Dias pendentes desde",
+    "concept": "Conceito",
+    "amount": "Valor",
+    "net": "Líquido a pagar",
+    "severance_hint": "Parte tributável da separação, com a alíquota do último salário mensal:",
+    "list_title": "Desligamentos registrados",
+    "empty": "Não há desligamentos registrados.",
+    "saved": "Desligamento registrado.",
+    "confirm_delete": "Remover este desligamento?",
+    "code_pending_days": "Dias trabalhados pendentes",
+    "code_aguinaldo": "13º proporcional",
+    "code_vacations": "Férias (disponíveis e proporcionais)",
+    "code_vacation_premium": "Adicional de férias proporcional",
+    "code_seniority_premium": "Prêmio de antiguidade",
+    "code_severance_three_months": "Indenização: 3 meses",
+    "code_severance_twenty_days": "Indenização: 20 dias por ano",
+    "code_isr": "ISR",
+    "code_isr_severance": "ISR da separação",
+    "code_imss": "IMSS"
   }
 }

@@ -96,6 +96,8 @@ const navItems = [
   { path: "/work_schedules", key: "menu.work_schedules", label: "Horarios", entityName: "work_schedule", group: "Recursos humanos", location: "sidebar", order: 706 },
   // payroll_group igual: sembrada "hidden", pantalla propia en la barra.
   { path: "/payroll_groups", key: "menu.payroll_groups", label: "Grupos de pago", entityName: "payroll_group", group: "Recursos humanos", location: "sidebar", order: 704 },
+  // employee_termination igual: sembrada "hidden", pantalla propia en la barra.
+  { path: "/terminations", key: "menu.terminations", label: "Bajas", entityName: "employee_termination", group: "Recursos humanos", location: "sidebar", order: 709 },
   // employee_leave igual: sembrada "hidden", pantalla propia en la barra.
   // Autoservicio, como /mfa-setup: cualquier usuario la ve; el backend solo le
   // muestra lo suyo (o lo de su equipo si es jefe).

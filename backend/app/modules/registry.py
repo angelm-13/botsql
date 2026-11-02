@@ -237,7 +237,9 @@ MODULOS = (
          # pertenece a cada uno (pantalla propia /payroll_groups).
          "payroll_group", "employee_payroll_group",
          # Forma de salario de cada empleado (por dia, por hora o fijo), con vigencia.
-         "employee_salary"),
+         "employee_salary",
+         # Bajas para el finiquito y la liquidacion (pantalla propia /terminations).
+         "employee_termination"),
     ),
     # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
     # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para

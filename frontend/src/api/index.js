@@ -632,6 +632,12 @@ export const createEmployeePayrollGroup = (payload) => request("/employee_payrol
 export const updateEmployeePayrollGroup = (id, payload) => request(`/employee_payroll_group/${id}`, { method: "PUT", body: payload });
 export const deleteEmployeePayrollGroup = (id) => request(`/employee_payroll_group/${id}`, { method: "DELETE" });
 // Forma de salario de cada empleado (por dia, por hora o fijo), con vigencia.
+// Bajas: finiquito y liquidacion (services/termination_service.py).
+export const getAllEmployeeTermination = (params = {}) => request("/employee_termination/", { params });
+export const createEmployeeTermination = (payload) => request("/employee_termination/", { method: "POST", body: payload });
+export const deleteEmployeeTermination = (id) => request(`/employee_termination/${id}`, { method: "DELETE" });
+export const getTerminationSettlement = (id) => request(`/employee_termination/${id}/settlement`);
+export const downloadTerminationSettlement = (id) => requestBlob(`/employee_termination/${id}/settlement/pdf`);
 export const getAllEmployeeSalary = (params = {}) => request("/employee_salary/", { params });
 export const createEmployeeSalary = (payload) => request("/employee_salary/", { method: "POST", body: payload });
 export const updateEmployeeSalary = (id, payload) => request(`/employee_salary/${id}`, { method: "PUT", body: payload });

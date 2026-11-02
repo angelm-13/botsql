@@ -1466,7 +1466,8 @@
     "work_schedules": "Schedules",
     "employee_leaves": "Leave and vacations",
     "my_leaves": "My time off",
-    "payroll_groups": "Pay groups"
+    "payroll_groups": "Pay groups",
+    "terminations": "Terminations"
   },
   "placeholders": {
     "bank": {
@@ -2840,7 +2841,10 @@
     "attendance_correction_limit_reached": "This month's corrections for this employee are used up. Only HR can correct, as an exception.",
     "payroll_period_pending_justification": "There are days pending justification in the period.",
     "overtime_already_paid": "It was already paid in a closed period; it cannot be removed.",
-    "employee_salary_overlap": "That employee already has a salary on those dates. Set an end date on the previous one."
+    "employee_salary_overlap": "That employee already has a salary on those dates. Set an end date on the previous one.",
+    "termination_duplicate": "That employee already has a termination registered.",
+    "termination_before_hire_date": "The termination date is before the hire date or there is no hire date.",
+    "termination_without_salary": "The employee has no salary."
   },
   "logistics": {
     "module": "Logistics",
@@ -5279,5 +5283,47 @@
     "hint_fixed": "If the period has the same frequency, the amount is paid minus each unpaid day; otherwise, the daily equivalent for each paid day.",
     "list_hint": "For a raise, set an end date on the current salary and add the new one from the next day. Anyone not listed is paid with the user's daily salary.",
     "empty": "No salary types captured: everyone is paid with their daily salary."
+  },
+  "terminations": {
+    "eyebrow": "Human resources",
+    "title": "Terminations",
+    "subtitle": "Final settlement or severance for whoever leaves, calculated with the day's data.",
+    "new": "Register termination",
+    "employee": "Employee",
+    "date": "Termination date (last day worked)",
+    "reason": "Reason",
+    "reason_resignation": "Resignation",
+    "reason_mutual_agreement": "Mutual agreement",
+    "reason_justified_dismissal": "Justified dismissal",
+    "reason_unjustified_dismissal": "Unjustified dismissal",
+    "twenty_days": "Also pay 20 days per year (LFT art. 50)",
+    "twenty_days_short": "with 20 days per year",
+    "notes": "Notes",
+    "form_hint": "Calculated on save: pending days, proportional Christmas bonus and vacations, seniority premium and severance by reason. Deactivating the user is separate.",
+    "calculate": "Calculate",
+    "settlement": "Final settlement",
+    "liquidation": "Severance",
+    "daily": "Daily",
+    "integrated": "Integrated",
+    "years": "Years",
+    "pending_from": "Pending days from",
+    "concept": "Concept",
+    "amount": "Amount",
+    "net": "Net to pay",
+    "severance_hint": "Taxable part of the separation, at the rate of the last monthly salary:",
+    "list_title": "Registered terminations",
+    "empty": "No terminations registered.",
+    "saved": "Termination registered.",
+    "confirm_delete": "Remove this termination?",
+    "code_pending_days": "Pending days worked",
+    "code_aguinaldo": "Proportional Christmas bonus",
+    "code_vacations": "Vacations (available and proportional)",
+    "code_vacation_premium": "Proportional vacation premium",
+    "code_seniority_premium": "Seniority premium",
+    "code_severance_three_months": "Severance: 3 months",
+    "code_severance_twenty_days": "Severance: 20 days per year",
+    "code_isr": "ISR",
+    "code_isr_severance": "Separation ISR",
+    "code_imss": "IMSS"
   }
 }

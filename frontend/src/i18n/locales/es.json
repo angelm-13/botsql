@@ -1502,7 +1502,8 @@
     "work_schedules": "Horarios",
     "employee_leaves": "Vacaciones y permisos",
     "my_leaves": "Mis vacaciones",
-    "payroll_groups": "Grupos de pago"
+    "payroll_groups": "Grupos de pago",
+    "terminations": "Bajas"
   },
   "placeholders": {
     "bank": {
@@ -2884,7 +2885,10 @@
     "attendance_correction_limit_reached": "Ya se usaron las correcciones de este mes para este empleado. Solo RH puede corregir, como excepción.",
     "payroll_period_pending_justification": "Hay días pendientes de justificar en el periodo.",
     "overtime_already_paid": "Ya se pagó en un periodo cerrado; no se puede quitar.",
-    "employee_salary_overlap": "Ese empleado ya tiene un sueldo en esas fechas. Pon fecha final al anterior."
+    "employee_salary_overlap": "Ese empleado ya tiene un sueldo en esas fechas. Pon fecha final al anterior.",
+    "termination_duplicate": "Ese empleado ya tiene una baja registrada.",
+    "termination_before_hire_date": "La fecha de baja es anterior a su ingreso o no tiene fecha de ingreso.",
+    "termination_without_salary": "El empleado no tiene salario capturado."
   },
   "logistics": {
     "module": "Logística",
@@ -5395,5 +5399,47 @@
     "hint_fixed": "Si el periodo es de la misma periodicidad se paga el monto menos cada día no pagado; si no, el monto llevado a día por cada día pagado.",
     "list_hint": "Para un aumento, pon fecha final al sueldo actual y captura el nuevo desde el día siguiente. Quien no aparece aquí cobra con su salario diario del usuario.",
     "empty": "Nadie tiene forma de salario capturada: todos cobran con su salario diario."
+  },
+  "terminations": {
+    "eyebrow": "Recursos humanos",
+    "title": "Bajas",
+    "subtitle": "Finiquito o liquidación de quien deja la empresa, calculado con los datos del día.",
+    "new": "Registrar baja",
+    "employee": "Empleado",
+    "date": "Fecha de baja (último día trabajado)",
+    "reason": "Motivo",
+    "reason_resignation": "Renuncia voluntaria",
+    "reason_mutual_agreement": "Mutuo acuerdo",
+    "reason_justified_dismissal": "Despido justificado",
+    "reason_unjustified_dismissal": "Despido injustificado",
+    "twenty_days": "Pagar también 20 días por año (LFT art. 50)",
+    "twenty_days_short": "con 20 días por año",
+    "notes": "Notas",
+    "form_hint": "Se calcula al guardar: días pendientes, aguinaldo y vacaciones proporcionales, prima de antigüedad e indemnización según el motivo. Desactivar al usuario es aparte.",
+    "calculate": "Calcular",
+    "settlement": "Finiquito",
+    "liquidation": "Liquidación",
+    "daily": "Diario",
+    "integrated": "Integrado",
+    "years": "Años",
+    "pending_from": "Días pendientes desde",
+    "concept": "Concepto",
+    "amount": "Importe",
+    "net": "Neto a pagar",
+    "severance_hint": "Parte gravada de la separación, con la tasa de su último sueldo mensual:",
+    "list_title": "Bajas registradas",
+    "empty": "No hay bajas registradas.",
+    "saved": "Baja registrada.",
+    "confirm_delete": "¿Quitar esta baja?",
+    "code_pending_days": "Días trabajados pendientes",
+    "code_aguinaldo": "Aguinaldo proporcional",
+    "code_vacations": "Vacaciones (disponibles y proporcionales)",
+    "code_vacation_premium": "Prima vacacional proporcional",
+    "code_seniority_premium": "Prima de antigüedad",
+    "code_severance_three_months": "Indemnización: 3 meses",
+    "code_severance_twenty_days": "Indemnización: 20 días por año",
+    "code_isr": "ISR",
+    "code_isr_severance": "ISR de la separación",
+    "code_imss": "IMSS"
   }
 }

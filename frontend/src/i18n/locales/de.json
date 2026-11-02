@@ -1421,7 +1421,8 @@
     "work_schedules": "Arbeitszeiten",
     "employee_leaves": "Urlaub und Abwesenheit",
     "my_leaves": "Mein Urlaub",
-    "payroll_groups": "Abrechnungsgruppen"
+    "payroll_groups": "Abrechnungsgruppen",
+    "terminations": "Austritte"
   },
   "placeholders": {
     "bank": {
@@ -2602,7 +2603,10 @@
     "attendance_correction_limit_reached": "Die Korrekturen dieses Monats für diese Person sind aufgebraucht. Nur die Personalabteilung kann als Ausnahme korrigieren.",
     "payroll_period_pending_justification": "Im Zeitraum gibt es offene Tage.",
     "overtime_already_paid": "Bereits in einem abgeschlossenen Zeitraum bezahlt; kann nicht entfernt werden.",
-    "employee_salary_overlap": "Diese Person hat in diesem Zeitraum bereits ein Gehalt. Das vorherige mit Enddatum versehen."
+    "employee_salary_overlap": "Diese Person hat in diesem Zeitraum bereits ein Gehalt. Das vorherige mit Enddatum versehen.",
+    "termination_duplicate": "Für diese Person ist bereits ein Austritt erfasst.",
+    "termination_before_hire_date": "Das Austrittsdatum liegt vor dem Eintritt oder es gibt kein Eintrittsdatum.",
+    "termination_without_salary": "Für die Person ist kein Gehalt erfasst."
   },
   "logistics": {
     "module": "Logistik",
@@ -3945,5 +3949,47 @@
     "hint_fixed": "Hat der Zeitraum denselben Rhythmus, wird der Betrag abzüglich jedes unbezahlten Tages gezahlt; sonst der Tageswert pro bezahltem Tag.",
     "list_hint": "Für eine Erhöhung das aktuelle Gehalt mit Enddatum versehen und das neue ab dem Folgetag erfassen. Wer hier fehlt, wird mit dem Tagessatz des Benutzers bezahlt.",
     "empty": "Keine Gehaltsart erfasst: alle werden mit ihrem Tagessatz bezahlt."
+  },
+  "terminations": {
+    "eyebrow": "Personalwesen",
+    "title": "Austritte",
+    "subtitle": "Abschlussabrechnung oder Abfindung für Austretende, mit den Daten des Tages berechnet.",
+    "new": "Austritt erfassen",
+    "employee": "Person",
+    "date": "Austrittsdatum (letzter Arbeitstag)",
+    "reason": "Grund",
+    "reason_resignation": "Kündigung durch die Person",
+    "reason_mutual_agreement": "Einvernehmlich",
+    "reason_justified_dismissal": "Begründete Kündigung",
+    "reason_unjustified_dismissal": "Unbegründete Kündigung",
+    "twenty_days": "Auch 20 Tage pro Jahr zahlen (LFT Art. 50)",
+    "twenty_days_short": "mit 20 Tagen pro Jahr",
+    "notes": "Notizen",
+    "form_hint": "Beim Speichern berechnet: offene Tage, anteiliges Weihnachtsgeld und Urlaub, Dienstalterprämie und Abfindung je nach Grund. Den Benutzer zu deaktivieren ist separat.",
+    "calculate": "Berechnen",
+    "settlement": "Abschlussabrechnung",
+    "liquidation": "Abfindung",
+    "daily": "Tagessatz",
+    "integrated": "Integriert",
+    "years": "Jahre",
+    "pending_from": "Offene Tage ab",
+    "concept": "Posten",
+    "amount": "Betrag",
+    "net": "Netto auszuzahlen",
+    "severance_hint": "Steuerpflichtiger Teil der Trennung, mit dem Satz des letzten Monatsgehalts:",
+    "list_title": "Erfasste Austritte",
+    "empty": "Keine Austritte erfasst.",
+    "saved": "Austritt erfasst.",
+    "confirm_delete": "Diesen Austritt entfernen?",
+    "code_pending_days": "Offene Arbeitstage",
+    "code_aguinaldo": "Anteiliges Weihnachtsgeld",
+    "code_vacations": "Urlaub (verfügbar und anteilig)",
+    "code_vacation_premium": "Anteilige Urlaubsprämie",
+    "code_seniority_premium": "Dienstalterprämie",
+    "code_severance_three_months": "Abfindung: 3 Monate",
+    "code_severance_twenty_days": "Abfindung: 20 Tage pro Jahr",
+    "code_isr": "ISR",
+    "code_isr_severance": "ISR der Trennung",
+    "code_imss": "IMSS"
   }
 }
