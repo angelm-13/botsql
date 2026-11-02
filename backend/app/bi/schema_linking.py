@@ -145,9 +145,15 @@ def _destino_fk(fk: str | None, por_nombre: dict) -> str | None:
 
 def relaciones_para_pregunta(esquema, pregunta: str):
     """Devuelve (relaciones con DDL completo, nombres del resto)."""
+    elegidas, vecinas, resto = _seleccionar(esquema, pregunta)
+    return elegidas + vecinas, resto
+
+
+def _seleccionar(esquema, pregunta: str):
+    """(elegidas por la pregunta, vecinas por llave foranea, nombres del resto)."""
     relaciones = list(esquema.relaciones)
     if len(relaciones) <= MAX_TABLAS_PROMPT + MAX_VECINAS:
-        return relaciones, []
+        return relaciones, [], []
 
     tokens = _tokens_pregunta(pregunta)
     expandidos: set[str] = set()
@@ -179,9 +185,8 @@ def relaciones_para_pregunta(esquema, pregunta: str):
             if d and d not in nombres and len(vecinas) < MAX_VECINAS:
                 nombres.add(d)
                 vecinas.append(por_nombre[d])
-    finales = elegidas + vecinas
     resto = sorted(r.nombre for r in relaciones if r.nombre.lower() not in nombres)
-    return finales, resto
+    return elegidas, vecinas, resto
 
 
 # Columnas de bitacora que tiene casi cada tabla: ocupan una cuarta parte del
@@ -231,10 +236,22 @@ def _linea(r) -> str:
     return f"{r.nombre_completo}({', '.join(partes)})"
 
 
+# Una vecina solo esta para poder hacer el JOIN: de ella sirven la llave, a quien apunta y lo que
+# la describe. `invoice` entera eran 1,175 caracteres en una pregunta de productos.
+_DESCRIPTIVA = re.compile(r"(descri|name|nombre|code|codigo|status|estatus|estado|type|tipo|folio|total)")
+MAX_COLUMNAS_VECINA = 8
+
+
+def _reducida(r):
+    cols = [c for c in r.columnas if c.es_pk or c.fk or _DESCRIPTIVA.search(c.nombre.lower())]
+    return replace(r, columnas=tuple(cols[:MAX_COLUMNAS_VECINA]) or r.columnas[:MAX_COLUMNAS_VECINA])
+
+
 def ddl_para_pregunta(esquema, pregunta: str) -> str:
-    """El esquema que se inyecta al prompt: tablas relevantes + indice del resto."""
-    elegidas, resto = relaciones_para_pregunta(esquema, pregunta)
-    cuerpo = "\n".join(_linea(r) for r in _sin_ruido(elegidas))
+    """El esquema que se inyecta al prompt: tablas relevantes + vecinas reducidas."""
+    elegidas, vecinas, _ = _seleccionar(esquema, pregunta)
+    mostradas = _sin_ruido(elegidas) + tuple(_reducida(r) for r in _sin_ruido(vecinas))
+    cuerpo = "\n".join(_linea(r) for r in mostradas)
     ddl = _NOTA_BORRADO + cuerpo
     # El indice con el nombre de las demas tablas se quito: eran ~1,300 tokens
     # por pregunta (2 minutos de CPU) y el modelo ya sabe que solo ve las de arriba.

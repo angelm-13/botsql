@@ -108,3 +108,36 @@ def test_titulo_de_la_pregunta():
     assert service._titulo_de("  ¿Cuántos   productos hay?  ") == "Cuántos productos hay"
     assert service._titulo_de("") == "Resultados"
     assert len(service._titulo_de("x" * 200)) <= 90
+
+
+def _esquema_con_vecina_ancha():
+    from app.bi.schema_extractor import Columna, EsquemaDB, Relacion
+    relleno = [Relacion(nombre=f"tabla_{i}", columnas=(Columna("id", "INTEGER", es_pk=True),)) for i in range(20)]
+    ancha = tuple([Columna("id_invoice", "INTEGER", es_pk=True), Columna("folio", "TEXT"),
+                   Columna("id_status", "INTEGER", fk="status.id_status")]
+                  + [Columna(f"campo_fiscal_{i}", "TEXT") for i in range(20)])
+    rels = relleno + [
+        Relacion(nombre="invoice", columnas=ancha),
+        Relacion(nombre="product", columnas=(Columna("id_product", "INTEGER", es_pk=True),
+                                             Columna("descripcion", "TEXT"), Columna("cantidad", "INTEGER"),
+                                             Columna("id_invoice", "INTEGER", fk="invoice.id_invoice"))),
+    ]
+    return EsquemaDB(motor="postgresql", motor_legible="PostgreSQL", version="16",
+                     relaciones=tuple(rels), total_encontradas=len(rels))
+
+
+def test_una_vecina_por_llave_foranea_se_muestra_reducida_y_la_elegida_completa():
+    from app.bi.schema_linking import ddl_para_pregunta
+    ddl = ddl_para_pregunta(_esquema_con_vecina_ancha(), "que productos hay")
+    producto = next(l for l in ddl.splitlines() if l.startswith("product("))
+    factura = next(l for l in ddl.splitlines() if l.startswith("invoice("))
+    assert "cantidad" in producto and "descripcion" in producto       # la elegida va completa
+    assert "id_invoice int PK" in factura and "folio" in factura and "FK>status" in factura
+    assert "campo_fiscal_0" not in factura                            # la vecina, sin lo accesorio
+
+
+def test_el_resto_del_esquema_no_cambia_para_el_validador():
+    from app.bi.schema_linking import relaciones_para_pregunta
+    elegidas, _ = relaciones_para_pregunta(_esquema_con_vecina_ancha(), "que productos hay")
+    inv = next(r for r in elegidas if r.nombre == "invoice")
+    assert len(inv.columnas) == 23   # la reduccion es solo del texto del prompt
