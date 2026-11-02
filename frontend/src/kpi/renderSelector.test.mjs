@@ -487,3 +487,76 @@ test("el selector de relleno NO sale con linea, area, numero o tabla, con un KPI
   assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1", "2"], tipoGrafica: "barras" })), null, "varios KPIs");
   assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: [], tipoGrafica: "barras" })), null, "sin KPI");
 });
+
+// --- bloque "Apariencia": relleno y orientacion pegados a la vista previa --------------------------------------------------
+const aside = (html) => (html.match(/<aside class="kpi-editor-vista-previa">.*<\/aside>/s) || [""])[0];
+const pasoDelPanel = (html) => (html.match(/<div class="kpi-editor-paso-contenido[^"]*"[^>]*>.*?<aside/s) || [""])[0];
+const seccionOrientacion = (html) => (html.match(/<span>Orientación<\/span>.*?<\/div>(?:<p[^>]*>[^<]*<\/p>)?/s) || [null])[0];
+
+test("el bloque Apariencia va en el aside, despues de la tarjeta de la vista previa, y no en el paso 'Que medir'", () => {
+  const html = pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], tipoGrafica: "barras" });
+  const lateral = aside(html);
+  assert.match(lateral, /kpi-editor-apariencia/);
+  assert.ok(lateral.indexOf("kpi-editor-vista-previa-tarjeta") < lateral.indexOf("kpi-editor-apariencia"), "despues de la tarjeta");
+  assert.match(lateral, /<p class="kpi-editor-grupo-titulo">Apariencia<\/p>/);
+  assert.ok(lateral.includes("<span>Relleno</span>") && lateral.includes("<span>Orientación</span>"));
+  const paso = pasoDelPanel(html);
+  assert.ok(!paso.includes("Relleno") && !paso.includes("Orientación") && !paso.includes("kpi-editor-apariencia"), "ya no esta debajo de la lista de KPIs");
+  assert.match(html, /class="kpi-editor-cuerpo kpi-editor-cuerpo-apariencia"/, "la clase que sube el aside en pantallas angostas");
+});
+
+test("sin nada que elegir (sin KPI, numero, linea, tabla, dona de un KPI global) no hay bloque ni clase", () => {
+  for (const opciones of [
+    { idsKpiSeleccionados: [], tipoGrafica: "barras" },
+    { idsKpiSeleccionados: ["1"], tipoGrafica: "numero" },
+    { idsKpiSeleccionados: ["1"], tipoGrafica: "linea" },
+    { idsKpiSeleccionados: ["1"], tipoGrafica: "tabla" },
+    { idsKpiSeleccionados: ["5"], tipoGrafica: "dona" },
+  ]) {
+    const html = pintarPanel({ kpiCatalog: CATALOGO, ...opciones });
+    assert.ok(!html.includes("kpi-editor-apariencia"), JSON.stringify(opciones));
+    assert.ok(!html.includes("kpi-editor-cuerpo-apariencia"), JSON.stringify(opciones));
+  }
+});
+
+test("dona con un KPI que desglosa: el bloque trae Relleno y NO Orientacion", () => {
+  const lateral = aside(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], tipoGrafica: "dona" }));
+  assert.ok(lateral.includes("<span>Relleno</span>") && !lateral.includes("Orientación"));
+});
+
+test("barras con un KPI que desglosa: Orientacion con tres opciones, Automatica activa por omision, habilitadas y sin nota", () => {
+  const seccion = seccionOrientacion(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"] }));
+  assert.match(chip(seccion, "Automática"), /aria-pressed="true"/);
+  assert.match(chip(seccion, "Horizontal"), /aria-pressed="false"/);
+  assert.match(chip(seccion, "Vertical"), /aria-pressed="false"/);
+  assert.ok(!/disabled/.test(seccion), "habilitadas");
+  assert.ok(!seccion.includes("kpi-orientacion-nota"));
+  const elegida = seccionOrientacion(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], orientacion: "horizontal" }));
+  assert.match(chip(elegida, "Horizontal"), /aria-pressed="true"/);
+  assert.match(chip(elegida, "Automática"), /aria-pressed="false"/);
+});
+
+test("barras con varios KPIs: Orientacion habilitada (el horizontal de varias series se elige) y sin Relleno", () => {
+  const html = pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1", "2"], orientacion: "vertical" });
+  const seccion = seccionOrientacion(html);
+  assert.match(chip(seccion, "Vertical"), /aria-pressed="true"/);
+  assert.ok(!/disabled/.test(seccion));
+  assert.ok(!aside(html).includes("<span>Relleno</span>"));
+});
+
+test("barras con un KPI global: el bloque sale solo con Orientacion deshabilitada y su nota; sin Relleno", () => {
+  const html = pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["5"] });
+  const seccion = seccionOrientacion(html);
+  for (const etiqueta of ["Automática", "Horizontal", "Vertical"]) assert.match(chip(seccion, etiqueta), /disabled/, etiqueta);
+  assert.match(chip(seccion, "Automática"), /aria-pressed="true"/);
+  assert.match(seccion, /id="kpi-orientacion-nota">Un KPI sin desglose no tiene categorías/);
+  assert.ok(!aside(html).includes("<span>Relleno</span>"));
+  // Una orientacion guardada no se ve activa: con un KPI global no hay nada que elegir.
+  assert.match(chip(seccionOrientacion(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["5"], orientacion: "horizontal" })), "Horizontal"), /aria-pressed="false"/);
+});
+
+test("barras agrupadas por periodo: Orientacion deshabilitada con la nota del eje de fechas", () => {
+  const seccion = seccionOrientacion(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], agruparPor: "periodo", orientacion: "horizontal" }));
+  for (const etiqueta of ["Automática", "Horizontal", "Vertical"]) assert.match(chip(seccion, etiqueta), /disabled/, etiqueta);
+  assert.match(seccion, /Agrupado por periodo el eje son fechas: solo se dibuja vertical\./);
+});

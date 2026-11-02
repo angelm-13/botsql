@@ -38,7 +38,7 @@ import {
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  admiteRelleno, agruparPorEfectivo, armarParametros, columnasDeWidget, orientacionEfectiva, rellenoEfectivo, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
+  admiteRelleno, agruparPorEfectivo, armarParametros, columnasDeWidget, motivoSinOrientacion, orientacionEfectiva, rellenoEfectivo, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
@@ -1909,6 +1909,60 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
   // El relleno (solido o con texturas) solo aplica a barras o dona con un KPI que desglosa; sin la llave, o con basura, es solido.
   const admiteRellenoElegido = admiteRelleno(tipoGrafica, kpisSeleccionadosInfo);
   const rellenoElegido = panelState.relleno === "textura" ? "textura" : "solido";
+  // Orientacion de las barras: solo con barras; con un KPI global o agrupado por periodo se ve deshabilitada, con su nota (ver motivoSinOrientacion).
+  const motivoOrientacion = motivoSinOrientacion(tipoGrafica, kpisSeleccionadosInfo, agruparPor);
+  const muestraOrientacion = motivoOrientacion !== "no_aplica";
+  const orientacionElegida = ["horizontal", "vertical"].includes(panelState.orientacion) && motivoOrientacion === null ? panelState.orientacion : "auto";
+  // El bloque "Apariencia" va pegado a la vista previa (no debajo de la lista de KPIs): sale si hay algo que elegir.
+  const hayApariencia = admiteRellenoElegido || muestraOrientacion;
+  const opcionesDeOrientacion = [["auto", tx("orientation_auto", "Automática")], ["horizontal", tx("orientation_horizontal", "Horizontal")], ["vertical", tx("orientation_vertical", "Vertical")]];
+  const notaDeOrientacion = motivoOrientacion === "global"
+    ? tx("orientation_note_global", "Un KPI sin desglose no tiene categorías: no hay orientación que elegir.")
+    : tx("orientation_note_period", "Agrupado por periodo el eje son fechas: solo se dibuja vertical.");
+  const bloqueApariencia = hayApariencia && (
+    <div className="kpi-editor-apariencia" role="group" aria-label={tx("appearance", "Apariencia")}>
+      <p className="kpi-editor-grupo-titulo">{tx("appearance", "Apariencia")}</p>
+      {admiteRellenoElegido && (
+        <div className="kpi-apariencia-grupo">
+          <span>{tx("fill", "Relleno")}</span>
+          <div className="kpi-editor-segmentos" style={{ "--segmentos": 2 }} role="group" aria-label={tx("fill", "Relleno")} aria-describedby="kpi-relleno-ayuda">
+            {[["solido", tx("fill_solid", "Sólido")], ["textura", tx("fill_texture", "Con texturas")]].map(([valor, etiqueta]) => (
+              <button
+                type="button"
+                key={valor}
+                className={`kpi-editor-chip ${rellenoElegido === valor ? "activo" : ""}`}
+                aria-pressed={rellenoElegido === valor}
+                onClick={() => onChangePanelState({ relleno: valor })}
+              >
+                {etiqueta}
+              </button>
+            ))}
+          </div>
+          <p className="kpi-editor-ayuda kpi-editor-ayuda-relleno" id="kpi-relleno-ayuda">{tx("fill_help", "Las texturas agregan un patrón sobre cada color: ayudan al imprimir en blanco y negro o cuando dos colores se parecen.")}</p>
+        </div>
+      )}
+      {muestraOrientacion && (
+        <div className="kpi-apariencia-grupo">
+          <span>{tx("orientation", "Orientación")}</span>
+          <div className="kpi-editor-segmentos" style={{ "--segmentos": 3 }} role="group" aria-label={tx("orientation", "Orientación")} aria-describedby={motivoOrientacion ? "kpi-orientacion-nota" : undefined}>
+            {opcionesDeOrientacion.map(([valor, etiqueta]) => (
+              <button
+                type="button"
+                key={valor}
+                className={`kpi-editor-chip ${orientacionElegida === valor ? "activo" : ""}`}
+                aria-pressed={orientacionElegida === valor}
+                disabled={motivoOrientacion !== null}
+                onClick={() => onChangePanelState({ orientacion: valor })}
+              >
+                {etiqueta}
+              </button>
+            ))}
+          </div>
+          {motivoOrientacion !== null && <p className="kpi-editor-ayuda" id="kpi-orientacion-nota">{notaDeOrientacion}</p>}
+        </div>
+      )}
+    </div>
+  );
 
   // Que tipos de grafica admite lo elegido: la interseccion de las
   // `graficas_permitidas` de cada KPI (las declara el registry del backend).
@@ -2244,28 +2298,6 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
               />
             </div>
 
-            {/* Como se rellenan las marcas: solo barras o dona con un KPI que desglosa (ver admiteRelleno). La vista previa de la derecha
-                ya lee el borrador, asi que el cambio se ve al momento. */}
-            {admiteRellenoElegido && (
-              <div className="kpi-picker-section">
-                <span>{tx("fill", "Relleno")}</span>
-                <div className="kpi-editor-chips" role="group" aria-label={tx("fill", "Relleno")}>
-                  {[["solido", tx("fill_solid", "Sólido")], ["textura", tx("fill_texture", "Con texturas")]].map(([valor, etiqueta]) => (
-                    <button
-                      type="button"
-                      key={valor}
-                      className={`kpi-editor-chip ${rellenoElegido === valor ? "activo" : ""}`}
-                      aria-pressed={rellenoElegido === valor}
-                      onClick={() => onChangePanelState({ relleno: valor })}
-                    >
-                      {etiqueta}
-                    </button>
-                  ))}
-                </div>
-                <p className="kpi-editor-ayuda">{tx("fill_help", "Las texturas agregan un patrón sobre cada color: ayudan al imprimir en blanco y negro o cuando dos colores se parecen.")}</p>
-              </div>
-            )}
-
       </>
     ),
     periodo: (
@@ -2531,7 +2563,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
             </ol>
           )}
 
-          <div className="kpi-editor-cuerpo">
+          <div className={`kpi-editor-cuerpo ${hayApariencia ? "kpi-editor-cuerpo-apariencia" : ""}`}>
             <div className="kpi-editor-paso-contenido kpi-panel-col" onKeyDown={alTeclear}>
               {contenidoDelPaso[pasos[pasoActual].clave]}
             </div>
@@ -2563,6 +2595,8 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                   />
                 </div>
               )}
+              {/* Desde 720 px hacia abajo este bloque sube sobre la vista previa y el aside pasa antes de la lista de KPIs (CSS). */}
+              {kpisSeleccionadosInfo.length > 0 && bloqueApariencia}
             </aside>
           </div>
 
