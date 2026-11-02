@@ -63,13 +63,30 @@ export function agruparPorEfectivo(parametros, tipoGrafica, kpiInfos) {
   return parametros?.agrupar_por === "periodo" || debeAgruparPorPeriodo(tipoGrafica, kpiInfos) ? "periodo" : "entidad";
 }
 
+// Como se rellenan las marcas de una grafica por categorias: "solido" (por omision, no se guarda) o "textura" (un patron sobre el color).
+export const RELLENO_POR_OMISION = "solido";
+export const RELLENO_CON_TEXTURA = "textura";
+
+/** Si la opcion de relleno aplica: barras o dona con UN KPI que desglosa (por estado, persona, producto...). Un KPI global, varios KPIs
+ * (cada serie lleva el color de su KPI), una linea, un area, un numero o una tabla no tienen categorias de color que rellenar. */
+export function admiteRelleno(tipoGrafica, kpiInfos) {
+  const infos = (kpiInfos || []).filter(Boolean);
+  return ["barras", "dona"].includes(tipoGrafica) && infos.length === 1 && infos[0].dimensiones?.[0] !== "global";
+}
+
+/** `"textura"` o `"solido"`: lo guardado, salvo que el widget no admita la opcion. Un widget sin la llave (o con basura) es solido. */
+export function rellenoEfectivo(parametros, tipoGrafica, kpiInfos) {
+  return parametros?.relleno === RELLENO_CON_TEXTURA && admiteRelleno(tipoGrafica, kpiInfos) ? RELLENO_CON_TEXTURA : RELLENO_POR_OMISION;
+}
+
 /** Los `parametros` de un widget a partir del borrador del editor.
  *
  * - `esTabla`: un widget de tabla (KPI "vivo") son datos de "ahora": no guarda
  *   periodo, filtros ni colores.
  * - `tieneBajoStock`: el umbral solo se guarda si el KPI "articulos_bajo_stock"
  *   esta entre los elegidos (se captura en el widget, no en una columna).
- * - `kpiInfos`: los KPIs elegidos (del catalogo); un KPI global en barras/linea/area guarda `agrupar_por: "periodo"`.
+ * - `kpiInfos`: los KPIs elegidos (del catalogo); un KPI global en barras/linea/area guarda `agrupar_por: "periodo"`, y `relleno: "textura"`
+ *   solo se guarda cuando se eligio y el grafico lo admite (`admiteRelleno`): sin la llave es solido, como los widgets de antes.
  */
 export function armarParametros(estado, { esTabla = false, tieneBajoStock = false, kpiInfos = [], hoy = new Date() } = {}) {
   // Una tabla son datos de "ahora": sin periodo ni filtros. Lo unico que guarda es su tamano
@@ -124,6 +141,7 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
   );
   if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
   if (agruparPorEfectivo({ agrupar_por: estado.agruparPor }, estado.tipoGrafica, kpiInfos) === "periodo") parametros.agrupar_por = "periodo";
+  if (rellenoEfectivo({ relleno: estado.relleno }, estado.tipoGrafica, kpiInfos) === RELLENO_CON_TEXTURA) parametros.relleno = RELLENO_CON_TEXTURA;
   const titulo = normalizarTitulo(estado.titulo);
   if (titulo) parametros.titulo = titulo;
   if (tieneBajoStock && estado.umbralBajoStock !== "" && Number.isFinite(Number(estado.umbralBajoStock))) {
@@ -181,6 +199,8 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     // guardado -- se copian tal cual, sin volver a tocar el tipo.
     coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
     agruparPor: parametros.agrupar_por === "periodo" ? "periodo" : "entidad",
+    // Si no se vuelve a leer aqui, editar un widget y guardarlo borraria su relleno (igual que `titulo` o `id_teams`).
+    relleno: guardados.relleno === RELLENO_CON_TEXTURA ? RELLENO_CON_TEXTURA : RELLENO_POR_OMISION,
     umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
     columnas: columnasDeWidget(widget),
     filas: filasDeWidget(widget),

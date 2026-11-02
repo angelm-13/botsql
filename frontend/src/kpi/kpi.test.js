@@ -22,8 +22,8 @@ import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
 } from "./kpiSelector.js";
 import {
-  agruparPorEfectivo, armarParametros, columnasDeWidget, debeAgruparPorPeriodo, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
-  tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
+  admiteRelleno, agruparPorEfectivo, armarParametros, columnasDeWidget, debeAgruparPorPeriodo, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  rellenoEfectivo, tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
 } from "./kpiParametros.js";
 import {
   fechaLocalIso, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
@@ -445,6 +445,50 @@ test("armarParametros (camino de GUARDADO): un KPI global en barras guarda agrup
   assert.equal(armarParametros(borrador, { kpiInfos: [POR_PERSONA] }).agrupar_por, undefined);
   assert.equal(armarParametros({ ...borrador, tipoGrafica: "numero" }, { kpiInfos: [GLOBAL] }).agrupar_por, undefined);
   assert.equal(widgetDeBorrador(borrador, { kpiInfos: [GLOBAL] }).parametros.agrupar_por, "periodo");
+});
+
+// --- relleno (solido | textura) -----------------------------------------------------------------------------------------
+const ESTADO_RELLENO = { id_kpi_definition: 341, clave: "tareas_por_estado", dimensiones: ["estado"], unidad: "numero" };
+
+test("admiteRelleno: barras o dona con UN KPI que desglosa; no un global, varios KPIs, linea, area, numero ni tabla", () => {
+  for (const tipo of ["barras", "dona"]) {
+    assert.equal(admiteRelleno(tipo, [ESTADO_RELLENO]), true, tipo);
+    assert.equal(admiteRelleno(tipo, [POR_PERSONA]), true, tipo);
+    assert.equal(admiteRelleno(tipo, [GLOBAL]), false, `${tipo} global`);
+  }
+  assert.equal(admiteRelleno("barras", [ESTADO_RELLENO, POR_PERSONA]), false, "varios KPIs: cada serie lleva el color de su KPI");
+  for (const tipo of ["linea", "area", "numero", "tabla"]) assert.equal(admiteRelleno(tipo, [ESTADO_RELLENO]), false, tipo);
+  assert.equal(admiteRelleno("barras", []), false);
+  assert.equal(admiteRelleno("barras", [undefined]), false);
+});
+
+test("rellenoEfectivo: solo 'textura' guardada y admitida es textura; sin la llave, o con basura, es solido", () => {
+  assert.equal(rellenoEfectivo({ relleno: "textura" }, "barras", [ESTADO_RELLENO]), "textura");
+  assert.equal(rellenoEfectivo({ relleno: "solido" }, "barras", [ESTADO_RELLENO]), "solido");
+  assert.equal(rellenoEfectivo({}, "barras", [ESTADO_RELLENO]), "solido", "widget guardado antes de la opcion");
+  assert.equal(rellenoEfectivo(undefined, "dona", [ESTADO_RELLENO]), "solido");
+  assert.equal(rellenoEfectivo({ relleno: "rayas" }, "dona", [ESTADO_RELLENO]), "solido");
+  assert.equal(rellenoEfectivo({ relleno: "textura" }, "linea", [ESTADO_RELLENO]), "solido", "un tipo que no lo admite");
+});
+
+test("armarParametros guarda relleno=textura solo si se eligio y el grafico lo admite; solido no deja la llave", () => {
+  const borrador = { ...BORRADOR, tipoGrafica: "dona", idsKpiSeleccionados: ["341"], comparar: false, empleadosSeleccionados: [], coloresKpi: {}, agruparPor: "entidad" };
+  assert.equal(armarParametros({ ...borrador, relleno: "textura" }, { kpiInfos: [ESTADO_RELLENO] }).relleno, "textura");
+  assert.equal("relleno" in armarParametros({ ...borrador, relleno: "solido" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal("relleno" in armarParametros(borrador, { kpiInfos: [ESTADO_RELLENO] }), false, "borrador sin la llave");
+  assert.equal("relleno" in armarParametros({ ...borrador, relleno: "textura", tipoGrafica: "linea" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal("relleno" in armarParametros({ ...borrador, relleno: "textura", tipoGrafica: "barras", idsKpiSeleccionados: ["337"] }, { kpiInfos: [GLOBAL] }), false);
+  assert.equal(widgetDeBorrador({ ...borrador, relleno: "textura" }, { kpiInfos: [ESTADO_RELLENO] }).parametros.relleno, "textura");
+});
+
+test("estadoDeWidget relee el relleno: editar y guardar un widget con texturas no lo pierde", () => {
+  const widget = { id_kpi_dashboard_widget: 7, tipo_grafica: "dona", ids_kpi_definition: [341], parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02", relleno: "textura" } };
+  const estado = estadoDeWidget(widget, [ESTADO_RELLENO]);
+  assert.equal(estado.relleno, "textura");
+  assert.equal(armarParametros(estado, { kpiInfos: [ESTADO_RELLENO] }).relleno, "textura", "ida y vuelta");
+  const viejo = estadoDeWidget({ ...widget, parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02" } }, [ESTADO_RELLENO]);
+  assert.equal(viejo.relleno, "solido", "un widget guardado antes de la opcion abre en solido");
+  assert.equal(estadoDeWidget({ ...widget, parametros: { ...widget.parametros, relleno: "basura" } }, [ESTADO_RELLENO]).relleno, "solido");
 });
 
 test("armarParametros: una tabla (KPI vivo) no guarda periodo ni filtros", () => {

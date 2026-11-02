@@ -269,6 +269,8 @@ function defaultPanelState() {
     // por dia -- la tendencia en el tiempo que Aurora pidio poder elegir
     // ("Ambas, seleccionable").
     agruparPor: "entidad",
+    // "solido" (por omision) o "textura": como se rellenan las marcas de una grafica por categorias (ver admiteRelleno).
+    relleno: "solido",
     // Solo aplica al KPI "articulos_bajo_stock": el umbral se captura aqui,
     // en el widget, y nunca en una columna nueva de base de datos (decision
     // explicita de Aurora -- no hay stock minimo declarado en el catalogo de
