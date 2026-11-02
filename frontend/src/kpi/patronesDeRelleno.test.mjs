@@ -37,7 +37,7 @@ function snapshot(porEmpleado) {
 
 test("dona por estado (colores fijos): cada sector tiene su patron dentro de la grafica", () => {
   const kpiInfo = { dimensiones: ["estado"], unidad: "numero", colores_categoria: { pendiente: "#f0a93b", en_proceso: "#2f8fe0", bloqueada: "#ef6f5c" }, orden_categorias: ["pendiente", "en_proceso", "bloqueada"] };
-  const props = propsDona({ snapshot: snapshot({ pendiente: 5, en_proceso: 5, bloqueada: 4 }), kpiInfo, labelForId: (id) => id, agruparPorPeriodo: false, formatNumber, textos });
+  const props = propsDona({ snapshot: snapshot({ pendiente: 5, en_proceso: 5, bloqueada: 4 }), kpiInfo, labelForId: (id) => id, agruparPorPeriodo: false, formatNumber, textos, relleno: "textura" });
   assert.equal(props.conPatrones, true);
   const html = pintarDona(props);
   assert.equal((html.match(/recharts-sector/g) || []).length >= 3, true, "la dona no pinto sus sectores");
@@ -48,7 +48,7 @@ test("barras por estado (colores fijos): cada barra tiene su patron dentro de la
   const kpiInfo = { id_kpi_definition: 8, dimensiones: ["estado"], unidad: "numero", colores_categoria: { abierta: "#ef6f5c", cerrada: "#22b573" } };
   const props = propsSeries({
     tipo: "barras", snapshots: [snapshot({ abierta: 70, cerrada: 88 })], kpiInfos: [kpiInfo], labelForId: (id) => id,
-    agruparPorPeriodo: false, formatNumber, textos,
+    agruparPorPeriodo: false, formatNumber, textos, relleno: "textura",
   });
   assert.equal(props.conPatrones, true);
   const html = pintarBarras(props);
@@ -64,7 +64,7 @@ test("barras por persona con colores repetidos (horizontales desde 13): cada bar
   const porEmpleado = Object.fromEntries(ids.map((id, i) => [String(id), 20 - i]));
   const props = propsSeries({
     tipo: "barras", snapshots: [snapshot(porEmpleado)], kpiInfos: [kpiInfo], labelForId: (id) => `Persona ${id}`,
-    agruparPorPeriodo: false, formatNumber, textos,
+    agruparPorPeriodo: false, formatNumber, textos, relleno: "textura",
   });
   assert.equal(props.conPatrones, true);
   const html = pintarBarras(props);
@@ -76,4 +76,33 @@ test("sin patrones el relleno es el color plano y no hay <pattern> en la grafica
   const html = pintarDona({ datos: [{ categoria: "a", valor: 1, color: "#f0a93b" }, { categoria: "b", valor: 2, color: "#2f8fe0" }], conPatrones: false });
   assert.equal(html.includes("<pattern"), false);
   assert.ok(html.includes('fill="#f0a93b"'));
+});
+
+test("el relleno decide: sin la opcion (o 'solido') ninguna grafica lleva patron, ni las de color fijo ni las de personas con colores repetidos", () => {
+  const estado = { dimensiones: ["estado"], unidad: "numero", colores_categoria: { abierta: "#ef6f5c", cerrada: "#22b573" } };
+  const persona = { id_kpi_definition: 17, dimensiones: ["empleado"], unidad: "numero" };
+  for (const relleno of [undefined, "solido"]) {
+    const extra = relleno ? { relleno } : {};
+    const dona = pintarDona(propsDona({ snapshot: snapshot({ abierta: 5, cerrada: 2 }), kpiInfo: estado, labelForId: (id) => id, agruparPorPeriodo: false, formatNumber, textos, ...extra }));
+    assert.equal(dona.includes("<pattern"), false, `dona estado ${relleno}`);
+    assert.ok(dona.includes('fill="#ef6f5c"'));
+    const barrasEstado = pintarBarras(propsSeries({ tipo: "barras", snapshots: [snapshot({ abierta: 5, cerrada: 2 })], kpiInfos: [{ ...estado, id_kpi_definition: 8 }], labelForId: (id) => id, agruparPorPeriodo: false, formatNumber, textos, ...extra }));
+    assert.equal(barrasEstado.includes("<pattern"), false, `barras estado ${relleno}`);
+    const repetidos = pintarBarras(propsSeries({ tipo: "barras", snapshots: [snapshot({ 13: 5, 37: 4 })], kpiInfos: [persona], labelForId: (id) => `P${id}`, agruparPorPeriodo: false, formatNumber, textos, ...extra }));
+    assert.equal(colorDePersona(13), colorDePersona(37));
+    assert.equal(repetidos.includes("<pattern"), false, `barras con colores repetidos ${relleno}`);
+    assert.ok(repetidos.includes(`fill="${colorDePersona(13)}"`), "color plano de la persona");
+  }
+});
+
+test("con textura, una dimension sin color por categoria (producto) tambien lleva textura sobre el color del KPI; por periodo no", () => {
+  const producto = { id_kpi_definition: 15, dimensiones: ["producto"], unidad: "numero" };
+  const datos = (agruparPorPeriodo) => propsSeries({
+    tipo: "barras", snapshots: [{ rango_a: { total: 0, por_empleado: agruparPorPeriodo ? {} : { 1: 3, 2: 2 }, por_periodo: agruparPorPeriodo ? { "2026-10-01": 3, "2026-10-02": 2 } : {}, etiquetas: {} } }],
+    kpiInfos: [producto], labelForId: (id) => `Prod ${id}`, agruparPorPeriodo, formatNumber, textos, relleno: "textura",
+  });
+  const html = pintarBarras(datos(false));
+  assert.equal(datos(false).conPatrones, true);
+  assertCadaRellenoTienePatron(html, 2);
+  assert.equal(datos(true).conPatrones, false, "las barras por periodo son fechas, no categorias");
 });

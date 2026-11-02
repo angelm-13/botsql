@@ -171,19 +171,23 @@ test("un 0 calculado, 'sin datos en el periodo' y 'no calculado' se ven distinto
   assert.ok(cero.includes("0"));
 });
 
-test("las graficas llevan una descripcion para lector de pantalla y las de color fijo, un patron ademas del color", () => {
+test("las graficas llevan una descripcion para lector de pantalla y, con relleno textura, las de color fijo un patron ademas del color", () => {
   const barras = widgetDe("barras", PARAMETROS["viejo, fechas absolutas"]);
   const htmlBarras = pintarCuerpo({ widget: barras, datos: datosDe(barras, { snapshot: SNAPSHOT }) });
   assert.match(htmlBarras, /role="img"/);
   assert.match(htmlBarras, /aria-label="Barras: Incidentes resueltos\. 2 puntos de datos\. Mayor: .*\(10\)\."/);
   assert.match(htmlBarras, /title="Barras: Incidentes resueltos/);
 
-  // Dona de un KPI con colores_categoria (abierta/cerrada): cada rebanada y su leyenda llevan un patron.
+  // Dona de un KPI con colores_categoria (abierta/cerrada): SOLIDA por omision (un widget sin `relleno`); con `relleno: "textura"`
+  // la leyenda lleva un patron por categoria.
   const dona = widgetDe("dona", PARAMETROS["viejo, fechas absolutas"]);
   const htmlDona = pintarCuerpo({ widget: dona, datos: datosDe(dona, { snapshot: SNAPSHOT_ESTADO }) });
   assert.match(htmlDona, /role="img"/);
   assert.match(htmlDona, /aria-label="Dona: Abiertas vs\. cerradas\. 2 puntos de datos\. Mayor: Abierta \(5\)\."/);
-  assert.equal((htmlDona.match(/<pattern /g) || []).length, 2, "un patron en la leyenda por cada categoria");
+  assert.equal((htmlDona.match(/<pattern /g) || []).length, 0, "sin la opcion, la dona es solida");
+  const conTextura = widgetDe("dona", { ...PARAMETROS["viejo, fechas absolutas"], relleno: "textura" });
+  const htmlTextura = pintarCuerpo({ widget: conTextura, datos: datosDe(conTextura, { snapshot: SNAPSHOT_ESTADO }) });
+  assert.equal((htmlTextura.match(/<pattern /g) || []).length, 2, "un patron en la leyenda por cada categoria");
 
   // Una dona de un KPI sin colores_categoria no necesita patrones.
   const sinColores = { ...dona, ids_kpi_definition: [3] };

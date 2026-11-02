@@ -52,12 +52,16 @@ test("barras por persona: cada barra con el color de su persona; 'Sin asignar' e
   assert.equal(props.series[0].color, colorDeKpi(3));
 });
 
-test("barras por persona: dos personas con el mismo color (ids a 24 de distancia) activan los patrones", () => {
-  const props = propsSeries({
+test("barras por persona: dos personas con el mismo color (ids a 24 de distancia) llevan patron SOLO si el widget eligio texturas", () => {
+  const barras = (relleno) => propsSeries({
     tipo: "barras", snapshots: [snap({ 5: 10, 29: 4 })], kpiInfos: [POR_PERSONA],
-    labelForId: (id) => `P${id}`, agruparPorPeriodo: false, formatNumber, textos: TEXTOS,
+    labelForId: (id) => `P${id}`, agruparPorPeriodo: false, formatNumber, textos: TEXTOS, ...(relleno ? { relleno } : {}),
   });
-  assert.equal(props.conPatrones, true);
+  assert.equal(colorDePersona(5), colorDePersona(29), "el caso de la prueba: colores repetidos");
+  assert.equal(barras().conPatrones, false, "sin la opcion (widget de antes) es solido");
+  assert.equal(barras("solido").conPatrones, false);
+  assert.equal(barras("textura").conPatrones, true);
+  assert.equal(barras("textura").colorPorFila({ id: 5 }), colorDePersona(5), "con textura la barra conserva el color de su persona");
 });
 
 test("linea y area, por periodo y KPIs por estado o producto no cambian: color del KPI o de la categoria", () => {
@@ -70,10 +74,10 @@ test("linea y area, por periodo y KPIs por estado o producto no cambian: color d
   assert.equal(estado.colorPorFila({ id: "abierta" }), "#ef6f5c");
 });
 
-test("dona por persona: color de cada persona, 'Otros' en gris y patrones solo si hay colores repetidos", () => {
-  const dona = (porEmpleado) => propsDona({
+test("dona por persona: color de cada persona, 'Otros' en gris y patrones solo con relleno textura", () => {
+  const dona = (porEmpleado, relleno) => propsDona({
     snapshot: snap(porEmpleado), kpiInfo: POR_PERSONA, labelForId: (id) => `P${id}`,
-    agruparPorPeriodo: false, formatNumber, textos: { otros: "Otros" },
+    agruparPorPeriodo: false, formatNumber, textos: { otros: "Otros" }, ...(relleno ? { relleno } : {}),
   });
   const sinChoque = dona({ 5: 10, 6: 4 });
   assert.deepEqual(sinChoque.datos.map((d) => d.color), [colorDePersona(5), colorDePersona(6)]);
@@ -85,7 +89,9 @@ test("dona por persona: color de cada persona, 'Otros' en gris y patrones solo s
   assert.equal(conOtros.datos.at(-1).color, COLOR_OTHERS);
   assert.equal(conOtros.conPatrones, false);
 
-  assert.equal(dona({ 5: 10, 29: 4 }).conPatrones, true);
+  assert.equal(dona({ 5: 10, 29: 4 }).conPatrones, false, "colores repetidos ya no fuerzan patrones: lo decide el relleno");
+  assert.equal(dona({ 5: 10, 6: 4 }, "textura").conPatrones, true);
+  assert.equal(dona({ 5: 10, 6: 4 }, "solido").conPatrones, false);
 });
 
 test("dona por estado conserva colores_categoria y por producto la paleta por posicion", () => {

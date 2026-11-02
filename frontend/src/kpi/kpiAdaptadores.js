@@ -8,7 +8,7 @@
 // es QUIEN los pinta.
 import {
   COLOR_OTHERS, CATEGORICAL, buildMultiSeriesData, buildPieData, buildSeriesData,
-  colorDeCategoriaEstado, colorDePersona, colorEfectivoDeKpi, esKpiPorPersona, esUnidadDeConteo, formatConUnidad, hayColoresRepetidos,
+  colorDeCategoriaEstado, colorDePersona, colorEfectivoDeKpi, esKpiPorPersona, esUnidadDeConteo, formatConUnidad,
   kpiSeriesLabel, ordenarPorCategorias, unidadInfo,
 } from "./kpiDatos.js";
 import { anchoDelEje, ejeSoloEnteros, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
@@ -66,10 +66,13 @@ export function propsNumeroBajoStock({ snapshot, umbralBajoStock, textos }) {
  *
  * `tipo` decide solo el estilo de la serie de comparacion: barras la baja de
  * opacidad, linea/area la dibujan punteada.
+ *
+ * `relleno` ("solido" por omision, o "textura"): lo elige el usuario por widget. Las texturas (`conPatrones`) salen SOLO con "textura"
+ * y en barras por categoria; ya no dependen de que el KPI tenga colores fijos ni de que haya colores repetidos.
  */
 export function propsSeries({
   tipo, snapshots, kpiInfos, labelForId, empleados, agruparPorPeriodo,
-  coloresOverride, umbralBajoStock, esBajoStock, formatNumber, textos,
+  coloresOverride, umbralBajoStock, esBajoStock, formatNumber, textos, relleno = "solido",
 }) {
   const hayComparacion = Boolean(snapshots[0]?.rango_b);
   const esBarras = tipo === "barras";
@@ -93,14 +96,19 @@ export function propsSeries({
     // filas son fechas, no personas. Una linea o un area siguen con el color del KPI: una serie no tiene color por persona.
     const porPersona = esBarras && !agruparPorPeriodo && !coloresPorCategoria && esKpiPorPersona(kpiInfo);
     let colorPorFila = null;
+    // Con textura cada barra lleva un patron sobre su color; por periodo las filas son fechas, no categorias: no aplica.
+    const textura = esBarras && relleno === "textura" && !agruparPorPeriodo;
     let conPatrones = false;
     if (esBarras && coloresPorCategoria) {
       colorPorFila = (fila) => colorDeCategoriaEstado(fila.id, coloresPorCategoria, colorKpi);
-      conPatrones = true;
+      conPatrones = textura;
     } else if (porPersona) {
       colorPorFila = (fila) => colorDePersona(fila.id);
-      // Dos personas con el mismo color en esta grafica: patron por barra, para que el color no sea la unica senal.
-      conPatrones = hayColoresRepetidos(datos.map((fila) => colorDePersona(fila.id)));
+      conPatrones = textura;
+    } else if (textura) {
+      // Una dimension sin color por categoria (producto, familia...): las barras llevan el color del KPI, ahora con textura.
+      colorPorFila = () => colorKpi;
+      conPatrones = true;
     }
     const unidad = unidadDeLaGrafica([kpiInfo]);
     return {
@@ -179,7 +187,7 @@ export function totalCentroDeDona(datos, kpiInfo, formatNumber, textos = {}) {
 }
 
 /** Props de DonaWidget. */
-export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos }) {
+export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos, relleno = "solido" }) {
   const dimension = kpiInfo?.dimensiones?.[0];
   const crudas = buildPieData(snapshot, labelForId, textos.otros, agruparPorPeriodo, dimension, kpiInfo?.dimension_abierta);
   const rebanadas = agruparPorPeriodo ? crudas : ordenarPorCategorias(crudas, kpiInfo?.orden_categorias);
@@ -196,7 +204,8 @@ export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, fo
     const etiqueta = cortas?.[entrada.name];
     return { categoria: entrada.name, ...(etiqueta && etiqueta !== entrada.name ? { etiqueta } : {}), valor: entrada.value, color };
   });
-  const conPatrones = Boolean(coloresCategoria) || (porPersona && hayColoresRepetidos(datos.map((entrada) => entrada.color)));
+  // Las texturas salen solo si el usuario las eligio (`relleno`), en cualquier dona por categorias.
+  const conPatrones = relleno === "textura" && datos.length > 0;
   return {
     datos, conPatrones, formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad),
     totalCentro: totalCentroDeDona(datos, kpiInfo, formatNumber, textos),

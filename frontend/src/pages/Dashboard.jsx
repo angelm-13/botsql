@@ -38,7 +38,7 @@ import {
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  agruparPorEfectivo, armarParametros, columnasDeWidget, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
+  agruparPorEfectivo, armarParametros, columnasDeWidget, rellenoEfectivo, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
@@ -1713,6 +1713,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   const labelForId = agruparPorPeriodo
     ? (id) => id
     : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel, etiquetasDeSnapshots(snapshots));
+  // "solido" salvo que el widget haya guardado "textura" y su grafico lo admita (ver rellenoEfectivo).
+  const relleno = rellenoEfectivo(parametros, widget.tipo_grafica, kpiInfos);
   const Componente = TIPO_GRAFICA_COMPONENTE[widget.tipo_grafica];
   const mensajeSinDatos = (
     <p className="kpi-empty-inline">
@@ -1768,7 +1770,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
 
   if (widget.tipo_grafica === "dona") {
     const props = propsDona({
-      snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber,
+      snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, relleno,
       textos: { otros: tx("others", "Otros"), registros: tx("donut_total_records", "registros"), total: tx("donut_total", "total") },
     });
     if (!props.datos.length) return mensajeSinDatos;
@@ -1787,6 +1789,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     empleados: parametros.empleados,
     agruparPorPeriodo,
     coloresOverride: parametros.colores_kpi,
+    relleno,
     umbralBajoStock,
     esBajoStock,
     formatNumber,
