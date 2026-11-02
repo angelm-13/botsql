@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  disenoDeBarras, recortarEtiqueta, MAX_CATEGORIAS_HORIZONTAL, MAX_CATEGORIAS_VERTICAL, RECORTE_HORIZONTAL, RECORTE_VERTICAL,
+  disenoDeBarras, maxCategoriasHorizontal, recortarEtiqueta, MAX_CATEGORIAS_HORIZONTAL, MAX_CATEGORIAS_VERTICAL, RECORTE_HORIZONTAL, RECORTE_VERTICAL,
 } from "./kpiEtiquetasEje.js";
 
 const nombres = (cuantos, largo = 6) => Array.from({ length: cuantos }, (_, i) => `${"N".repeat(largo)}${i}`);
@@ -138,4 +138,50 @@ test("horizontal: el ancho del eje de nombres se acota", () => {
   const diseno = disenoDeBarras({ etiquetas: nombres(15, 80) });
   assert.equal(diseno.modo, "horizontal");
   assert.ok(diseno.anchoEjeCategorias <= 190);
+});
+
+// --- orientacion elegida por el usuario ---------------------------------------------------------------------------------
+test("orientacion auto (o sin ella) es exactamente el comportamiento de siempre", () => {
+  for (const orientacion of [undefined, "auto"]) {
+    assert.equal(disenoDeBarras({ etiquetas: nombres(12), orientacion }).modo, "vertical");
+    assert.equal(disenoDeBarras({ etiquetas: nombres(13), orientacion }).modo, "horizontal");
+    assert.equal(disenoDeBarras({ etiquetas: nombres(13), cantidadSeries: 2, orientacion }).modo, "vertical", "varias series: nunca horizontal en auto");
+  }
+});
+
+test("horizontal elegido: horizontal aunque haya pocas categorias, y con una serie conserva el tope de 20", () => {
+  const poco = disenoDeBarras({ etiquetas: nombres(3), orientacion: "horizontal" });
+  assert.equal(poco.modo, "horizontal");
+  assert.equal(poco.mostradas, 3);
+  assert.equal(poco.alto, 3 * 24 + 24);
+  assert.equal(disenoDeBarras({ etiquetas: nombres(30), orientacion: "horizontal" }).mostradas, MAX_CATEGORIAS_HORIZONTAL);
+});
+
+test("vertical elegido: vertical aunque haya 13 o mas categorias de una serie, con el tope de 12 y su aviso", () => {
+  const diseno = disenoDeBarras({ etiquetas: nombres(20), orientacion: "vertical" });
+  assert.equal(diseno.modo, "vertical");
+  assert.equal(diseno.mostradas, MAX_CATEGORIAS_VERTICAL);
+  assert.equal(diseno.recortado, true);
+});
+
+test("horizontal de varias series: 9, 7 y 6 categorias para 2, 3 y 4 o mas series; la fila crece y suma la leyenda", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 8].map(maxCategoriasHorizontal), [20, 9, 7, 6, 6, 6]);
+  for (const [series, maximo] of [[2, 9], [3, 7], [4, 6], [6, 6]]) {
+    const diseno = disenoDeBarras({ etiquetas: nombres(30), cantidadSeries: series, orientacion: "horizontal" });
+    assert.equal(diseno.modo, "horizontal", `${series} series`);
+    assert.equal(diseno.mostradas, maximo, `${series} series`);
+    assert.equal(diseno.recortado, true);
+  }
+  const dos = disenoDeBarras({ etiquetas: nombres(5), cantidadSeries: 2, orientacion: "horizontal" });
+  const una = disenoDeBarras({ etiquetas: nombres(5), cantidadSeries: 1, orientacion: "horizontal" });
+  assert.ok(dos.alto > una.alto, "dos series piden mas alto que una (barras mas gruesas y leyenda)");
+  assert.equal(dos.alto, 5 * 36 + 24 + 24, "fila de 2 x 14 + 8 = 36, eje de 24 y una fila de leyenda de 24");
+});
+
+test("por periodo la orientacion no cuenta: el eje son fechas y nunca es horizontal", () => {
+  for (const orientacion of ["auto", "horizontal", "vertical"]) {
+    const diseno = disenoDeBarras({ etiquetas: nombres(40), porPeriodo: true, orientacion });
+    assert.equal(diseno.modo, "vertical", orientacion);
+    assert.equal(diseno.mostradas, 40, orientacion);
+  }
 });

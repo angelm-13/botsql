@@ -38,7 +38,7 @@ import {
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  admiteRelleno, agruparPorEfectivo, armarParametros, columnasDeWidget, rellenoEfectivo, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
+  admiteRelleno, agruparPorEfectivo, armarParametros, columnasDeWidget, orientacionEfectiva, rellenoEfectivo, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
@@ -271,6 +271,8 @@ function defaultPanelState() {
     agruparPor: "entidad",
     // "solido" (por omision) o "textura": como se rellenan las marcas de una grafica por categorias (ver admiteRelleno).
     relleno: "solido",
+    // "auto" (por omision), "horizontal" o "vertical": como se orientan las barras (ver motivoSinOrientacion).
+    orientacion: "auto",
     // Solo aplica al KPI "articulos_bajo_stock": el umbral se captura aqui,
     // en el widget, y nunca en una columna nueva de base de datos (decision
     // explicita de Aurora -- no hay stock minimo declarado en el catalogo de
@@ -1715,6 +1717,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel, etiquetasDeSnapshots(snapshots));
   // "solido" salvo que el widget haya guardado "textura" y su grafico lo admita (ver rellenoEfectivo).
   const relleno = rellenoEfectivo(parametros, widget.tipo_grafica, kpiInfos);
+  // Solo las barras tienen orientacion; "auto" es lo de siempre.
+  const orientacion = orientacionEfectiva(parametros, widget.tipo_grafica, kpiInfos);
   const Componente = TIPO_GRAFICA_COMPONENTE[widget.tipo_grafica];
   const mensajeSinDatos = (
     <p className="kpi-empty-inline">
@@ -1825,6 +1829,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   return (
     <Componente
       {...props} {...interaccion} descripcion={descripcion} tipo={widget.tipo_grafica} animar={animar}
+      {...(widget.tipo_grafica === "barras" ? { orientacion } : {})}
       textoRecorte={textoRecorte}
     />
   );

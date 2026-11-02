@@ -47,7 +47,7 @@ TooltipRico.defaultProps = { active: false, payload: null, label: "", series: []
  * resaltar la tabla de material prestado (interaccion entre widgets). */
 export default function BarrasWidget({
   datos, series, campoEtiqueta, animar, onBarClick, barraResaltada, colorPorFila,
-  conPatrones, formatearEje, anchoEje, descripcion, porPeriodo, textoRecorte, etiquetasCortas, soloEnteros,
+  conPatrones, formatearEje, anchoEje, descripcion, porPeriodo, textoRecorte, etiquetasCortas, soloEnteros, orientacion,
 }) {
   const idBase = useId().replace(/:/g, "");
   // Ancho real de la grafica: las etiquetas solo se inclinan cuando no caben rectas (ver kpiEtiquetasEje).
@@ -56,7 +56,7 @@ export default function BarrasWidget({
   // En una grafica por persona el eje rotula el nombre corto; `datos`, el tooltip y la descripcion conservan el completo.
   const rotulo = (nombre) => etiquetasCortas?.[nombre] ?? nombre;
   const diseno = disenoDeBarras({
-    etiquetas: datos.map((fila) => rotulo(String(fila[campoEtiqueta] ?? ""))), cantidadSeries: series.length, porPeriodo, anchoEje, anchoGrafica,
+    etiquetas: datos.map((fila) => rotulo(String(fila[campoEtiqueta] ?? ""))), cantidadSeries: series.length, porPeriodo, anchoEje, anchoGrafica, orientacion,
   });
   const visibles = datos.slice(0, diseno.mostradas);
   const horizontal = diseno.modo === "horizontal";
@@ -167,10 +167,12 @@ BarrasWidget.propTypes = {
   etiquetasCortas: PropTypes.objectOf(PropTypes.string),
   // El eje numerico marca solo enteros (la unidad es un conteo).
   soloEnteros: PropTypes.bool,
+  // "auto" (por omision: horizontal desde 13 categorias de una serie), "horizontal" o "vertical" (la elige el usuario por widget).
+  orientacion: PropTypes.oneOf(["auto", "horizontal", "vertical"]),
 };
 
 BarrasWidget.defaultProps = {
   animar: true, onBarClick: null, barraResaltada: null, colorPorFila: null,
-  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "", porPeriodo: false, etiquetasCortas: null, soloEnteros: false,
+  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "", porPeriodo: false, etiquetasCortas: null, soloEnteros: false, orientacion: "auto",
   textoRecorte: (mostradas, total) => `Mostrando ${mostradas} de ${total}`,
 };

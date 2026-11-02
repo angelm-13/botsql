@@ -1,11 +1,17 @@
 // Como se dibuja una grafica de barras segun cuantas categorias trae. Puro y sin React -- ver kpiEtiquetasEje.test.js.
 //
-// - Una serie con 13 o mas categorias pasa a barras horizontales (tope de 20 filas).
-// - Con mas de una serie (varios indicadores o comparacion) NO hay horizontal: queda vertical y se queda en 12 categorias.
+// - Una serie con 13 o mas categorias pasa a barras horizontales (tope de 20 filas) cuando la orientacion es "auto" (por omision).
+// - Con mas de una serie (varios indicadores o comparacion) y orientacion "auto" NO hay horizontal: queda vertical y se queda en 12 categorias.
+// - La orientacion "horizontal" o "vertical" (la elige el usuario por widget) manda sobre lo anterior. Un horizontal de VARIAS series
+//   admite menos categorias cuantas mas series haya (`MAX_CATEGORIAS_HORIZONTAL_POR_SERIES`); un vertical sigue en 12.
 // - Por periodo el eje es de tiempo, no de categorias: no se pasa a horizontal ni se recorta (se perderia parte del rango).
 // - Las etiquetas largas se recortan con "..." (18 caracteres en vertical, 28 en horizontal); el nombre completo sigue en el tooltip.
 export const MAX_CATEGORIAS_VERTICAL = 12;
 export const MAX_CATEGORIAS_HORIZONTAL = 20;
+// Cuantas categorias caben en un horizontal de varias series: cada categoria lleva una barra por serie, asi que a mas series, menos filas.
+// Indice = numero de series (2, 3, 4 o mas); con una serie vale `MAX_CATEGORIAS_HORIZONTAL`.
+export const MAX_CATEGORIAS_HORIZONTAL_POR_SERIES = { 2: 9, 3: 7, 4: 6 };
+export const ORIENTACIONES = ["auto", "horizontal", "vertical"];
 export const RECORTE_VERTICAL = 18;
 export const RECORTE_HORIZONTAL = 28;
 export const ANGULO_ETIQUETA = -40;
@@ -14,6 +20,7 @@ export const ANCHO_GRAFICA_POR_OMISION = 340;
 
 const ANCHO_CARACTER = 6.2; // px a 11 px de fuente
 const ALTO_FILA_HORIZONTAL = 24;
+const ALTO_BARRA_MULTISERIE = 14;
 const ALTO_EJE_HORIZONTAL = 24;
 const ALTO_AREA_VERTICAL = 192;
 const ALTO_EJE_PLANO = 28;
@@ -43,18 +50,27 @@ export function recortarEtiqueta(texto, maximo) {
   return `${corte}…${inicial}`;
 }
 
+/** Cuantas categorias caben en un horizontal con `cantidadSeries` series. */
+export function maxCategoriasHorizontal(cantidadSeries) {
+  if (cantidadSeries <= 1) return MAX_CATEGORIAS_HORIZONTAL;
+  return MAX_CATEGORIAS_HORIZONTAL_POR_SERIES[Math.min(4, cantidadSeries)];
+}
+
 /**
  * Decide modo, categorias visibles, alturas y margenes.
+ * `orientacion`: "auto" (como siempre), "horizontal" o "vertical". Por periodo el eje es de fechas y nunca es horizontal.
  * `etiquetas` son los rotulos ya en el orden en que se dibujan (los cortos, si los hay); `anchoEje` es el ancho del eje de valores y
  * `anchoGrafica` el ancho medido de la grafica: las etiquetas solo se inclinan cuando NO caben rectas en su banda.
  */
 export function disenoDeBarras({
-  etiquetas, cantidadSeries = 1, porPeriodo = false, anchoEje = 60, anchoGrafica = ANCHO_GRAFICA_POR_OMISION,
+  etiquetas, cantidadSeries = 1, porPeriodo = false, anchoEje = 60, anchoGrafica = ANCHO_GRAFICA_POR_OMISION, orientacion = "auto",
 }) {
   const total = etiquetas.length;
-  const horizontal = !porPeriodo && cantidadSeries <= 1 && total > MAX_CATEGORIAS_VERTICAL;
+  const horizontal = !porPeriodo && (
+    orientacion === "horizontal" || (orientacion !== "vertical" && cantidadSeries <= 1 && total > MAX_CATEGORIAS_VERTICAL)
+  );
   let mostradas = total;
-  if (horizontal) mostradas = Math.min(total, MAX_CATEGORIAS_HORIZONTAL);
+  if (horizontal) mostradas = Math.min(total, maxCategoriasHorizontal(cantidadSeries));
   else if (!porPeriodo) mostradas = Math.min(total, MAX_CATEGORIAS_VERTICAL);
 
   const maxCaracteres = horizontal ? RECORTE_HORIZONTAL : RECORTE_VERTICAL;
@@ -62,9 +78,12 @@ export function disenoDeBarras({
   const base = { modo: horizontal ? "horizontal" : "vertical", total, mostradas, recortado: mostradas < total, maxCaracteres };
 
   if (horizontal) {
+    // Con varias series cada fila lleva una barra por serie (y la leyenda abajo): la fila crece para que ninguna barra quede aplastada.
+    const altoFila = cantidadSeries > 1 ? Math.max(ALTO_FILA_HORIZONTAL, cantidadSeries * ALTO_BARRA_MULTISERIE + 8) : ALTO_FILA_HORIZONTAL;
+    const filasDeLeyendaH = cantidadSeries > 1 ? Math.ceil(cantidadSeries / SERIES_POR_FILA_DE_LEYENDA) : 0;
     return {
       ...base,
-      alto: mostradas * ALTO_FILA_HORIZONTAL + ALTO_EJE_HORIZONTAL,
+      alto: mostradas * altoFila + ALTO_EJE_HORIZONTAL + filasDeLeyendaH * ALTO_FILA_LEYENDA,
       anchoEjeCategorias: Math.min(ANCHO_MAX_EJE_Y, Math.ceil(largo * ANCHO_CARACTER) + 12),
     };
   }

@@ -22,7 +22,7 @@ import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
 } from "./kpiSelector.js";
 import {
-  admiteRelleno, agruparPorEfectivo, armarParametros, columnasDeWidget, debeAgruparPorPeriodo, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  admiteOrientacion, admiteRelleno, agruparPorEfectivo, armarParametros, motivoSinOrientacion, orientacionEfectiva, columnasDeWidget, debeAgruparPorPeriodo, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
   rellenoEfectivo, tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
 } from "./kpiParametros.js";
 import {
@@ -489,6 +489,52 @@ test("estadoDeWidget relee el relleno: editar y guardar un widget con texturas n
   const viejo = estadoDeWidget({ ...widget, parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02" } }, [ESTADO_RELLENO]);
   assert.equal(viejo.relleno, "solido", "un widget guardado antes de la opcion abre en solido");
   assert.equal(estadoDeWidget({ ...widget, parametros: { ...widget.parametros, relleno: "basura" } }, [ESTADO_RELLENO]).relleno, "solido");
+});
+
+// --- orientacion (auto | horizontal | vertical) ------------------------------------------------------------------------
+test("motivoSinOrientacion: solo barras con KPIs que desglosan y sin agrupar por periodo; global y periodo dicen por que no", () => {
+  assert.equal(motivoSinOrientacion("barras", [ESTADO_RELLENO], "entidad"), null);
+  assert.equal(motivoSinOrientacion("barras", [POR_PERSONA, ESTADO_RELLENO], "entidad"), null, "varios KPIs: el horizontal multiserie se elige");
+  assert.equal(motivoSinOrientacion("barras", [GLOBAL], "periodo"), "global");
+  assert.equal(motivoSinOrientacion("barras", [GLOBAL, POR_PERSONA], "entidad"), "global");
+  assert.equal(motivoSinOrientacion("barras", [ESTADO_RELLENO], "periodo"), "periodo");
+  for (const tipo of ["dona", "linea", "area", "numero", "tabla"]) assert.equal(motivoSinOrientacion(tipo, [ESTADO_RELLENO], "entidad"), "no_aplica", tipo);
+  assert.equal(motivoSinOrientacion("barras", [], "entidad"), "no_aplica");
+  assert.equal(admiteOrientacion("barras", [ESTADO_RELLENO], "entidad"), true);
+  assert.equal(admiteOrientacion("barras", [GLOBAL], "periodo"), false);
+});
+
+test("orientacionEfectiva: lo guardado si el grafico lo admite; sin la llave, con basura o sin admitirlo es auto", () => {
+  assert.equal(orientacionEfectiva({ orientacion: "horizontal" }, "barras", [ESTADO_RELLENO]), "horizontal");
+  assert.equal(orientacionEfectiva({ orientacion: "vertical" }, "barras", [ESTADO_RELLENO, POR_PERSONA]), "vertical");
+  assert.equal(orientacionEfectiva({}, "barras", [ESTADO_RELLENO]), "auto", "widget guardado antes de la opcion");
+  assert.equal(orientacionEfectiva(undefined, "barras", [ESTADO_RELLENO]), "auto");
+  assert.equal(orientacionEfectiva({ orientacion: "diagonal" }, "barras", [ESTADO_RELLENO]), "auto");
+  assert.equal(orientacionEfectiva({ orientacion: "auto" }, "barras", [ESTADO_RELLENO]), "auto");
+  assert.equal(orientacionEfectiva({ orientacion: "horizontal", agrupar_por: "periodo" }, "barras", [ESTADO_RELLENO]), "auto", "por periodo no hay horizontal");
+  assert.equal(orientacionEfectiva({ orientacion: "horizontal" }, "barras", [GLOBAL]), "auto", "un KPI global se agrupa por periodo");
+  assert.equal(orientacionEfectiva({ orientacion: "horizontal" }, "dona", [ESTADO_RELLENO]), "auto");
+});
+
+test("armarParametros guarda la orientacion solo si es horizontal o vertical y el grafico la admite; auto no deja la llave", () => {
+  const borrador = { ...BORRADOR, tipoGrafica: "barras", idsKpiSeleccionados: ["341"], comparar: false, empleadosSeleccionados: [], coloresKpi: {}, agruparPor: "entidad" };
+  assert.equal(armarParametros({ ...borrador, orientacion: "horizontal" }, { kpiInfos: [ESTADO_RELLENO] }).orientacion, "horizontal");
+  assert.equal(armarParametros({ ...borrador, orientacion: "vertical" }, { kpiInfos: [ESTADO_RELLENO] }).orientacion, "vertical");
+  assert.equal("orientacion" in armarParametros({ ...borrador, orientacion: "auto" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal("orientacion" in armarParametros(borrador, { kpiInfos: [ESTADO_RELLENO] }), false, "borrador sin la llave");
+  assert.equal("orientacion" in armarParametros({ ...borrador, orientacion: "horizontal", agruparPor: "periodo" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal("orientacion" in armarParametros({ ...borrador, orientacion: "horizontal", idsKpiSeleccionados: ["337"] }, { kpiInfos: [GLOBAL] }), false);
+  assert.equal("orientacion" in armarParametros({ ...borrador, orientacion: "horizontal", tipoGrafica: "dona" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal(widgetDeBorrador({ ...borrador, orientacion: "horizontal" }, { kpiInfos: [ESTADO_RELLENO] }).parametros.orientacion, "horizontal");
+});
+
+test("estadoDeWidget relee la orientacion: editar y guardar un widget horizontal no la pierde; uno viejo abre en auto", () => {
+  const widget = { id_kpi_dashboard_widget: 9, tipo_grafica: "barras", ids_kpi_definition: [341], parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02", orientacion: "horizontal" } };
+  const estado = estadoDeWidget(widget, [ESTADO_RELLENO]);
+  assert.equal(estado.orientacion, "horizontal");
+  assert.equal(armarParametros(estado, { kpiInfos: [ESTADO_RELLENO] }).orientacion, "horizontal", "ida y vuelta");
+  assert.equal(estadoDeWidget({ ...widget, parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02" } }, [ESTADO_RELLENO]).orientacion, "auto");
+  assert.equal(estadoDeWidget({ ...widget, parametros: { ...widget.parametros, orientacion: "basura" } }, [ESTADO_RELLENO]).orientacion, "auto");
 });
 
 test("armarParametros: una tabla (KPI vivo) no guarda periodo ni filtros", () => {

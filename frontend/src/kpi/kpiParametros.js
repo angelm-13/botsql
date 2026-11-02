@@ -79,13 +79,39 @@ export function rellenoEfectivo(parametros, tipoGrafica, kpiInfos) {
   return parametros?.relleno === RELLENO_CON_TEXTURA && admiteRelleno(tipoGrafica, kpiInfos) ? RELLENO_CON_TEXTURA : RELLENO_POR_OMISION;
 }
 
+// Orientacion de las barras: "auto" (por omision, no se guarda: horizontal desde 13 categorias de una serie), "horizontal" o "vertical".
+export const ORIENTACION_POR_OMISION = "auto";
+const ORIENTACIONES_ELEGIBLES = ["horizontal", "vertical"];
+
+/** Por que la orientacion NO se puede elegir, o `null` si se puede: solo las barras con KPIs que desglosan y que no se agrupan por periodo.
+ * `"global"`: un KPI sin desglose no tiene categorias; `"periodo"`: el eje son fechas y solo se dibuja vertical. Otro tipo de grafico, o
+ * ningun KPI, es `"no_aplica"`. `agruparPor`: "entidad" | "periodo" (el del borrador o el efectivo de un widget guardado). */
+export function motivoSinOrientacion(tipoGrafica, kpiInfos, agruparPor) {
+  const infos = (kpiInfos || []).filter(Boolean);
+  if (tipoGrafica !== "barras" || infos.length === 0) return "no_aplica";
+  if (infos.some((info) => info.dimensiones?.[0] === "global")) return "global";
+  if (agruparPor === "periodo") return "periodo";
+  return null;
+}
+
+export const admiteOrientacion = (tipoGrafica, kpiInfos, agruparPor) => motivoSinOrientacion(tipoGrafica, kpiInfos, agruparPor) === null;
+
+/** `"auto"`, `"horizontal"` o `"vertical"`: lo guardado, salvo que el grafico no lo admita (o la llave falte o traiga basura): `"auto"`. */
+export function orientacionEfectiva(parametros, tipoGrafica, kpiInfos) {
+  const agruparPor = agruparPorEfectivo(parametros, tipoGrafica, kpiInfos);
+  return ORIENTACIONES_ELEGIBLES.includes(parametros?.orientacion) && admiteOrientacion(tipoGrafica, kpiInfos, agruparPor)
+    ? parametros.orientacion
+    : ORIENTACION_POR_OMISION;
+}
+
 /** Los `parametros` de un widget a partir del borrador del editor.
  *
  * - `esTabla`: un widget de tabla (KPI "vivo") son datos de "ahora": no guarda
  *   periodo, filtros ni colores.
  * - `tieneBajoStock`: el umbral solo se guarda si el KPI "articulos_bajo_stock"
  *   esta entre los elegidos (se captura en el widget, no en una columna).
- * - `kpiInfos`: los KPIs elegidos (del catalogo); un KPI global en barras/linea/area guarda `agrupar_por: "periodo"`, y `relleno: "textura"`
+ * - `kpiInfos`: los KPIs elegidos (del catalogo); un KPI global en barras/linea/area guarda `agrupar_por: "periodo"`, `orientacion` solo
+ *   si es horizontal o vertical y el grafico la admite (`admiteOrientacion`), y `relleno: "textura"`
  *   solo se guarda cuando se eligio y el grafico lo admite (`admiteRelleno`): sin la llave es solido, como los widgets de antes.
  */
 export function armarParametros(estado, { esTabla = false, tieneBajoStock = false, kpiInfos = [], hoy = new Date() } = {}) {
@@ -142,6 +168,8 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
   if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
   if (agruparPorEfectivo({ agrupar_por: estado.agruparPor }, estado.tipoGrafica, kpiInfos) === "periodo") parametros.agrupar_por = "periodo";
   if (rellenoEfectivo({ relleno: estado.relleno }, estado.tipoGrafica, kpiInfos) === RELLENO_CON_TEXTURA) parametros.relleno = RELLENO_CON_TEXTURA;
+  const orientacion = orientacionEfectiva({ orientacion: estado.orientacion, agrupar_por: estado.agruparPor }, estado.tipoGrafica, kpiInfos);
+  if (orientacion !== ORIENTACION_POR_OMISION) parametros.orientacion = orientacion;
   const titulo = normalizarTitulo(estado.titulo);
   if (titulo) parametros.titulo = titulo;
   if (tieneBajoStock && estado.umbralBajoStock !== "" && Number.isFinite(Number(estado.umbralBajoStock))) {
@@ -201,6 +229,8 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     agruparPor: parametros.agrupar_por === "periodo" ? "periodo" : "entidad",
     // Si no se vuelve a leer aqui, editar un widget y guardarlo borraria su relleno (igual que `titulo` o `id_teams`).
     relleno: guardados.relleno === RELLENO_CON_TEXTURA ? RELLENO_CON_TEXTURA : RELLENO_POR_OMISION,
+    // Igual que el relleno: si no se relee aqui, editar un widget y guardarlo borraria su orientacion.
+    orientacion: ORIENTACIONES_ELEGIBLES.includes(guardados.orientacion) ? guardados.orientacion : ORIENTACION_POR_OMISION,
     umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
     columnas: columnasDeWidget(widget),
     filas: filasDeWidget(widget),
