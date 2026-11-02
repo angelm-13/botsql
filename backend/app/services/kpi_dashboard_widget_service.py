@@ -54,6 +54,18 @@ def validar_orden_tabla(valor) -> dict:
     return {'campo': valor['campo'], 'direccion': valor['direccion']}
 
 
+# Como se rellenan las marcas de una grafica por categorias (barras, dona): color plano o con textura (un patron sobre el color).
+# Sin la llave es "solido": un widget guardado antes de esta opcion no cambia.
+RELLENOS = ('solido', 'textura')
+
+
+def validar_relleno(valor) -> str:
+    """`parametros.relleno`: `solido` o `textura`; cualquier otra cosa (otro texto, un numero, `null`) es 400."""
+    if valor not in RELLENOS:
+        raise AppError('errors.invalid_field', 400, {'field': 'relleno', 'allowed': list(RELLENOS)})
+    return valor
+
+
 def validar_titulo(valor) -> str | None:
     """El titulo propio de un grafico (`parametros.titulo`), ya recortado, o `None` si no hay titulo.
 
@@ -225,6 +237,8 @@ class KpiDashboardWidgetService(CrudService):
         parametros = dict(parametros)
         if 'orden_tabla' in parametros:
             validar_orden_tabla(parametros['orden_tabla'])
+        if 'relleno' in parametros:
+            validar_relleno(parametros['relleno'])
         if 'titulo' in parametros:
             titulo = validar_titulo(parametros['titulo'])
             if titulo is None:
