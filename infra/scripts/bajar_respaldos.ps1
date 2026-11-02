@@ -9,11 +9,11 @@
   Hace falta la llave SSH cargada (ssh-add), igual que para cualquier scp al VPS.
 
 .EXAMPLE
-  .\bajar_respaldos.ps1                          # los cuatro ambientes
+  .\bajar_respaldos.ps1                          # todos los que tengan CronJob pg-backup
   .\bajar_respaldos.ps1 -Ambientes tyakxa-dev    # solo uno (para probar)
 #>
 param(
-  [string[]]$Ambientes = @("tyakxa-dev", "torredigital-prod", "comala-prod", "adser-prod"),
+  [string[]]$Ambientes = @(),
   [string]$Servidor = "168.231.67.33",
   [string]$Destino = "C:\Users\TDW2\respaldos_cluster"
 )
@@ -37,7 +37,9 @@ if ($LASTEXITCODE -ne 0) {
 ssh $Servidor "rm -rf ~/respaldos_para_bajar"
 
 Write-Host "3/3 Ultimo respaldo por ambiente en esta PC:"
-foreach ($a in $Ambientes) {
+# Sin -Ambientes el script de master1 descubre la lista: se resume lo que haya en $Destino.
+$lista = if ($Ambientes.Count -gt 0) { $Ambientes } else { (Get-ChildItem $Destino -Directory | Select-Object -ExpandProperty Name) }
+foreach ($a in $lista) {
   $d = Join-Path $Destino $a
   if (Test-Path $d) {
     Get-ChildItem $d -Filter *.sql.gz | Sort-Object LastWriteTime -Descending | Select-Object -First 1 |
