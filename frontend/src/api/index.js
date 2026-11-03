@@ -638,6 +638,11 @@ export const changeEmployeePayrollGroup = (payload) => request("/employee_payrol
 export const updateEmployeePayrollGroup = (id, payload) => request(`/employee_payroll_group/${id}`, { method: "PUT", body: payload });
 export const deleteEmployeePayrollGroup = (id) => request(`/employee_payroll_group/${id}`, { method: "DELETE" });
 // Forma de salario de cada empleado (por dia, por hora o fijo), con vigencia.
+// Simulador de nomina (services/payroll_simulator_service.py).
+export const getPayrollSimulatorEmployee = (id) => request(`/payroll_simulator/employee/${id}`);
+export const calculatePayrollSimulation = (payload) => request("/payroll_simulator/calculate", { method: "POST", body: payload });
+export const downloadPayrollSimulationPdf = (payload) => requestBlob("/payroll_simulator/pdf", { method: "POST", body: payload });
+export const addPayrollSimulationBonuses = (payload) => request("/payroll_simulator/bonuses", { method: "POST", body: payload });
 // Bajas: finiquito y liquidacion (services/termination_service.py).
 export const getAllEmployeeTermination = (params = {}) => request("/employee_termination/", { params });
 export const createEmployeeTermination = (payload) => request("/employee_termination/", { method: "POST", body: payload });

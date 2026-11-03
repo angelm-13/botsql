@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Simulación de nómina {{ record.employee }}</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 16mm 14mm 20mm;
+      @bottom-left { content: "SIMULACIÓN. No es recibo de nómina ni CFDI."; color: #9a3412; font: 7.5pt sans-serif; }
+      @bottom-right { content: "Pagina " counter(page) " de " counter(pages); color: #5f6d73; font: 7.5pt sans-serif; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172329; font: 9pt "DejaVu Sans", sans-serif; line-height: 1.45; }
+    header { display: table; width: 100%; padding-bottom: 10px; border-bottom: 3px solid #173b66; }
+    .brand, .heading { display: table-cell; vertical-align: middle; }
+    .brand strong { color: #173b66; font-size: 14pt; }
+    .company-line { color: #52636a; font-size: 7.5pt; }
+    .heading { text-align: right; }
+    h1 { margin: 0; color: #173b66; font-size: 16pt; }
+    .sub { margin-top: 3px; color: #52636a; font-size: 8pt; }
+    .stamp { margin-top: 12px; padding: 6px 8px; border: 2px dashed #c2410c; color: #9a3412; font-weight: 700; text-align: center; letter-spacing: 1px; }
+    h2 { margin: 14px 0 0; padding: 5px 7px; background: #173b66; color: white; font-size: 8pt; text-transform: uppercase; }
+    .grid { display: table; width: 100%; table-layout: fixed; border: 1px solid #aebdc2; border-top: 0; }
+    .cell { display: table-cell; padding: 6px 8px; vertical-align: top; border-right: 1px solid #d7e0e3; }
+    .cell:last-child { border-right: 0; }
+    .label { display: block; color: #52636a; font-size: 6.8pt; font-weight: 700; text-transform: uppercase; }
+    .value { display: block; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid #aebdc2; border-top: 0; }
+    th { padding: 5px 8px; background: #eef2f5; color: #34464d; font-size: 7pt; text-align: left; text-transform: uppercase; }
+    td { padding: 5px 8px; border-top: 1px solid #e3e9ec; }
+    .amount { text-align: right; white-space: nowrap; }
+    .empty { color: #6b7a80; font-style: italic; }
+    .totals { margin-top: 14px; width: 55%; margin-left: 45%; border: 1px solid #aebdc2; }
+    .totals td { border-top: 1px solid #e3e9ec; }
+    .totals tr:first-child td { border-top: 0; }
+    .net td { background: #173b66; color: white; font-size: 11pt; font-weight: 700; }
+    .note { margin-top: 18px; color: #52636a; font-size: 7.5pt; }
+  </style>
+</head>
+<body>
+  {% set frecuencias = {"weekly": "Semanal", "biweekly": "Catorcenal", "semimonthly": "Quincenal", "monthly": "Mensual"} %}
+  {% set formas = {"daily": "Por día", "hourly": "Por hora", "fixed": "Fijo por periodo"} %}
+  <header>
+    <div class="brand">
+      <strong>{{ record.company or "Empresa" }}</strong>
+      {% if record.company_tax_id %}<div class="company-line">RFC {{ record.company_tax_id }}</div>{% endif %}
+    </div>
+    <div class="heading">
+      <h1>Simulación de nómina</h1>
+      <div class="sub">{{ frecuencias[record.pay_frequency] }} &middot; {{ record.period_days }} días</div>
+      <div class="sub">Cifras vigentes al {{ record.date }}</div>
+    </div>
+  </header>
+  <div class="stamp">SIMULACIÓN &mdash; NO ES RECIBO DE NÓMINA</div>
+
+  <h2>Datos</h2>
+  <div class="grid">
+    <div class="cell"><span class="label">Empleado</span><span class="value">{{ record.employee or "Sin empleado (cotización)" }}</span></div>
+    <div class="cell"><span class="label">Forma de salario</span><span class="value">{{ formas[record.salary_type] }} &middot; $ {{ "{:,.2f}".format(record.amount) }}</span></div>
+    <div class="cell"><span class="label">Salario diario</span><span class="value">$ {{ "{:,.2f}".format(record.daily_salary) }}</span></div>
+    <div class="cell"><span class="label">Días pagados</span><span class="value">{{ record.paid_days }} ({{ record.absences }} faltas)</span></div>
+    <div class="cell"><span class="label">SBC</span><span class="value">$ {{ "{:,.2f}".format(record.sbc) }}</span></div>
+  </div>
+
+  <h2>Percepciones</h2>
+  <table>
+    <thead><tr><th>Concepto</th><th class="amount">Importe</th></tr></thead>
+    <tbody>
+      {% for m in record.earnings %}
+      <tr><td>{{ m.description }}</td><td class="amount">$ {{ "{:,.2f}".format(m.amount) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Deducciones</h2>
+  <table>
+    <thead><tr><th>Concepto</th><th class="amount">Importe</th></tr></thead>
+    <tbody>
+      {% for m in record.deductions %}
+      <tr><td>{{ m.description }}</td><td class="amount">$ {{ "{:,.2f}".format(m.amount) }}</td></tr>
+      {% else %}
+      <tr><td class="empty" colspan="2">Sin deducciones</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td>Total de percepciones</td><td class="amount">$ {{ "{:,.2f}".format(record.total_earnings) }}</td></tr>
+    <tr><td>Total de deducciones</td><td class="amount">$ {{ "{:,.2f}".format(record.total_deductions) }}</td></tr>
+    <tr class="net"><td>Neto estimado</td><td class="amount">$ {{ "{:,.2f}".format(record.net_pay) }}</td></tr>
+  </table>
+
+  <p class="note">Cálculo de prueba generado por TYAKXA con las cifras oficiales vigentes a la fecha indicada. Base gravable del ISR:
+    $ {{ "{:,.2f}".format(record.taxable_income) }}; ISR antes del subsidio: $ {{ "{:,.2f}".format(record.isr_before_subsidy) }};
+    subsidio para el empleo: $ {{ "{:,.2f}".format(record.employment_subsidy) }}. Los bonos y premios gravan completos para el ISR.
+    No es un recibo de nómina ni un Comprobante Fiscal Digital (CFDI).</p>
+</body>
+</html>

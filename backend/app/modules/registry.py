@@ -450,6 +450,11 @@ CAPACIDADES = (
     # (actualizar), para poder dejar a un rol en "solo ver" desde el Gestor.
     Capacidad("my_leaves", "Mis vacaciones", "rh", bits=CAPTURA, menu="sidebar",
               autoservicio=True),
+    # Simulador de nomina (2026-11-03): RH calcula un recibo de prueba -sueldo,
+    # faltas, horas extra, bonos y premios- sin tocar ningun periodo. Por omision
+    # solo Administrator (recibe todas las capacidades). Pasar los bonos a un
+    # periodo real pide ademas el permiso de alta de `payroll_movement`.
+    Capacidad("payroll_simulator", "Simulador de nomina", "rh", menu="sidebar"),
     Capacidad("restaurant_waiter", "Meseros", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_kitchen", "Cocina", "restaurante", bits=EDITAR, menu="sidebar"),

@@ -36,6 +36,7 @@ from app.routes.attendance_correction import bp_attendance_correction
 from app.routes.overtime import bp_overtime
 from app.routes.employee_salary import bp_employee_salary
 from app.routes.employee_termination import bp_employee_termination
+from app.routes.payroll_simulator import bp_payroll_simulator
 from app.routes.payroll_holiday import bp_payroll_holiday
 from app.routes.employee_leave import bp_employee_leave
 from app.routes.payroll_movement import bp_payroll_movement
@@ -725,6 +726,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_overtime)
     app.register_blueprint(bp_employee_salary)
     app.register_blueprint(bp_employee_termination)
+    app.register_blueprint(bp_payroll_simulator)
     app.register_blueprint(bp_payroll_holiday)
     app.register_blueprint(bp_employee_leave)
     app.register_blueprint(bp_payroll_movement)

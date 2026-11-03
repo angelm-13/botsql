@@ -79,9 +79,12 @@ export async function request(path, options = {}) {
 
 export async function requestBlob(path, options = {}) {
   const token = localStorage.getItem("token");
+  // `body` opcional: un PDF que se arma con lo que manda la pantalla (simulador de nomina).
+  const conCuerpo = options.body !== undefined;
   const response = await fetch(buildUrl(path, options.params), {
     method: options.method || "GET",
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) }
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(conCuerpo ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) },
+    ...(conCuerpo ? { body: JSON.stringify(options.body) } : {})
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
