@@ -45,14 +45,76 @@ export function tituloDeWidget(parametros, nombreDeLosKpis) {
   return normalizarTitulo(parametros?.titulo) || nombreDeLosKpis;
 }
 
+// Tipos de grafica que dibujan una serie (barras, linea, area): con un KPI global esa serie solo puede ser por dia.
+const TIPOS_DE_SERIE = ["barras", "linea", "area"];
+
+/** Un KPI global (sin desglose: "clientes nuevos", ingresos totales) en barras, linea o area solo tiene una serie: la de cada dia.
+ * El servidor, en el modo por entidad, devuelve `por_empleado` vacio para un KPI global y la grafica salia como "Sin datos en el
+ * periodo" aunque hubiera filas; y el editor no ofrece "Agrupar por" en un KPI global, asi que el usuario no puede corregirlo.
+ * `kpiInfos`: los KPIs elegidos; con alguno sin desglose por dia (o ninguno conocido) no se fuerza nada. */
+export function debeAgruparPorPeriodo(tipoGrafica, kpiInfos) {
+  const infos = (kpiInfos || []).filter(Boolean);
+  return TIPOS_DE_SERIE.includes(tipoGrafica) && infos.length > 0 && infos.every((info) => info.dimensiones?.[0] === "global");
+}
+
+/** `"periodo"` o `"entidad"` con el que se consulta y se pinta un widget: lo guardado, salvo que el KPI global lo fuerce.
+ * Sirve tambien a los widgets ya guardados sin `agrupar_por` (se corrigen al leer, sin editarlos). */
+export function agruparPorEfectivo(parametros, tipoGrafica, kpiInfos) {
+  return parametros?.agrupar_por === "periodo" || debeAgruparPorPeriodo(tipoGrafica, kpiInfos) ? "periodo" : "entidad";
+}
+
+// Como se rellenan las marcas de una grafica por categorias: "solido" (por omision, no se guarda) o "textura" (un patron sobre el color).
+export const RELLENO_POR_OMISION = "solido";
+export const RELLENO_CON_TEXTURA = "textura";
+
+/** Si la opcion de relleno aplica: barras o dona con UN KPI que desglosa (por estado, persona, producto...). Un KPI global, varios KPIs
+ * (cada serie lleva el color de su KPI), una linea, un area, un numero o una tabla no tienen categorias de color que rellenar. */
+export function admiteRelleno(tipoGrafica, kpiInfos) {
+  const infos = (kpiInfos || []).filter(Boolean);
+  return ["barras", "dona"].includes(tipoGrafica) && infos.length === 1 && infos[0].dimensiones?.[0] !== "global";
+}
+
+/** `"textura"` o `"solido"`: lo guardado, salvo que el widget no admita la opcion. Un widget sin la llave (o con basura) es solido. */
+export function rellenoEfectivo(parametros, tipoGrafica, kpiInfos) {
+  return parametros?.relleno === RELLENO_CON_TEXTURA && admiteRelleno(tipoGrafica, kpiInfos) ? RELLENO_CON_TEXTURA : RELLENO_POR_OMISION;
+}
+
+// Orientacion de las barras: "auto" (por omision, no se guarda: horizontal desde 13 categorias de una serie), "horizontal" o "vertical".
+export const ORIENTACION_POR_OMISION = "auto";
+const ORIENTACIONES_ELEGIBLES = ["horizontal", "vertical"];
+
+/** Por que la orientacion NO se puede elegir, o `null` si se puede: solo las barras con KPIs que desglosan y que no se agrupan por periodo.
+ * `"global"`: un KPI sin desglose no tiene categorias; `"periodo"`: el eje son fechas y solo se dibuja vertical. Otro tipo de grafico, o
+ * ningun KPI, es `"no_aplica"`. `agruparPor`: "entidad" | "periodo" (el del borrador o el efectivo de un widget guardado). */
+export function motivoSinOrientacion(tipoGrafica, kpiInfos, agruparPor) {
+  const infos = (kpiInfos || []).filter(Boolean);
+  if (tipoGrafica !== "barras" || infos.length === 0) return "no_aplica";
+  if (infos.some((info) => info.dimensiones?.[0] === "global")) return "global";
+  if (agruparPor === "periodo") return "periodo";
+  return null;
+}
+
+export const admiteOrientacion = (tipoGrafica, kpiInfos, agruparPor) => motivoSinOrientacion(tipoGrafica, kpiInfos, agruparPor) === null;
+
+/** `"auto"`, `"horizontal"` o `"vertical"`: lo guardado, salvo que el grafico no lo admita (o la llave falte o traiga basura): `"auto"`. */
+export function orientacionEfectiva(parametros, tipoGrafica, kpiInfos) {
+  const agruparPor = agruparPorEfectivo(parametros, tipoGrafica, kpiInfos);
+  return ORIENTACIONES_ELEGIBLES.includes(parametros?.orientacion) && admiteOrientacion(tipoGrafica, kpiInfos, agruparPor)
+    ? parametros.orientacion
+    : ORIENTACION_POR_OMISION;
+}
+
 /** Los `parametros` de un widget a partir del borrador del editor.
  *
  * - `esTabla`: un widget de tabla (KPI "vivo") son datos de "ahora": no guarda
  *   periodo, filtros ni colores.
  * - `tieneBajoStock`: el umbral solo se guarda si el KPI "articulos_bajo_stock"
  *   esta entre los elegidos (se captura en el widget, no en una columna).
+ * - `kpiInfos`: los KPIs elegidos (del catalogo); un KPI global en barras/linea/area guarda `agrupar_por: "periodo"`, `orientacion` solo
+ *   si es horizontal o vertical y el grafico la admite (`admiteOrientacion`), y `relleno: "textura"`
+ *   solo se guarda cuando se eligio y el grafico lo admite (`admiteRelleno`): sin la llave es solido, como los widgets de antes.
  */
-export function armarParametros(estado, { esTabla = false, tieneBajoStock = false, hoy = new Date() } = {}) {
+export function armarParametros(estado, { esTabla = false, tieneBajoStock = false, kpiInfos = [], hoy = new Date() } = {}) {
   // Una tabla son datos de "ahora": sin periodo ni filtros. Lo unico que guarda es su tamano
   // (`columnas`, `filas`), y solo cuando es doble: ausente = 1, que es como se ven las tablas
   // anteriores.
@@ -97,7 +159,6 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
     }
   }
   if (estado.empleadosSeleccionados.length) parametros.empleados = estado.empleadosSeleccionados.map(Number);
-  if (estado.departamentosSeleccionados.length) parametros.id_departments = estado.departamentosSeleccionados.map(Number);
   if (estado.equiposSeleccionados?.length) parametros.id_teams = estado.equiposSeleccionados.map(Number);
   // Solo los overrides de KPIs que siguen seleccionados -- un KPI que se
   // quito de la seleccion no debe dejar un color huerfano guardado.
@@ -105,7 +166,10 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
     estado.idsKpiSeleccionados.filter((id) => estado.coloresKpi[id]).map((id) => [id, estado.coloresKpi[id]]),
   );
   if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
-  if (estado.agruparPor === "periodo") parametros.agrupar_por = "periodo";
+  if (agruparPorEfectivo({ agrupar_por: estado.agruparPor }, estado.tipoGrafica, kpiInfos) === "periodo") parametros.agrupar_por = "periodo";
+  if (rellenoEfectivo({ relleno: estado.relleno }, estado.tipoGrafica, kpiInfos) === RELLENO_CON_TEXTURA) parametros.relleno = RELLENO_CON_TEXTURA;
+  const orientacion = orientacionEfectiva({ orientacion: estado.orientacion, agrupar_por: estado.agruparPor }, estado.tipoGrafica, kpiInfos);
+  if (orientacion !== ORIENTACION_POR_OMISION) parametros.orientacion = orientacion;
   const titulo = normalizarTitulo(estado.titulo);
   if (titulo) parametros.titulo = titulo;
   if (tieneBajoStock && estado.umbralBajoStock !== "" && Number.isFinite(Number(estado.umbralBajoStock))) {
@@ -146,6 +210,7 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
   return {
     editingWidgetId: widget.id_kpi_dashboard_widget,
     paso: 0,
+    visitados: [],
     idsKpiSeleccionados: ids,
     tipoGrafica: widget.tipo_grafica || "numero",
     rangoRelativo: relativo ? guardados.rango_relativo : RANGO_PERSONALIZADO,
@@ -156,13 +221,16 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     fechaInicioB: parametros.fecha_inicio_b || "",
     fechaFinB: parametros.fecha_fin_b || "",
     empleadosSeleccionados: Array.isArray(parametros.empleados) ? parametros.empleados.map(String) : [],
-    departamentosSeleccionados: Array.isArray(parametros.id_departments) ? parametros.id_departments.map(String) : [],
     // Si no se vuelve a leer aqui, editar un widget y guardarlo borraria el filtro (igual que `orden_tabla`).
     equiposSeleccionados: Array.isArray(parametros.id_teams) ? parametros.id_teams.map(String) : [],
     // Las llaves de `colores_kpi` ya llegan como string desde el JSON
     // guardado -- se copian tal cual, sin volver a tocar el tipo.
     coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
     agruparPor: parametros.agrupar_por === "periodo" ? "periodo" : "entidad",
+    // Si no se vuelve a leer aqui, editar un widget y guardarlo borraria su relleno (igual que `titulo` o `id_teams`).
+    relleno: guardados.relleno === RELLENO_CON_TEXTURA ? RELLENO_CON_TEXTURA : RELLENO_POR_OMISION,
+    // Igual que el relleno: si no se relee aqui, editar un widget y guardarlo borraria su orientacion.
+    orientacion: ORIENTACIONES_ELEGIBLES.includes(guardados.orientacion) ? guardados.orientacion : ORIENTACION_POR_OMISION,
     umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
     columnas: columnasDeWidget(widget),
     filas: filasDeWidget(widget),
@@ -208,6 +276,19 @@ export function mezclaUnidades(kpiInfos) {
   return new Set(kpiInfos.map(unidadDeKpi)).size > 1;
 }
 
+/** En que se desglosa un KPI (su primera dimension: "empleado", "estado", "producto", "global"...), o null si la
+ * fila no la declara. */
+export function dimensionDeKpi(info) {
+  return info?.dimensiones?.[0] ?? null;
+}
+
+/** Si el grafico ya mezcla desgloses distintos (un widget guardado antes de la regla de dimension: "abiertas vs.
+ * cerradas" con "abiertas por responsable" deja "cerrada" y nombres de personas en el mismo eje). Solo informativo:
+ * esos widgets se siguen viendo igual. */
+export function mezclaDimensiones(kpiInfos) {
+  return new Set(kpiInfos.map(dimensionDeKpi).filter((dimension) => dimension !== null)).size > 1;
+}
+
 /** Por que `candidato` NO se puede sumar a un grafico que ya lleva
  * `seleccionados`, o null si se puede.
  *
@@ -215,6 +296,9 @@ export function mezclaUnidades(kpiInfos) {
  *   cantidad) comparten el eje Y del grafico y el de escala menor queda
  *   invisible.
  * - "modo": un KPI en vivo (tabla) y uno de serie no comparten ninguna grafica.
+ * - "dimension": otro desglose. Las series comparten el eje X: un KPI por estado ("cerrada") y uno por persona
+ *   pondrian categorias que no son comparables en el mismo eje. Un KPI sin dimension declarada (fila huerfana) no
+ *   se bloquea por esto.
  */
 export function motivoParaNoCombinar(seleccionados, candidato) {
   if (!seleccionados.length) return null;
@@ -222,5 +306,7 @@ export function motivoParaNoCombinar(seleccionados, candidato) {
   if (seleccionados.some((info) => (info.modo === "vivo") !== esVivo)) return "modo";
   const unidad = unidadDeKpi(candidato);
   if (seleccionados.some((info) => unidadDeKpi(info) !== unidad)) return "unidad";
+  const dimension = dimensionDeKpi(candidato);
+  if (dimension !== null && seleccionados.some((info) => dimensionDeKpi(info) !== null && dimensionDeKpi(info) !== dimension)) return "dimension";
   return null;
 }

@@ -13,7 +13,7 @@ from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.proyect import Proyect
 from app.models.session import transaction_context
-from app.utils.tiempo import ahora_negocio
+from app.utils.tiempo import ahora_negocio, hoy_negocio
 
 # Ventana de 7 dias (hoy incluido) para que una factura corregida un par de
 # dias despues tambien se refleje, no solo el dia exacto en que se calculo.
@@ -121,9 +121,18 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
     return filas_escritas
 
 
+def recalcular_kpi_snapshots_de_claves(session, fecha_inicio: date, fecha_fin: date, claves) -> int:
+    """Recalcula SOLO los KPIs de `claves` en el rango dado, sobre la sesion que ya trae quien llama.
+
+    La usa el recalculo bajo demanda de un tablero (`kpi_recalculo_service`): necesita la misma transaccion para
+    tomar el candado y escribir. Los KPIs "vivos" se saltan igual que en el job. Devuelve las filas escritas.
+    """
+    return _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio, fecha_fin, claves=tuple(claves))
+
+
 @celery.task(name="app.jobs.tasks_kpis.recalculate_kpi_snapshots")
 def recalculate_kpi_snapshots() -> dict:
-    fecha_fin = date.today()
+    fecha_fin = hoy_negocio()
     fecha_inicio = fecha_fin - timedelta(days=VENTANA_DIAS - 1)
 
     with transaction_context() as session:

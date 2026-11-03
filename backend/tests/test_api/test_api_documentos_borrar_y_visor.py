@@ -50,7 +50,7 @@ class TestBorrarYVisor(BackendTestCase):
     def _subir(self, archivo=PDF, nombre="constancia.pdf"):
         respuesta = self._request(BORRA, "POST", "/document/", content_type="multipart/form-data", data={
             "file": (BytesIO(archivo), nombre), "title": "Constancia", "id_document_category": str(self.categoria.id_document_category),
-            "relation_type": "employee", "id_employee": "71",
+            "relation_type": "employee", "id_employee": "71", "expiration_date": "2030-01-01",
         })
         self.assertEqual(respuesta.status_code, 201, respuesta.get_data(as_text=True))
         return self.json(respuesta)["document"]["id_document"]

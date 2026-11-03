@@ -1,10 +1,11 @@
 import { useState } from "react";
 import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, Check, FileText, FlaskConical,
-  Hash, LineChart as LineChartIcon, PieChart as PieChartIcon, Receipt,
+  Hash, LineChart as LineChartIcon, Receipt,
   Table as TableIcon,
 } from "lucide-react";
 import FormularioPlegable from "../FormularioPlegable";
+import IconoDona from "./IconoDona";
 import SelectorDeKpi from "./SelectorDeKpi";
 import { EMPLEADOS_DEMO, KPIS_DEMO_PARA_EDITOR } from "./demoData";
 import { colorDeAvatar, inicialesDe } from "./avatar";
@@ -26,7 +27,7 @@ const CHART_TYPES = [
   { tipo: "barras", etiqueta: "Barras", Icono: BarChart2, color: "#eb6834" },
   { tipo: "linea", etiqueta: "Línea", Icono: LineChartIcon, color: "#12b8c9" },
   { tipo: "area", etiqueta: "Área", Icono: AreaChartIcon, color: "#1baf7a" },
-  { tipo: "dona", etiqueta: "Dona", Icono: PieChartIcon, color: "#8b6cf6" },
+  { tipo: "dona", etiqueta: "Dona", Icono: IconoDona, color: "#8b6cf6" },
   { tipo: "tabla", etiqueta: "Tabla", Icono: TableIcon, color: "#e87ba4" },
 ];
 

@@ -28,6 +28,11 @@ export const UNIDAD_INFO = {
   minutos: { etiquetaSelector: "Min", prefijo: "", sufijo: " min" },
 };
 
+// Unidades que SIEMPRE son conteos (piezas, registros): no admiten decimales y se pueden sumar entre categorias. "numero" es la que el
+// selector rotula "Cantidad". Porcentajes, pesos, dias y minutos no entran: pueden traer decimales o no ser aditivos.
+export const UNIDADES_DE_CONTEO = ["numero", "piezas"];
+export const esUnidadDeConteo = (unidad) => UNIDADES_DE_CONTEO.includes(unidad);
+
 export function unidadInfo(unidad) {
   return UNIDAD_INFO[unidad] || UNIDAD_INFO.numero;
 }
@@ -80,6 +85,44 @@ export function colorDeKpi(idKpiDefinition) {
   const id = Number(idKpiDefinition);
   if (!Number.isFinite(id)) return COLOR_OTHERS;
   return CATEGORICAL[((id % CATEGORICAL.length) + CATEGORICAL.length) % CATEGORICAL.length];
+}
+
+// Color fijo por PERSONA, por su id de usuario: el mismo en el filtro de empleados, en las barras y en las rebanadas
+// de los KPIs que desglosan por persona. Es la FUENTE UNICA: nadie mas calcula el color de una persona.
+//
+// El tono base sale de `id % 8` (la paleta CATEGORICAL, igual que `colorDeKpi`): con mas de 8 personas es inevitable
+// que dos compartan tono, asi que un segundo canal estable, `floor(id / 8) % 3`, lo aclara o lo oscurece:
+// variante 0 = el tono tal cual, 1 = aclarado, 2 = oscurecido. Son 24 colores distintos y cada persona conserva el
+// suyo en todos los tableros. Si aun asi dos personas visibles de un mismo grafico chocan (ids a 24 de distancia), la
+// grafica agrega patrones (`hayColoresRepetidos`) y el nombre va siempre en el eje, la leyenda y el tooltip.
+export const VARIANTES_DE_PERSONA = 3;
+const MEZCLA_DE_VARIANTE = [null, { con: [255, 255, 255], parte: 0.35 }, { con: [0, 0, 0], parte: 0.25 }];
+
+function mezclarHex(hex, { con, parte }) {
+  const canales = [1, 3, 5].map((inicio) => parseInt(hex.slice(inicio, inicio + 2), 16));
+  return `#${canales.map((canal, i) => Math.round(canal * (1 - parte) + con[i] * parte).toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function colorDePersona(idUsuario) {
+  // `Number(null)` y `Number("")` son 0: "Otros" (id null) no es la persona 0.
+  if (idUsuario === null || idUsuario === undefined || idUsuario === "") return COLOR_OTHERS;
+  const id = Number(idUsuario);
+  if (!Number.isFinite(id)) return COLOR_OTHERS;
+  const base = colorDeKpi(id);
+  const variante = ((Math.floor(id / CATEGORICAL.length) % VARIANTES_DE_PERSONA) + VARIANTES_DE_PERSONA) % VARIANTES_DE_PERSONA;
+  return MEZCLA_DE_VARIANTE[variante] ? mezclarHex(base, MEZCLA_DE_VARIANTE[variante]) : base;
+}
+
+/** Si dos de los colores de una grafica son el mismo (sin contar el gris de "Otros"/"Sin asignar", que se espera
+ * repetido). */
+export function hayColoresRepetidos(colores) {
+  const vistos = new Set();
+  return (colores || []).some((color) => {
+    if (color === COLOR_OTHERS) return false;
+    if (vistos.has(color)) return true;
+    vistos.add(color);
+    return false;
+  });
 }
 
 // Color EFECTIVO de un KPI dentro de un widget ya guardado: el override manual
@@ -150,7 +193,12 @@ export function enriquecerCatalogo(catalogo, dimensiones) {
   });
 }
 
-/** Si el filtro por empleados (y el de departamentos) tiene sentido: solo cuando alguno de los
+/** Si el KPI desglosa por PERSONA (los ids son de usuario): segun el catalogo enriquecido o, sin el, la dimension. */
+export function esKpiPorPersona(kpiInfo) {
+  return (kpiInfo?.dimension_tipo ?? tipoDeDimension(kpiInfo?.dimensiones?.[0])) === "persona";
+}
+
+/** Si el filtro por empleados tiene sentido: solo cuando alguno de los
  * KPIs elegidos desglosa por PERSONA (ids de usuario). Con un KPI por estado, por mesero o por
  * unidad el filtro compararia ids de otra cosa y devolveria vacio. */
 export function muestraFiltroDePersonas(kpiInfos) {
@@ -264,7 +312,18 @@ export function kpiSeriesLabel(kpiInfo, index) {
 // alguien una categoria real detras de un "Otros" que nunca hacia falta.
 export const DIMENSIONES_ABIERTAS = new Set(["empleado", "producto"]);
 
-export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo, dimension, abiertaDeclarada) {
+// Cuantas rebanadas se dibujan de un KPI que NO se suma (un porcentaje, un promedio): sin "Otros", las N primeras.
+export const MAXIMO_DE_REBANADAS_SIN_OTROS = 12;
+
+/** Si los valores del KPI se pueden sumar entre categorias. Un porcentaje o un promedio (`promedio_ponderado`) no: 4 personas al 83 % no son
+ * un "Otros" del 333 %, y la API no manda el peso de cada una para promediarlas bien. */
+export function valoresNoSumables(kpiInfo) {
+  return kpiInfo?.unidad === "porcentaje" || kpiInfo?.agregacion === "promedio_ponderado";
+}
+
+/** Las rebanadas de una dona. `noSumable` (ver `valoresNoSumables`): en una dimension abierta NO se agrupa el sobrante en "Otros" (sumar
+ * porcentajes no tiene sentido): salen todas las rebanadas hasta `MAXIMO_DE_REBANADAS_SIN_OTROS`, ordenadas de mayor a menor. */
+export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo, dimension, abiertaDeclarada, noSumable = false) {
   const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
   const entradas = agruparPorPeriodo
     ? Object.entries(porA).sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
@@ -272,6 +331,9 @@ export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriod
   const abierta = abiertaDeclarada ?? DIMENSIONES_ABIERTAS.has(dimension);
   if (!abierta) {
     return entradas.map(([id, valor]) => ({ id, name: labelForId(id), value: valor }));
+  }
+  if (noSumable) {
+    return entradas.slice(0, MAXIMO_DE_REBANADAS_SIN_OTROS).map(([id, valor]) => ({ id, name: labelForId(id), value: valor }));
   }
   const principales = entradas.slice(0, CATEGORICAL.length);
   const restoTotal = entradas.slice(CATEGORICAL.length).reduce((suma, [, valor]) => suma + valor, 0);

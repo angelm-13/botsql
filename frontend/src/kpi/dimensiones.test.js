@@ -100,17 +100,17 @@ test("buildPieData: 'Otros' se agrupa solo en dimensiones abiertas, segun lo dec
   assert.equal(props.datos.length, 12);
 });
 
-test("un widget guardado con parametros.empleados sigue igual: se lee y se vuelve a guardar identico", () => {
+test("un widget guardado con parametros.empleados sigue igual; un id_departments de antes ya no se lee ni se guarda", () => {
   const widget = {
     id_kpi_dashboard_widget: 1, tipo_grafica: "barras", ids_kpi_definition: [1],
     parametros: { fecha_inicio: "2026-09-01", fecha_fin: "2026-09-30", empleados: [7, 9], id_departments: [2] },
   };
   const estado = estadoDeWidget(widget, [{ id_kpi_definition: 1, dimensiones: ["empleado"] }]);
   assert.deepEqual(estado.empleadosSeleccionados, ["7", "9"]);
-  assert.deepEqual(estado.departamentosSeleccionados, ["2"]);
+  assert.equal("departamentosSeleccionados" in estado, false, "el filtro por departamento ya no existe en el editor");
   const guardado = armarParametros(estado, {});
   assert.deepEqual(guardado.empleados, [7, 9]);
-  assert.deepEqual(guardado.id_departments, [2]);
+  assert.equal("id_departments" in guardado, false);
 });
 
 test("la unidad 'minutos' se muestra con su sufijo y tiene etiqueta en el selector", () => {

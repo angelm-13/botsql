@@ -908,7 +908,8 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         return mock.patch.object(tasks_kpis, "KPI_REGISTRY", tuple(kpis))
 
     def _contenedor_con_fecha(self, hoy):
-        # La corrida nocturna fecha con `date.today()` del contenedor; la frecuente, con `hoy_negocio()`.
+        # Simula un contenedor cuya fecha (`date.today()`) no es la del negocio. Ya ninguna corrida la lee: las dos fechan con
+        # `hoy_negocio()`; se conserva para probar justo eso.
         falso = mock.MagicMock(wraps=date)
         falso.today.return_value = hoy
         return mock.patch.object(tasks_kpis, "date", falso)
@@ -969,14 +970,16 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         self.assertEqual({NORTE: 5.0}, guardado[ayer], "la foto de ayer es lo que era ayer: no se reescribe")
         self.assertEqual({NORTE: 1.0, SUR: 0.0, VACIO: 0.0, None: 0.0}, guardado[D])
 
-    def test_la_nocturna_de_un_contenedor_en_utc_no_guarda_la_foto_bajo_el_dia_utc(self):
+    def test_la_nocturna_de_un_contenedor_en_utc_guarda_la_foto_bajo_el_dia_del_negocio(self):
         # 19:00 en Mexico = 01:00 UTC del dia siguiente: el contenedor (UTC) cree que hoy es D1, pero hoy es D.
-        # Sin esta guarda, la foto de las 19:00 del dia 15 se guardaria como la del 16.
+        # La corrida usa `hoy_negocio()`, no la fecha del contenedor: la foto de las 19:00 del dia 15 se guarda
+        # como la del 15 y nunca como la del 16.
         self._checada(ANA, local(D, 10, 0))
         with self._con_registro(self.frecuentes), self._contenedor_con_fecha(D1), reloj_en_utc(datetime(2026, 10, 16, 1, 0)):
             tasks_kpis.recalculate_kpi_snapshots()
-        self.assertEqual({}, self._guardado("checadas_en_turno_por_equipo"))
-        self.assertEqual({}, self._guardado("checadas_sin_salida_por_equipo"))
+        self.assertEqual({D}, set(self._guardado("checadas_en_turno_por_equipo")))
+        self.assertEqual({D}, set(self._guardado("checadas_sin_salida_por_equipo")))
+        self.assertEqual(1.0, self._guardado("checadas_en_turno_por_equipo")[D][NORTE])
 
     def test_un_backfill_de_un_rango_pasado_no_inventa_fotos(self):
         self._checada(ANA, local(D, 10, 0))

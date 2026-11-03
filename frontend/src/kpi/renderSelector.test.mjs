@@ -240,15 +240,15 @@ test("al buscar un sin desglose sale en su modulo y en Variables (con etiqueta s
   assert.equal(apariciones.filter((fila) => fila.includes("kpi-selector-modulo-tag")).length, 1, "solo la de Variables lleva la etiqueta");
 });
 
-// --- con los 45 KPIs del registry ----------------------------------------------------------------
+// --- con los 51 KPIs del registry ----------------------------------------------------------------
 const REGISTRY = JSON.parse(readFileSync(new URL("./fixtures/catalogo_del_registry.json", import.meta.url), "utf8"))
   .map((kpi) => ({ ...kpi, descripcion: `Descripcion de ${kpi.etiqueta}` }));
 const SIN_DESGLOSE_DE_RESTAURANTE = ["Ventas del restaurante", "Ticket promedio", "Propinas del restaurante", "Propina como % de la venta", "Tiempo de entrega", "Cuentas sin cobrar"];
 
-test("con los 45 KPIs del registry: conteos por pestana y los 6 sin desglose de restaurante dentro de Restaurante", () => {
+test("con los 51 KPIs del registry: conteos por pestana y los 6 sin desglose de restaurante dentro de Restaurante", () => {
   const botones = botonesDeModulo(pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false }));
   assert.deepEqual(botones.map((b) => [b.clave, b.texto.match(/(\d+)$/)[1]]), [
-    ["operaciones", "12"], ["asistencias", "7"], ["inventario", "4"], ["facturacion", "4"], ["laboratorio", "3"], ["documentos", "1"], ["restaurante", "14"], ["variables", "9"],
+    ["operaciones", "12"], ["crm", "6"], ["asistencias", "7"], ["inventario", "4"], ["facturacion", "4"], ["laboratorio", "3"], ["documentos", "1"], ["restaurante", "14"], ["variables", "12"],
   ]);
   const restaurante = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "restaurante" });
   assert.equal(filas(restaurante).length, 14, "la pestana Restaurante trae TODOS sus KPIs");
@@ -258,8 +258,8 @@ test("con los 45 KPIs del registry: conteos por pestana y los 6 sin desglose de 
   assert.equal(filas(combinables).length, 6, "los 6 sin desglose, juntos al final");
   assert.ok(!filas(combinables).some((fila) => fila.includes("Mesas ocupadas")), "los de desglose quedan arriba");
   const variables = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "variables" });
-  assert.equal(filas(variables).length, 9);
-  assert.ok(filas(variables).every((fila) => fila.includes("kpi-selector-modulo-tag")), "las 9 tarjetas de Variables llevan su modulo");
+  assert.equal(filas(variables).length, 12);
+  assert.ok(filas(variables).every((fila) => fila.includes("kpi-selector-modulo-tag")), "las 12 tarjetas de Variables llevan su modulo");
   assert.deepEqual(etiquetaDeModulo(variables, "Ticket promedio"), ["restaurante", "Modulo restaurante"]);
   assert.deepEqual(etiquetaDeModulo(variables, "Incidencias pendientes"), ["operaciones", "Modulo operaciones"]);
 });
@@ -299,10 +299,10 @@ test("las pestanas sin KPIs permitidos no aparecen y los contadores son solo de 
   assert.ok(!botones.some((b) => b.clave === "inventario"), "sin KPIs permitidos de inventario no hay pestana");
 });
 
-test("el superusuario ve todo: los 45 KPIs en 6 modulos, mas Asistencias (junto a Operaciones) y Variables", () => {
+test("el superusuario ve todo: los 51 KPIs en 7 modulos, mas Asistencias (junto a Operaciones) y Variables", () => {
   // Un superusuario lo tiene todo permitido: el catalogo es el registry completo.
   const html = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false });
-  assert.deepEqual(botonesDeModulo(html).map((b) => b.clave), ["operaciones", "asistencias", "inventario", "facturacion", "laboratorio", "documentos", "restaurante", "variables"]);
+  assert.deepEqual(botonesDeModulo(html).map((b) => b.clave), ["operaciones", "crm", "asistencias", "inventario", "facturacion", "laboratorio", "documentos", "restaurante", "variables"]);
 });
 
 // --- pestana «Asistencias»: los siete KPIs de checadas (grupo del registry), sin dejar de ser de operaciones ----
@@ -324,9 +324,9 @@ test("la pestana Asistencias trae los siete KPIs de checadas y Operaciones ya no
   const operaciones = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "operaciones" });
   assert.equal(filas(operaciones).length, 12);
   for (const etiqueta of ETIQUETAS_DE_CHECADAS) assert.ok(!filaDe(operaciones, etiqueta), `${etiqueta} ya no esta en Operaciones`);
-  // Variables no cambia: las mismas 9, ninguna de checadas.
+  // Variables no cambia: las mismas 12, ninguna de checadas.
   const variables = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "variables" });
-  assert.equal(filas(variables).length, 9);
+  assert.equal(filas(variables).length, 12);
   for (const etiqueta of ETIQUETAS_DE_CHECADAS) assert.ok(!filaDe(variables, etiqueta));
 });
 
@@ -359,7 +359,7 @@ test("un rol sin ninguno de los siete, o solo con KPIs de Operaciones, no ve la 
   const todo = pintarSelector({ catalogo: sinChecadas, seleccionados: [], multiple: false });
   assert.ok(!botonesDeModulo(todo).some((b) => b.clave === "asistencias"));
   assert.ok(!todo.includes('data-grupo="asistencias"'));
-  const soloOperaciones = REGISTRY.filter((k) => k.modulo === "operaciones" && !CHECADAS.includes(k.clave));
+  const soloOperaciones = REGISTRY.filter((k) => k.modulo === "operaciones" && !k.grupo);
   const html = pintarSelector({ catalogo: soloOperaciones, seleccionados: [], multiple: false });
   assert.deepEqual(gruposVisibles(html), ["operaciones"]);
   assert.deepEqual(botonesDeModulo(html), [], "una sola pestana: sin fila de botones");
@@ -388,6 +388,20 @@ test("dentro de Asistencias la regla de unidades sigue igual: la otra unidad sal
 
 // El selector de arriba se prueba con un `metaDeModulo` de prueba. Este es el cableado REAL: el panel «Agregar grafico» del
 // Dashboard con su propio icono y nombre de pestana (`kpiPestanaMeta`) y su `tx` para traducir.
+test("el panel «Agregar grafico» pinta la pestana CRM, justo despues de Operaciones, con su icono y su color", async () => {
+  const { colorDeModulo } = await import("./kpiSelector.js");
+  const botones = botonesDeModulo(pintarPanel({ kpiCatalog: REGISTRY }));
+  const claves = botones.map((b) => b.clave);
+  assert.equal(claves.indexOf("crm"), claves.indexOf("operaciones") + 1, "CRM va justo despues de Operaciones");
+  const crm = botones.find((b) => b.clave === "crm");
+  assert.match(crm.texto, /CRM \d+$/, "se llama CRM, no «Crm»");
+  assert.ok(crm.html.includes("lucide-users"), "con el icono de usuarios");
+  const html = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "crm" });
+  assert.match(html, new RegExp(`--tinte-modulo:${colorDeModulo("crm")}`), "el cuerpo se tiñe con el color de CRM");
+  assert.match(html, /data-modulo-activo="crm"/);
+  assert.equal(new Set(["facturacion", "operaciones", "inventario", "laboratorio", "documentos", "restaurante", "asistencias", "crm", "variables"].map(colorDeModulo)).size, 9, "ninguna pestaña comparte color con otra");
+});
+
 test("el panel «Agregar grafico» pinta la pestana Asistencias con su icono y su nombre traducido; los modulos no cambian", () => {
   const traducir = (clave, respaldo) => (clave === "selector_grupo_asistencias" ? "Attendance" : respaldo ?? clave);
   const botones = Object.fromEntries(botonesDeModulo(pintarPanel({ kpiCatalog: REGISTRY, traducir })).map((b) => [b.clave, b]));
@@ -401,4 +415,148 @@ test("el panel «Agregar grafico» pinta la pestana Asistencias con su icono y s
   // Un rol con un solo KPI de checadas: sin fila de botones, pero el titulo del grupo lleva el nombre traducido.
   const uno = pintarPanel({ kpiCatalog: delRegistry("checadas_en_turno_por_equipo"), traducir }).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
   assert.match(uno, /Attendance 1/);
+});
+
+// --- color del modulo: el icono y el resto de la seccion ----------------------
+test("el resto de la seccion se tiñe con el color del modulo elegido", async () => {
+  const { colorDeModulo } = await import("./kpiSelector.js");
+  const operaciones = pintar({});
+  assert.match(operaciones, new RegExp(`class="kpi-selector-cuerpo kpi-selector-tintado"[^>]*--tinte-modulo:${colorDeModulo("operaciones")}`));
+  assert.match(operaciones, /data-modulo-activo="operaciones"/);
+  const inventario = pintar({ moduloInicial: "inventario" });
+  assert.match(inventario, new RegExp(`--tinte-modulo:${colorDeModulo("inventario")}`));
+  assert.notEqual(colorDeModulo("operaciones"), colorDeModulo("inventario"));
+});
+
+test("con una busqueda (resultados de varios modulos) no hay color de modulo con el que teñir", () => {
+  const html = pintar({ busquedaInicial: "total" });
+  assert.ok(html.includes('class="kpi-selector-cuerpo"'), "el cuerpo existe pero sin tinte");
+  assert.ok(!html.includes("--tinte-modulo"));
+  assert.ok(!html.includes("data-modulo-activo"));
+});
+
+test("el icono de cada boton de modulo lleva la clase que lo pinta con su color", () => {
+  const botones = botonesDeModulo(pintar({}));
+  assert.ok(botones.length > 0);
+  for (const boton of botones) assert.ok(boton.html.includes("--tinte"), boton.clave);
+});
+
+// --- tipo de grafica con el color del modulo ---------------------------------
+const botonesDeTipo = (html) => [...html.matchAll(/<button[^>]*kpi-icon-option-modulo[^>]*>.*?<\/button>/gs)].map((m) => m[0]);
+
+test("los iconos del tipo de grafico toman el color del modulo del KPI elegido", async () => {
+  const { colorDeModulo } = await import("./kpiSelector.js");
+  const operaciones = botonesDeTipo(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"] }));
+  assert.ok(operaciones.length >= 4, "uno por tipo de grafico");
+  for (const boton of operaciones) assert.ok(boton.includes(`--tinte:${colorDeModulo("operaciones")}`));
+  const inventario = botonesDeTipo(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["4"] }));
+  for (const boton of inventario) assert.ok(boton.includes(`--tinte:${colorDeModulo("inventario")}`));
+});
+
+test("sin KPI elegido el tipo de grafico no lleva color de modulo (lo manda el selector al abrir)", () => {
+  const botones = botonesDeTipo(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: [] }));
+  assert.ok(botones.length > 0);
+  for (const boton of botones) assert.ok(!boton.includes("--tinte"));
+});
+
+// --- relleno (solido | con texturas) en el paso "Que medir" ---------------------------------------------------------------
+const seccionDeRelleno = (html) => (html.match(/<span>Relleno<\/span>.*?<\/p>/s) || [null])[0];
+const chip = (seccion, etiqueta) => (seccion.match(new RegExp(`<button[^>]*>${etiqueta}</button>`)) || [""])[0];
+
+test("el selector de relleno sale con barras o dona y un KPI que desglosa: Solido | Con texturas, con Solido activo por omision", () => {
+  for (const tipoGrafica of ["barras", "dona"]) {
+    const seccion = seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], tipoGrafica }));
+    assert.ok(seccion, `${tipoGrafica}: falta la seccion Relleno`);
+    assert.match(chip(seccion, "Sólido"), /aria-pressed="true"/);
+    assert.match(chip(seccion, "Con texturas"), /aria-pressed="false"/);
+    assert.match(seccion, /patrón sobre cada color/, "con su ayuda");
+  }
+});
+
+test("con relleno textura en el borrador, 'Con texturas' es el activo", () => {
+  const seccion = seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], relleno: "textura" }));
+  assert.match(chip(seccion, "Con texturas"), /aria-pressed="true"/);
+  assert.match(chip(seccion, "Sólido"), /aria-pressed="false"/);
+});
+
+test("el selector de relleno NO sale con linea, area, numero o tabla, con un KPI global, con varios KPIs ni sin KPI", () => {
+  for (const tipoGrafica of ["linea", "area", "numero", "tabla"]) {
+    assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], tipoGrafica })), null, tipoGrafica);
+  }
+  assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["5"], tipoGrafica: "barras" })), null, "KPI global");
+  assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1", "2"], tipoGrafica: "barras" })), null, "varios KPIs");
+  assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: [], tipoGrafica: "barras" })), null, "sin KPI");
+});
+
+// --- bloque "Apariencia": relleno y orientacion pegados a la vista previa --------------------------------------------------
+const aside = (html) => (html.match(/<aside class="kpi-editor-vista-previa">.*<\/aside>/s) || [""])[0];
+const pasoDelPanel = (html) => (html.match(/<div class="kpi-editor-paso-contenido[^"]*"[^>]*>.*?<aside/s) || [""])[0];
+const seccionOrientacion = (html) => (html.match(/<span>Orientación<\/span>.*?<\/div>(?:<p[^>]*>[^<]*<\/p>)?/s) || [null])[0];
+
+test("el bloque Apariencia va en el aside, despues de la tarjeta de la vista previa, y no en el paso 'Que medir'", () => {
+  const html = pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], tipoGrafica: "barras" });
+  const lateral = aside(html);
+  assert.match(lateral, /kpi-editor-apariencia/);
+  assert.ok(lateral.indexOf("kpi-editor-vista-previa-tarjeta") < lateral.indexOf("kpi-editor-apariencia"), "despues de la tarjeta");
+  assert.match(lateral, /<p class="kpi-editor-grupo-titulo">Apariencia<\/p>/);
+  assert.ok(lateral.includes("<span>Relleno</span>") && lateral.includes("<span>Orientación</span>"));
+  const paso = pasoDelPanel(html);
+  assert.ok(!paso.includes("Relleno") && !paso.includes("Orientación") && !paso.includes("kpi-editor-apariencia"), "ya no esta debajo de la lista de KPIs");
+  assert.match(html, /class="kpi-editor-cuerpo kpi-editor-cuerpo-apariencia"/, "la clase que sube el aside en pantallas angostas");
+});
+
+test("sin nada que elegir (sin KPI, numero, linea, tabla, dona de un KPI global) no hay bloque ni clase", () => {
+  for (const opciones of [
+    { idsKpiSeleccionados: [], tipoGrafica: "barras" },
+    { idsKpiSeleccionados: ["1"], tipoGrafica: "numero" },
+    { idsKpiSeleccionados: ["1"], tipoGrafica: "linea" },
+    { idsKpiSeleccionados: ["1"], tipoGrafica: "tabla" },
+    { idsKpiSeleccionados: ["5"], tipoGrafica: "dona" },
+  ]) {
+    const html = pintarPanel({ kpiCatalog: CATALOGO, ...opciones });
+    assert.ok(!html.includes("kpi-editor-apariencia"), JSON.stringify(opciones));
+    assert.ok(!html.includes("kpi-editor-cuerpo-apariencia"), JSON.stringify(opciones));
+  }
+});
+
+test("dona con un KPI que desglosa: el bloque trae Relleno y NO Orientacion", () => {
+  const lateral = aside(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], tipoGrafica: "dona" }));
+  assert.ok(lateral.includes("<span>Relleno</span>") && !lateral.includes("Orientación"));
+});
+
+test("barras con un KPI que desglosa: Orientacion con tres opciones, Automatica activa por omision, habilitadas y sin nota", () => {
+  const seccion = seccionOrientacion(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"] }));
+  assert.match(chip(seccion, "Automática"), /aria-pressed="true"/);
+  assert.match(chip(seccion, "Horizontal"), /aria-pressed="false"/);
+  assert.match(chip(seccion, "Vertical"), /aria-pressed="false"/);
+  assert.ok(!/disabled/.test(seccion), "habilitadas");
+  assert.ok(!seccion.includes("kpi-orientacion-nota"));
+  const elegida = seccionOrientacion(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], orientacion: "horizontal" }));
+  assert.match(chip(elegida, "Horizontal"), /aria-pressed="true"/);
+  assert.match(chip(elegida, "Automática"), /aria-pressed="false"/);
+});
+
+test("barras con varios KPIs: Orientacion habilitada (el horizontal de varias series se elige) y sin Relleno", () => {
+  const html = pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1", "2"], orientacion: "vertical" });
+  const seccion = seccionOrientacion(html);
+  assert.match(chip(seccion, "Vertical"), /aria-pressed="true"/);
+  assert.ok(!/disabled/.test(seccion));
+  assert.ok(!aside(html).includes("<span>Relleno</span>"));
+});
+
+test("barras con un KPI global: el bloque sale solo con Orientacion deshabilitada y su nota; sin Relleno", () => {
+  const html = pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["5"] });
+  const seccion = seccionOrientacion(html);
+  for (const etiqueta of ["Automática", "Horizontal", "Vertical"]) assert.match(chip(seccion, etiqueta), /disabled/, etiqueta);
+  assert.match(chip(seccion, "Automática"), /aria-pressed="true"/);
+  assert.match(seccion, /id="kpi-orientacion-nota">Un KPI sin desglose no tiene categorías/);
+  assert.ok(!aside(html).includes("<span>Relleno</span>"));
+  // Una orientacion guardada no se ve activa: con un KPI global no hay nada que elegir.
+  assert.match(chip(seccionOrientacion(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["5"], orientacion: "horizontal" })), "Horizontal"), /aria-pressed="false"/);
+});
+
+test("barras agrupadas por periodo: Orientacion deshabilitada con la nota del eje de fechas", () => {
+  const seccion = seccionOrientacion(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], agruparPor: "periodo", orientacion: "horizontal" }));
+  for (const etiqueta of ["Automática", "Horizontal", "Vertical"]) assert.match(chip(seccion, etiqueta), /disabled/, etiqueta);
+  assert.match(seccion, /Agrupado por periodo el eje son fechas: solo se dibuja vertical\./);
 });

@@ -75,7 +75,7 @@ class DocumentLaboratoryPostgresqlTest(unittest.TestCase):
         category_id = DocumentManagementService.categories()[0]["id_document_category"]
         created = DocumentManagementService.create_with_version(CLIENT_A, {
             "id_document_category": category_id, "title": "Documento privado",
-            "relation_type": "customer", "id_customer_supplier": 910,
+            "relation_type": "customer", "id_customer_supplier": 910, "expiration_date": "2030-01-01",
         }, b"%PDF-1.4\n%%EOF", "privado.pdf", self.storage)
         document_id = created["document"]["id_document"]
         self.assertEqual(document_id, DocumentManagementService.get(document_id, CLIENT_A)["id_document"])
@@ -88,7 +88,7 @@ class DocumentLaboratoryPostgresqlTest(unittest.TestCase):
         category_id = DocumentManagementService.categories()[0]["id_document_category"]
         created = DocumentManagementService.create_with_version(ADMIN, {
             "id_document_category": category_id, "title": "Documento de empleado",
-            "relation_type": "employee", "id_employee": 912,
+            "relation_type": "employee", "id_employee": 912, "expiration_date": "2030-01-01",
         }, b"%PDF-1.4\n%%EOF", "empleado.pdf", self.storage)
         document = DocumentManagementService.get(created["document"]["id_document"], ADMIN)
         self.assertEqual(912, document["relations"][0]["id_employee"])

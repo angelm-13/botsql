@@ -64,10 +64,11 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
         for clave in ("material_por_estado", "incidencias_abiertas_vs_cerradas"):
             with self.subTest(clave=clave):
                 self.assertIsNone(KPI_POR_CLAVE[clave].orden_categorias)
-        # Solo los de categorias con un orden de lectura propio: las ordinales de antiguedad y los
-        # estados de la pieza (de lo normal a lo grave).
+        # Solo los de categorias con un orden de lectura propio: las ordinales de antiguedad, los
+        # estados de la pieza (de lo normal a lo grave) y los de proyectos de la pestana CRM.
         self.assertEqual(
-            ["prestamos_abiertos_por_antiguedad", "piezas_por_estado", "pedidos_del_dia", "mesas_ocupadas"],
+            ["prestamos_abiertos_por_antiguedad", "piezas_por_estado", "pedidos_del_dia", "mesas_ocupadas",
+             "proyectos_por_estado_comercial", "tareas_por_estado"],
             [kpi.clave for kpi in KPI_REGISTRY if kpi.orden_categorias is not None],
         )
 
@@ -261,8 +262,9 @@ class GrupoDelSelectorTest(unittest.TestCase):
             self.assertEqual("asistencias", kpi.grupo, clave)
             self.assertEqual("operaciones", kpi.modulo, f"{clave}: el modulo real no cambia (licencias, permisos, job)")
 
-    def test_ningun_otro_kpi_declara_grupo(self):
-        self.assertEqual(set(CHECADAS), {kpi.clave for kpi in KPI_REGISTRY if kpi.grupo is not None})
+    def test_asistencias_son_solo_los_de_checadas_y_no_hay_otro_grupo_que_crm(self):
+        self.assertEqual(set(CHECADAS), {kpi.clave for kpi in KPI_REGISTRY if kpi.grupo == "asistencias"})
+        self.assertEqual({"asistencias", "crm"}, {kpi.grupo for kpi in KPI_REGISTRY if kpi.grupo is not None})
 
     def test_la_api_entrega_el_grupo_junto_al_modulo_real(self):
         agrupado = KpiDefinition(clave="checadas_en_turno_por_equipo", etiqueta="x", modulo="operaciones",
@@ -290,19 +292,22 @@ class GrupoDelSelectorTest(unittest.TestCase):
                 agregacion="suma", grupo=grupo,
             )
 
-        with mock.patch.object(registry, "KPI_REGISTRY", (kpi("asistencias"),)):
-            registry._validar()  # no revienta
+        for bueno in ("asistencias", "crm"):
+            with self.subTest(grupo=bueno), mock.patch.object(registry, "KPI_REGISTRY", (kpi(bueno),)):
+                registry._validar()  # no revienta
         for malo in ("asistenciass", "operaciones", ""):
             with self.subTest(grupo=malo), mock.patch.object(registry, "KPI_REGISTRY", (kpi(malo),)):
                 with self.assertRaisesRegex(RuntimeError, "grupo desconocido"):
                     registry._validar()
 
-    def test_un_grupo_no_se_llama_como_un_modulo_real(self):
+    def test_un_grupo_solo_se_llama_como_un_modulo_real_si_es_crm_a_proposito(self):
         # La pestana se identifica por una sola clave: la de su grupo o, si no tiene, la de su modulo. Si un grupo
-        # se llamara como un modulo, el selector fundiria las dos pestanas en una.
+        # se llamara como un modulo, el selector fundiria las dos pestanas en una. Con "crm" eso es justo lo que se
+        # quiere: los KPIs de clientes (`modulo="crm"`) y los de proyectos y tareas (`grupo="crm"`) comparten pestana.
+        # Cualquier otro grupo que coincida con un modulo seria un descuido.
         from app.modules.registry import MODULO_POR_CLAVE
 
-        self.assertEqual(set(), set(registry.GRUPOS_DE_SELECTOR) & set(MODULO_POR_CLAVE))
+        self.assertEqual({"crm"}, set(registry.GRUPOS_DE_SELECTOR) & set(MODULO_POR_CLAVE))
 
     def test_el_grupo_no_es_una_columna_de_kpi_definition(self):
         # Vive en el registry y la API lo entrega desde ahi (como `direccion` o `descripcion`): no hay migracion.

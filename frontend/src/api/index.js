@@ -495,6 +495,8 @@ export const getAllKpiDashboard = (params = {}) => request("/kpi_dashboard/", { 
 export const createKpiDashboard = (payload) => request("/kpi_dashboard/", { method: "POST", body: payload });
 export const updateKpiDashboard = (id, payload) => request(`/kpi_dashboard/${id}`, { method: "PUT", body: payload });
 export const deleteKpiDashboard = (id) => request(`/kpi_dashboard/${id}`, { method: "DELETE" });
+// Recalcula indicadores del tablero bajo demanda (uno por llamada desde el boton "Actualizar datos").
+export const recalcularKpiDashboard = (id, payload) => request(`/kpi_dashboard/${id}/recalcular`, { method: "POST", body: payload });
 
 export const getAllKpiDashboardWidget = (idDashboard) => request(`/kpi_dashboard/${idDashboard}/widgets/`);
 export const createKpiDashboardWidget = (idDashboard, payload) => request(`/kpi_dashboard/${idDashboard}/widgets/`, { method: "POST", body: payload });

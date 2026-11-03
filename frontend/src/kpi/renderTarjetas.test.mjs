@@ -66,18 +66,19 @@ test("la tarjeta se pinta para los 6 tipos de grafica en toda combinacion de par
   assert.equal(combinaciones, TIPOS.length * Object.keys(PARAMETROS).length);
 });
 
-test("el encabezado dice el rango: fechas tal cual en un widget viejo, y el nombre del rango en uno relativo", () => {
+test("el pie dice el rango legible: fechas cortas en un widget viejo, 'Ultimos 30 dias' en uno relativo, sin ISO", () => {
   const viejo = pintarTarjeta({ widget: widgetDe("barras", PARAMETROS["viejo, fechas absolutas"]), kpiCatalog: CATALOGO });
-  assert.ok(viejo.includes("2026-08-01 → 2026-08-31"), "un widget viejo muestra SUS fechas");
-  assert.ok(!viejo.includes(" · 20"), "y sin nombre de rango");
+  assert.ok(viejo.includes("1 – 31 ago 2026"), "un widget viejo muestra SUS fechas, cortas");
+  assert.ok(viejo.includes('title="1 de agosto de 2026 al 31 de agosto de 2026"'), "las fechas exactas van en el tooltip");
+  assert.ok(!/\d{4}-\d{2}-\d{2}|→/.test(viejo), "nada de ISO ni flechas");
 
   const comparado = pintarTarjeta({ widget: widgetDe("barras", PARAMETROS["viejo, con comparacion"]), kpiCatalog: CATALOGO });
-  assert.ok(comparado.includes("vs.") && comparado.includes("2026-07-01 → 2026-07-31"));
+  assert.ok(comparado.includes("(vs. 1 de julio de 2026 al 31 de julio de 2026)"), "el periodo comparado va en el tooltip");
 
-  // Un rango relativo se recalcula al dia de hoy: el nombre legible + fechas de hoy.
+  // Un rango relativo se recalcula al dia de hoy: el nombre legible, sin la clave interna.
   const relativo = pintarTarjeta({ widget: widgetDe("barras", PARAMETROS["rango relativo"]), kpiCatalog: CATALOGO });
-  assert.match(relativo, /30 días · \d{4}-\d{2}-\d{2} → \d{4}-\d{2}-\d{2}/, "nombre del rango, no la clave cruda");
-  assert.ok(!relativo.includes("30_dias"), "la clave interna no se le muestra a nadie");
+  assert.ok(relativo.includes("Últimos 30 días"));
+  assert.ok(!relativo.includes("30_dias") && !/\d{4}-\d{2}-\d{2}/.test(relativo));
 
   const sinFechas = pintarTarjeta({ widget: widgetDe("barras", PARAMETROS["sin fechas"]), kpiCatalog: CATALOGO });
   assert.ok(sinFechas.includes("Sin rango de fechas configurado"));
@@ -85,6 +86,26 @@ test("el encabezado dice el rango: fechas tal cual en un widget viejo, y el nomb
   // Una tabla de un KPI vivo no tiene periodo: dice que es en vivo.
   const tabla = pintarTarjeta({ widget: widgetDe("tabla", {}), kpiCatalog: CATALOGO });
   assert.ok(tabla.includes("En vivo"));
+});
+
+test("la tarjeta ordena titulo, grafica y pie, y ya no dice el tipo de grafico", () => {
+  for (const tipo of ["numero", "barras", "dona"]) {
+    const html = pintarTarjeta({ widget: widgetDe(tipo, PARAMETROS["viejo, fechas absolutas"]), kpiCatalog: CATALOGO });
+    const titulo = html.indexOf("<h4>");
+    const grafica = html.indexOf("kpi-chart-box");
+    const pie = html.indexOf("kpi-widget-pie");
+    assert.ok(titulo >= 0 && titulo < grafica && grafica < pie, `${tipo}: titulo, grafica, pie`);
+    assert.ok(!/>(Número|Barras|Dona|Línea|Área|Tabla)<\/p>/.test(html), `${tipo}: sin el tipo en la tarjeta`);
+  }
+});
+
+test("un widget de fechas fijas se marca; uno relativo, una tabla en vivo y uno sin fechas no", () => {
+  const marca = (widget) => pintarTarjeta({ widget, kpiCatalog: CATALOGO }).includes("Fechas fijas");
+  assert.equal(marca(widgetDe("barras", PARAMETROS["viejo, fechas absolutas"])), true);
+  assert.equal(marca(widgetDe("barras", PARAMETROS["viejo, con comparacion"])), true);
+  assert.equal(marca(widgetDe("barras", PARAMETROS["rango relativo"])), false);
+  assert.equal(marca(widgetDe("tabla", {})), false);
+  assert.equal(marca(widgetDe("barras", PARAMETROS["sin fechas"])), false);
 });
 
 // --- cuerpo con datos ---------------------------------------------------
@@ -116,8 +137,62 @@ test("el cuerpo se pinta con datos, con comparacion y vacio para cada tipo de gr
     const vacio = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: SNAPSHOT_VACIO }) });
     // "numero" con total 0 se pinta como un 0; el resto dice que no hay datos.
     if (tipo === "numero") assert.ok(vacio.includes("0"), "numero vacio");
-    else assert.ok(vacio.includes("Sin datos en el rango seleccionado."), `${tipo} vacio`);
+    else assert.ok(vacio.includes("Sin datos en el periodo"), `${tipo} vacio`);
   }
+});
+
+test("un KPI global en barras o linea ya guardado SIN agrupar_por (widget 139) pinta su serie por dia, no 'Sin datos'", () => {
+  // `ingresos_totales` es global: el servidor manda `por_empleado` vacio y la serie en `por_periodo`.
+  const snapshot = { rango_a: { total: 8, n_filas: 3, calculado: true, por_empleado: {}, por_periodo: { "2026-09-05": 1, "2026-09-13": 1, "2026-10-09": 6 } }, rango_b: null };
+  for (const tipo of ["barras", "linea", "area"]) {
+    const widget = { id_kpi_dashboard_widget: 139, tipo_grafica: tipo, ids_kpi_definition: [4], parametros: PARAMETROS["viejo, fechas absolutas"] };
+    const html = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot }) });
+    assert.ok(!html.includes("Sin datos en el periodo"), `${tipo}: no debe decir 'Sin datos' con filas en el rango`);
+    assert.match(html, /3 puntos de datos/, `${tipo}: una barra o punto por dia`);
+  }
+});
+
+test("un 0 calculado, 'sin datos en el periodo' y 'no calculado' se ven distintos, tambien en el numero", () => {
+  const rango = (extra) => ({ rango_a: { total: 0, por_empleado: {}, por_periodo: {}, ...extra }, rango_b: null });
+  for (const tipo of ["numero", "barras", "dona"]) {
+    const widget = widgetDe(tipo, PARAMETROS["viejo, fechas absolutas"]);
+    const pintar = (extra) => pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: rango(extra) }) });
+    const sinDatos = pintar({ n_filas: 0, calculado: true });
+    assert.ok(sinDatos.includes("Sin datos en el periodo"), `${tipo}: sin filas en el rango`);
+    assert.ok(!sinDatos.includes("No calculado"), `${tipo}: no es 'no calculado'`);
+    const noCalculado = pintar({ n_filas: 0, calculado: false });
+    assert.ok(noCalculado.includes("No calculado"), `${tipo}: el KPI nunca se calculo`);
+    assert.ok(!noCalculado.includes("Sin datos en el periodo"), `${tipo}: no es 'sin datos'`);
+  }
+  // Con filas, un total de 0 es un 0: el numero lo muestra, no lo reemplaza por un aviso.
+  const widget = widgetDe("numero", PARAMETROS["viejo, fechas absolutas"]);
+  const cero = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: rango({ n_filas: 4, calculado: true }) }) });
+  assert.ok(!cero.includes("Sin datos en el periodo") && !cero.includes("No calculado"));
+  assert.ok(cero.includes("0"));
+});
+
+test("las graficas llevan una descripcion para lector de pantalla y, con relleno textura, las de color fijo un patron ademas del color", () => {
+  const barras = widgetDe("barras", PARAMETROS["viejo, fechas absolutas"]);
+  const htmlBarras = pintarCuerpo({ widget: barras, datos: datosDe(barras, { snapshot: SNAPSHOT }) });
+  assert.match(htmlBarras, /role="img"/);
+  assert.match(htmlBarras, /aria-label="Barras: Incidentes resueltos\. 2 puntos de datos\. Mayor: .*\(10\)\."/);
+  assert.match(htmlBarras, /title="Barras: Incidentes resueltos/);
+
+  // Dona de un KPI con colores_categoria (abierta/cerrada): SOLIDA por omision (un widget sin `relleno`); con `relleno: "textura"`
+  // la leyenda lleva un patron por categoria.
+  const dona = widgetDe("dona", PARAMETROS["viejo, fechas absolutas"]);
+  const htmlDona = pintarCuerpo({ widget: dona, datos: datosDe(dona, { snapshot: SNAPSHOT_ESTADO }) });
+  assert.match(htmlDona, /role="img"/);
+  assert.match(htmlDona, /aria-label="Dona: Abiertas vs\. cerradas\. 2 puntos de datos\. Mayor: Abierta \(5\)\."/);
+  assert.equal((htmlDona.match(/<pattern /g) || []).length, 0, "sin la opcion, la dona es solida");
+  const conTextura = widgetDe("dona", { ...PARAMETROS["viejo, fechas absolutas"], relleno: "textura" });
+  const htmlTextura = pintarCuerpo({ widget: conTextura, datos: datosDe(conTextura, { snapshot: SNAPSHOT_ESTADO }) });
+  assert.equal((htmlTextura.match(/<pattern /g) || []).length, 2, "un patron en la leyenda por cada categoria");
+
+  // Una dona de un KPI sin colores_categoria no necesita patrones.
+  const sinColores = { ...dona, ids_kpi_definition: [3] };
+  const htmlSinColores = pintarCuerpo({ widget: sinColores, datos: datosDe(sinColores, { snapshot: SNAPSHOT }) });
+  assert.ok(!htmlSinColores.includes("<pattern "));
 });
 
 test("el numero muestra la unidad, la comparacion y la ayuda cuando no se compara", () => {

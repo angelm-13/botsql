@@ -1,8 +1,8 @@
 # Overlay de nissi-prod (ERP, instalación limpia). Dominio: nissi.torredigital.mx
 # (A -> master1, verificado con nslookup 2026-10-29).
 #
-# Tags: 9fe0ca0 (build en verde que ya incluye nissi/prod en deploy/clients.yaml;
-# el frontend lleva 9fe0ca0-nissi-prod).
+# Tags: 037bc25 (build en verde que ya incluye nissi/prod en deploy/clients.yaml;
+# el frontend lleva 037bc25-nissi-prod).
 #
 # UN SOLO origen: front + API bajo /api en el mismo dominio; por eso el Ingress
 # del base se elimina (primer parche) y se usa ingress-single-origin.yaml.
@@ -21,16 +21,16 @@ namespace: nissi-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: 9fe0ca0
+    newTag: 037bc25
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: 9fe0ca0
+    newTag: 037bc25
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: 9fe0ca0
+    newTag: 037bc25
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: 9fe0ca0-nissi-prod
+    newTag: 037bc25-nissi-prod
 
 resources:
   - ../../base

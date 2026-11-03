@@ -10,8 +10,6 @@ la herramienta si el vale la tiene delegada.
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import select
 
 from app.jobs.celery_app import celery
@@ -21,6 +19,7 @@ from app.models.nm_incident_product import NmIncidentProduct
 from app.models.session import transaction_context
 from app.services.notification_service import create_notification
 from app.services.warehouse_voucher_service import SALIDA, _vales_de_baja
+from app.utils.tiempo import ahora_negocio, ahora_utc
 
 
 @celery.task(name="app.jobs.tasks_warehouse.notify_overdue_vouchers")
@@ -34,7 +33,7 @@ def notify_overdue_vouchers() -> dict:
     `_notificar_proyecto` en `project_management_service.py`: anidarlas se
     queda esperando una conexion libre del pool para siempre.
     """
-    ahora = datetime.now()
+    ahora = ahora_negocio()
     with transaction_context() as db:
         filas = db.execute(
             select(
@@ -94,7 +93,7 @@ def notify_overdue_vouchers() -> dict:
         with transaction_context() as db:
             renglon = db.get(NmIncidentProduct, item["id_nm_incident_product"])
             if renglon is not None:
-                renglon.overdue_notified_date = ahora
+                renglon.overdue_notified_date = ahora_utc()
         avisados += 1
 
     return result_ok("jobs.warehouse.overdue_notified", count=avisados)

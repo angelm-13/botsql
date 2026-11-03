@@ -6,8 +6,8 @@
 # comala-prod; por eso el Ingress del base se elimina y se usa
 # ingress-single-origin.yaml.
 #
-# Las imagenes se jalan (pull) de ghcr.io y el overlay corre el build f333bc2
-# (el frontend lleva f333bc2-integraws-prod, se construye uno por cliente).
+# Las imagenes se jalan (pull) de ghcr.io y el overlay corre el build 037bc25
+# (el frontend lleva 037bc25-integraws-prod, se construye uno por cliente).
 # El certificado usa letsencrypt-prod (ver
 # ingress-single-origin.yaml).
 #
@@ -25,16 +25,16 @@ namespace: integraws-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: f333bc2
+    newTag: 037bc25
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: f333bc2
+    newTag: 037bc25
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: f333bc2
+    newTag: 037bc25
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: f333bc2-integraws-prod
+    newTag: 037bc25-integraws-prod
 
 resources:
   - ../../base

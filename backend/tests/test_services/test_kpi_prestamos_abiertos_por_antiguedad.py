@@ -21,6 +21,7 @@ from app.models import (
 )
 from app.models.session import engine, transaction_context
 from app.services.warehouse_voucher_service import CIERRE_SENTINELA
+from app.utils.tiempo import ahora_negocio
 
 ADMIN_ID = 1
 # IDs propios (950+) para no chocar con los fixtures de los demas archivos de KPI.
@@ -29,7 +30,7 @@ TIPO_NORMAL, TIPO_DESTRUCCION, TIPO_EXTRAVIADO, TIPO_DANADO = 950, 951, 952, 953
 TIPOS = [TIPO_NORMAL, TIPO_DESTRUCCION, TIPO_EXTRAVIADO, TIPO_DANADO]
 LOCATION_TYPE = LOCATION = BRAND = FAMILIA = UNIT = MATERIAL = INVOICE = PRODUCTO = 950
 
-HOY = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+HOY = ahora_negocio().replace(hour=12, minute=0, second=0, microsecond=0)
 ID_VALE = 9500
 ID_RENGLON = 95000
 

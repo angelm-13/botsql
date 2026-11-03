@@ -101,6 +101,10 @@
 @media (max-width: 720px) {
   .kpi-editor-cuerpo { grid-template-columns: 1fr; }
   .kpi-editor-vista-previa { border-left: 0; padding-left: 0; border-top: 1px solid var(--kpi-borde); padding-top: 14px; }
+  /* Con el bloque "Apariencia" (barras o dona) la vista previa y sus controles van ANTES de la lista de KPIs: no hace falta bajar por la
+     lista para llegar a ellos. El bloque, a su vez, sube sobre la tarjeta de la vista previa. */
+  .kpi-editor-cuerpo-apariencia .kpi-editor-vista-previa { order: -1; border-top: 0; padding-top: 0; border-bottom: 1px solid var(--kpi-borde); padding-bottom: 14px; }
+  .kpi-editor-cuerpo-apariencia .kpi-editor-apariencia { order: -1; }
 }
 
 /* Vista previa con datos reales: la tarjeta ocupa todo el ancho de la columna
@@ -167,6 +171,19 @@
 .kpi-icon-option:disabled { opacity: .4; cursor: not-allowed; }
 .kpi-icon-option .kpi-editor-tipo-check { position: absolute; top: 6px; right: 6px; }
 
+/* El icono del modulo lleva SU color siempre; el texto sigue neutro y la seleccion la marcan borde, fondo y check. */
+.kpi-selector-modulos .kpi-selector-modulo-icono { color: var(--tinte); }
+/* El resto de la seccion del selector toma el color del modulo elegido: borde izquierdo y fondo muy tenues. */
+.kpi-selector-tintado {
+  padding: 10px 10px 10px 12px; border-left: 3px solid var(--tinte-modulo); border-radius: 10px;
+  background: color-mix(in srgb, var(--tinte-modulo) 5%, transparent);
+}
+/* Tipo de grafica con el color del modulo elegido en el selector: tenue en reposo, completo al elegirlo; un tipo
+   deshabilitado se queda gris. Sin modulo elegido no hay --tinte y se ve como siempre. */
+.kpi-icon-option-modulo:not(:disabled):not(.active) svg:first-child { color: color-mix(in srgb, var(--tinte, #526273) 45%, #8a96a5); }
+.kpi-icon-option-modulo.active svg:first-child { color: var(--tinte, #173b66); }
+.kpi-icon-option-modulo:disabled svg { color: #94a3b8; }
+
 /* --- Fila de modulos del selector de KPI --------------------------------------- */
 .kpi-selector-modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
 .kpi-selector-modulos .kpi-icon-option { min-width: 0; padding-top: 12px; }
@@ -231,3 +248,18 @@
   pointer-events: none;
 }
 .kpi-ejemplo-sin-datos { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+
+/* Bloque "Apariencia": los controles visuales (relleno, orientacion) pegados a la vista previa. */
+.kpi-editor-apariencia { border: 1px solid var(--kpi-borde); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 12px; background: var(--kpi-tarjeta); min-width: 0; }
+.kpi-apariencia-grupo { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.kpi-apariencia-grupo > span { font-size: 12px; font-weight: 800; color: var(--kpi-ink); }
+.kpi-editor-apariencia .kpi-editor-ayuda { font-size: 11px; line-height: 1.35; }
+/* Control segmentado: N opciones del mismo ancho (caben tres en 360 px) en vez de pastillas que se envuelven. */
+.kpi-editor-segmentos { display: grid; grid-template-columns: repeat(var(--segmentos, 2), minmax(0, 1fr)); gap: 6px; }
+.kpi-editor-segmentos .kpi-editor-chip { border-radius: 8px; padding: 7px 6px; min-width: 0; text-align: center; overflow-wrap: anywhere; }
+.kpi-editor-segmentos .kpi-editor-chip:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 720px) {
+  .kpi-editor-segmentos .kpi-editor-chip { min-height: 40px; }
+  /* La ayuda del relleno sigue disponible para el lector de pantalla (aria-describedby), pero no ocupa lugar en pantallas angostas. */
+  .kpi-editor-ayuda-relleno { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}

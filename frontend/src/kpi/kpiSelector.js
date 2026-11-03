@@ -22,8 +22,9 @@ export const pestanaDeKpi = (kpi) => kpi?.grupo || kpi?.modulo;
 // Orden fijo de los botones de modulo. El catalogo llega en el orden de la base de
 // datos (arbitrario), y un selector que reordena sus botones segun la consulta se
 // siente roto; los modulos que no esten aqui van despues, por nombre. "asistencias" no es un modulo del plan sino
-// un grupo (`pestanaDeKpi`): va justo despues de Operaciones, de donde salen sus KPIs.
-export const ORDEN_DE_MODULOS = ["operaciones", "asistencias", "inventario", "facturacion", "laboratorio", "documentos", "restaurante"];
+// un grupo (`pestanaDeKpi`): sus KPIs salen de Operaciones. "crm" es a la vez el modulo de los clientes y el grupo con
+// el que salen los KPIs de proyectos y tareas (tambien de Operaciones): una sola pestana, justo despues de Operaciones.
+export const ORDEN_DE_MODULOS = ["operaciones", "crm", "asistencias", "inventario", "facturacion", "laboratorio", "documentos", "restaurante"];
 const posicionDeModulo = (clave) => {
   const posicion = ORDEN_DE_MODULOS.indexOf(clave);
   return posicion === -1 ? ORDEN_DE_MODULOS.length : posicion;
@@ -99,7 +100,9 @@ export function estadoDeOpcion({ kpi, seleccionados, catalogo, multiple }) {
 // Un color por modulo para el boton del selector: neutro en reposo, a color al
 // elegirlo. Los modulos (y el grupo "asistencias") con KPIs hoy tienen el suyo fijo (mismos tonos vivos
 // de la paleta categorica, distintos entre si); un modulo nuevo cae a un tono de
-// la paleta segun su nombre, siempre el mismo.
+// la paleta segun su nombre, siempre el mismo. "crm" lleva un lima propio, fuera de la paleta: sus ocho tonos ya
+// estan repartidos entre los demas modulos y cualquiera repetido se confundiria con otra pestana.
+export const COLOR_CRM = "#84b81f";
 export const COLOR_DE_MODULO = {
   facturacion: CATEGORICAL[0],
   operaciones: CATEGORICAL[1],
@@ -108,6 +111,7 @@ export const COLOR_DE_MODULO = {
   documentos: CATEGORICAL[5],
   restaurante: CATEGORICAL[3],
   asistencias: CATEGORICAL[7],
+  crm: COLOR_CRM,
   [GRUPO_VARIABLES]: CATEGORICAL[4],
 };
 

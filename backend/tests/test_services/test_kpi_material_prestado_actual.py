@@ -12,6 +12,7 @@ from app.models import (
 )
 from app.models.session import engine, transaction_context
 from app.services.warehouse_voucher_service import CIERRE_SENTINELA
+from app.utils.tiempo import ahora_negocio
 
 # Mismo criterio que los demas archivos de KPI sobre Incident/NmIncidentProduct:
 # solo PostgreSQL real, IDs propios (990+) para no chocar con otros fixtures.
@@ -32,7 +33,7 @@ INVOICE = 990
 PRODUCT_A = 990
 PRODUCT_B = 991
 
-HOY = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+HOY = ahora_negocio().replace(hour=12, minute=0, second=0, microsecond=0)
 
 
 @unittest.skipUnless(engine.dialect.name == "postgresql", "Estas pruebas requieren PostgreSQL")
