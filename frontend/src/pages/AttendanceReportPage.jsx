@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, FileSpreadsheet, Search } from "lucide-react";
-import { downloadAttendanceReport, getAttendanceReport } from "../api";
+import { downloadAttendanceReport, getAttendanceCorrectionsLog, getAttendanceReport } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
 import { rangoAnterior, rangoDe } from "../utils/rangosDeAsistencia.js";
@@ -18,20 +18,25 @@ export default function AttendanceReportPage() {
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
+  // "report" = reporte con alertas; "log" = bitacora de correcciones de checadas (quien movio que).
+  const [vista, setVista] = useState("report");
+  const [bitacora, setBitacora] = useState(null);
+  const [supervisor, setSupervisor] = useState("");
 
   const describir = (e) => {
     const clave = e?.payload?.error_key || e?.message;
     return clave ? t(clave, t("errors.request_failed")) : t("errors.request_failed");
   };
 
-  async function ver(r = rango) {
+  async function ver(r = rango, v = vista, sup = supervisor) {
     setCargando(true);
     setError("");
     try {
-      setDatos(await getAttendanceReport(r));
+      if (v === "log") setBitacora(await getAttendanceCorrectionsLog({ ...r, supervisor: sup }));
+      else setDatos(await getAttendanceReport(r));
     } catch (e) {
-      setError(e?.payload?.meta?.reason === "range" ? t("attendance_report.range_error") : describir(e));
-      setDatos(null);
+      setError(e?.payload?.meta?.reason === "range" ? t(v === "log" ? "attendance_report.log_range_error" : "attendance_report.range_error") : describir(e));
+      if (v === "log") setBitacora(null); else setDatos(null);
     } finally {
       setCargando(false);
     }
@@ -42,6 +47,11 @@ export default function AttendanceReportPage() {
   function elegir(r) {
     setRango(r);
     ver(r);
+  }
+
+  function cambiarVista(v) {
+    setVista(v);
+    ver(rango, v);
   }
 
   async function descargar() {
@@ -61,6 +71,10 @@ export default function AttendanceReportPage() {
   return (
     <section className="entity-page">
       <PageHeader eyebrow={t("attendance_report.eyebrow")} titulo={t("attendance_report.title")} subtitulo={t("attendance_report.subtitle")} />
+      <div className="toolbar" role="tablist" style={{ marginTop: 0 }}>
+        <button type="button" role="tab" aria-selected={vista === "report"} className={vista === "report" ? "button active" : "button"} onClick={() => cambiarVista("report")}>{t("attendance_report.tab_report")}</button>
+        <button type="button" role="tab" aria-selected={vista === "log"} className={vista === "log" ? "button active" : "button"} onClick={() => cambiarVista("log")}>{t("attendance_report.tab_log")}</button>
+      </div>
       <div className="form-card">
         <div className="toolbar" style={{ marginTop: 0 }}>
           <button type="button" className="button" onClick={() => elegir(rangoAnterior("week"))}>{t("attendance_report.last_week")}</button>
@@ -77,16 +91,50 @@ export default function AttendanceReportPage() {
             <span>{t("attendance_report.to")}</span>
             <input type="date" value={rango.end} onChange={(e) => setRango({ ...rango, end: e.target.value })} />
           </label>
+          {vista === "log" && (
+            <label className="field">
+              <span>{t("attendance_report.log_by")}</span>
+              <select value={supervisor} onChange={(e) => { setSupervisor(e.target.value); ver(rango, "log", e.target.value); }}>
+                <option value="">{t("attendance_report.log_everyone")}</option>
+                {(bitacora?.supervisors || []).map((s) => <option key={s.id_user} value={s.id_user}>{s.full_name}</option>)}
+              </select>
+            </label>
+          )}
           <button type="button" className="button primary" onClick={() => ver()} disabled={cargando}><Search size={15} /> {t("attendance_report.show")}</button>
-          <button type="button" className="button" onClick={descargar} disabled={!datos}><FileSpreadsheet size={15} /> {t("attendance_report.download")}</button>
+          {vista === "report" && <button type="button" className="button" onClick={descargar} disabled={!datos}><FileSpreadsheet size={15} /> {t("attendance_report.download")}</button>}
         </div>
-        <p className="muted" style={{ marginBottom: 0 }}>{t("attendance_report.hint")}</p>
+        <p className="muted" style={{ marginBottom: 0 }}>{t(vista === "log" ? "attendance_report.log_hint" : "attendance_report.hint")}</p>
       </div>
 
       {error && <div className="alert error" role="alert">{error}</div>}
       {cargando && <div className="alert">{t("common.loading")}</div>}
 
-      {datos && (<>
+      {vista === "log" && bitacora && (
+        <div className="table-card">
+          {bitacora.corrections.length ? (
+            <table>
+              <thead><tr>
+                <th>{t("attendance_report.log_date")}</th><th>{t("attendance_report.employee")}</th><th>{t("attendance_report.log_change")}</th>
+                <th>{t("attendance_report.log_reason")}</th><th>{t("attendance_report.supervisor")}</th><th>{t("attendance_report.log_when")}</th>
+              </tr></thead>
+              <tbody>{bitacora.corrections.map((c) => (
+                <tr key={c.id_attendance_correction}>
+                  <td>{c.date}</td>
+                  <td><strong>{c.employee}</strong></td>
+                  <td>{c.added ? t("attendance_report.log_added").replace("{hora}", c.new_time) : `${c.previous_time} → ${c.new_time}`}
+                    {c.is_exception && <span className="quotation-status-badge status-partially_approved" style={{ marginLeft: 6 }}>{t("attendance_report.log_exception")}</span>}
+                  </td>
+                  <td><small>{c.reason}</small></td>
+                  <td>{c.by}</td>
+                  <td><small className="muted">{(c.created_at || "").replace("T", " ")}</small></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          ) : <p style={{ padding: 16 }}>{t("attendance_report.log_empty")}</p>}
+        </div>
+      )}
+
+      {vista === "report" && datos && (<>
         <div className={`alert ${datos.with_alerts ? "error" : "success"}`} role="status">
           <AlertTriangle size={16} style={{ verticalAlign: "-3px" }} />{" "}
           {t("attendance_report.with_alerts").replace("{n}", datos.with_alerts).replace("{total}", datos.employees.length)}

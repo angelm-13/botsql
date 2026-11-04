@@ -3978,7 +3978,8 @@
       "after": "Ahora",
       "by": "Corrigió",
       "added": "Agregada",
-      "exception": "excepción"
+      "exception": "excepción",
+      "no_limit": "sin límite"
     }
   },
   "invoice": {
@@ -5222,17 +5223,18 @@
       "vacation_unused_policy": "Días no usados al vencer",
       "vacation_warning_days_1": "Primer aviso antes de vencer (días; 0 = sin aviso)",
       "vacation_warning_days_2": "Segundo aviso antes de vencer (días; 0 = sin aviso)",
-      "attendance_correction_limit": "Correcciones de checadas por empleado al mes",
+      "attendance_correction_limit": "Correcciones de checadas por empleado al mes (0 = sin límite)",
       "attendance_warning_entry_minutes": "Aviso al empleado si no checa entrada (minutos después)",
       "attendance_warning_supervisor_minutes": "Aviso al supervisor si sigue sin checar entrada (minutos)",
       "attendance_warning_exit_minutes": "Aviso al empleado si no checa salida (minutos después)",
       "overtime_tolerance_minutes": "Tolerancia para el tiempo no autorizado (minutos)",
-      "overtime_day_hours": "Horas de jornada para quien no tiene horario",
+      "overtime_day_hours": "Horas entre las que se divide el sueldo del día para la hora extra (por omisión 8)",
       "sunday_premium_pct": "Prima dominical (% del salario diario)",
       "report_alert_late": "Reporte de asistencia: alerta con estos retardos o más en el periodo (0 = sin alerta)",
       "report_alert_absences": "Reporte de asistencia: alerta con estas faltas o más en el periodo (0 = sin alerta)",
       "report_alert_manual": "Reporte de asistencia: alerta con estas checadas a mano o más (0 = sin alerta)",
-      "report_alert_supervisor_manual": "Reporte de asistencia: alerta al supervisor que captura a mano estas veces o más (0 = sin alerta)"
+      "report_alert_supervisor_manual": "Reporte de asistencia: alerta al supervisor que captura a mano estas veces o más (0 = sin alerta)",
+      "overtime_hours_from_schedule": "Hora extra: dividir entre las horas de su horario en lugar de las de arriba"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",
@@ -5390,7 +5392,10 @@
     "status_boss_approved": "Pendiente de RH",
     "step": "Paso",
     "step_boss": "Jefe directo",
-    "step_hr": "RH"
+    "step_hr": "RH",
+    "boss_absent": "Su jefe está ausente: puede aprobar el jefe de su jefe.",
+    "team_off": "También faltan {n} de {total} de su equipo",
+    "team_all_in": "Nadie más de su equipo falta esas fechas."
   },
   "payroll_groups": {
     "eyebrow": "Recursos humanos",
@@ -5685,7 +5690,20 @@
     "alert_absence_next_to_rest": "Falta junto a descanso o festivo",
     "alert_manual": "Muchas checadas a mano",
     "alert_pending": "Días sin justificar",
-    "alert_supervisor": "Captura a mano muy seguido"
+    "alert_supervisor": "Captura a mano muy seguido",
+    "tab_report": "Reporte",
+    "tab_log": "Bitácora de correcciones",
+    "log_by": "Corrigió",
+    "log_everyone": "Todos",
+    "log_hint": "Cada checada que se corrigió o agregó a mano: la hora de antes y la nueva, el motivo, quién la hizo y cuándo. Hasta un año.",
+    "log_range_error": "Elige un rango de un año o menos, con la fecha final después de la inicial.",
+    "log_date": "Día",
+    "log_change": "Cambio",
+    "log_reason": "Motivo",
+    "log_when": "Cuándo se hizo",
+    "log_added": "Agregó {hora}",
+    "log_exception": "Excepción",
+    "log_empty": "Nadie corrigió checadas en estas fechas."
   },
   "guide": {
     "how_it_works": "¿Cómo funciona?",

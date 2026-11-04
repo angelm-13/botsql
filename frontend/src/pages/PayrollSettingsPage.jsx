@@ -34,6 +34,8 @@ const PARAMETROS = [
   // Horas extra (services/overtime_service.py): tolerancia para el tiempo no
   // autorizado y jornada para el precio de la hora de quien no tiene horario.
   ["overtime_tolerance_minutes", "minutes", "options"], ["overtime_day_hours", "count", "options"],
+  // 1 = dividir el diario entre las horas de su horario; 0 (omision) = entre overtime_day_hours (8).
+  ["overtime_hours_from_schedule", "option", "options"],
   // Prima dominical (LFT art. 71): 25 % por omision; la empresa puede dar mas.
   ["sunday_premium_pct", "pct", "options"],
   // Alertas del reporte de asistencia para RH (services/reporte_de_asistencia.py); 0 = sin esa alerta.
@@ -65,8 +67,8 @@ const ELECCIONES = { vacation_expiry_months: [12, 18], vacation_unused_policy: [
 const POLITICA_POR_OMISION = {
   vacation_accrual_monthly: 0, vacation_advance_max_days: 0, vacation_expiry_months: 12,
   vacation_unused_policy: 0, vacation_warning_days_1: 60, vacation_warning_days_2: 30,
-  attendance_correction_limit: 2,
-  overtime_tolerance_minutes: 15, overtime_day_hours: 8, sunday_premium_pct: 25,
+  attendance_correction_limit: 0,
+  overtime_tolerance_minutes: 15, overtime_day_hours: 8, sunday_premium_pct: 25, overtime_hours_from_schedule: 0,
   attendance_warning_entry_minutes: 15, attendance_warning_supervisor_minutes: 30, attendance_warning_exit_minutes: 30,
   report_alert_late: 3, report_alert_absences: 2, report_alert_manual: 2, report_alert_supervisor_manual: 5,
 };

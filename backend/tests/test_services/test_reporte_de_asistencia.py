@@ -15,7 +15,7 @@ from app.models import EntityPermission, PayrollParameter
 from app.models.session import transaction_context
 from app.routes.attendance_report import TITULOS
 from app.services.overtime_service import confirmar, registrar
-from app.services.reporte_de_asistencia import reporte, xlsx
+from app.services.reporte_de_asistencia import bitacora, reporte, xlsx
 from app.utils.errors import AppError
 from tests.test_services.test_correcciones_de_checadas import _ConChecadas
 from tests.test_services.test_solicitudes_de_vacaciones import ANA, BETO, RH
@@ -37,7 +37,10 @@ class TestReporte(_ConChecadas):
         self.assertEqual(1, datos["with_alerts"])
 
     def test_checadas_a_mano_retardos_y_quien_las_capturo(self):
-        # Beto mueve dos entradas despues de la tolerancia (su limite del mes) y RH una tercera, como excepcion.
+        # Con tope de 2 al mes: Beto mueve dos entradas despues de la tolerancia y RH una tercera, como excepcion.
+        with transaction_context() as db:
+            db.add(PayrollParameter(parameter_key="attendance_correction_limit", value=2,
+                                    valid_from=date(2026, 1, 1), created_by=1))
         for quien, dia in ((BETO, 1), (BETO, 2), (RH, 5)):
             r = self.corregir(quien, id_attendance_record=self.checada(dia, 8), new_time=f"2026-10-{dia:02d}T09:30",
                               reason=f"Llego tarde el {dia}")
@@ -67,6 +70,28 @@ class TestReporte(_ConChecadas):
         confirmar({"id_user": RH}, pendiente["id_overtime"], True)
         ana = self.ana()
         self.assertEqual((60, 30), (ana["overtime_minutes"], ana["overtime_pending_minutes"]))
+
+    def test_bitacora_de_correcciones_para_rh(self):
+        """Sin limite (2026-11-04): RH ve cada movimiento y quien lo hizo, y filtra por supervisor."""
+        for quien, dia in ((BETO, 1), (BETO, 2), (RH, 5)):
+            self.corregir(quien, id_attendance_record=self.checada(dia, 8), new_time=f"2026-10-{dia:02d}T09:30",
+                          reason=f"Motivo {dia}")
+        self.corregir(BETO, id_user=ANA, new_time="2026-10-06T18:00", reason="Agrego salida")
+        todo = bitacora(DESDE, HASTA)
+        self.assertEqual(4, len(todo["corrections"]))
+        self.assertEqual(["Beto", "Rocio RH"], [s["full_name"] for s in todo["supervisors"]])
+        primera = next(c for c in todo["corrections"] if c["date"] == "2026-10-01")
+        self.assertEqual(("Ana", "08:00", "09:30", "Motivo 1", "Beto", False),
+                         (primera["employee"], primera["previous_time"], primera["new_time"], primera["reason"],
+                          primera["by"], primera["added"]))
+        agregada = next(c for c in todo["corrections"] if c["date"] == "2026-10-06")
+        self.assertEqual((None, "18:00", True), (agregada["previous_time"], agregada["new_time"], agregada["added"]))
+        solo_beto = bitacora(DESDE, HASTA, BETO)
+        self.assertEqual({"Beto"}, {c["by"] for c in solo_beto["corrections"]})
+        self.assertEqual(3, len(solo_beto["corrections"]))
+        self.assertEqual(2, len(solo_beto["supervisors"]))     # el filtro sigue ofreciendo a todos
+        with self.assertRaises(AppError):
+            bitacora("2026-01-01", "2027-06-01")
 
     def test_rango_invalido(self):
         for desde, hasta in (("2026-10-11", "2026-10-01"), ("2026-10-01", "2026-11-01"), ("ayer", "2026-10-01")):
@@ -98,3 +123,7 @@ class TestRutas(_ConChecadas):
         self.assertEqual(403, self.client.get(url, headers=self.h(RH, 961)).status_code)
         r = self.client.get(f"/attendance_report/xlsx?start={DESDE}&end={HASTA}", headers=self.h(RH, 962))
         self.assertEqual((200, "attachment"), (r.status_code, r.headers["Content-Disposition"].split(";")[0]))
+        self.assertEqual(200, self.client.get(f"/attendance_report/corrections?start={DESDE}&end={HASTA}",
+                                              headers=self.h(RH, 962)).status_code)
+        self.assertEqual(403, self.client.get(f"/attendance_report/corrections?start={DESDE}&end={HASTA}",
+                                              headers=self.h(RH, 961)).status_code)

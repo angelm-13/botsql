@@ -20,10 +20,12 @@ libre) se verifican igual pero no se pagan: queda el comentario.
 
 Cuanto (LFT arts. 67 y 68)
 --------------------------
-Hora = salario diario / horas de su jornada ese dia (entrada a salida menos
-los minutos de comida del horario; sin horario, `overtime_day_hours`, 8). Las
-primeras 9 horas de la semana (lunes a domingo) se pagan dobles; las demas,
-triples.
+Hora = salario diario / `overtime_day_hours` (8 por omision, la jornada de ley;
+decision de RH del 2026-11-04, cada empresa lo puede cambiar). Con la opcion
+`overtime_hours_from_schedule` = 1 se divide entre las horas de su jornada ese
+dia (entrada a salida menos los minutos de comida del horario), como antes; sin
+horario, igual `overtime_day_hours`. Las primeras 9 horas de la semana (lunes a
+domingo) se pagan dobles; las demas, triples.
 
 ISR (LISR art. 93 fr. I)
 ------------------------
@@ -62,10 +64,11 @@ from app.utils.errors import AppError
 
 TOLERANCIA = "overtime_tolerance_minutes"
 JORNADA = "overtime_day_hours"
+DEL_HORARIO = "overtime_hours_from_schedule"   # 1 = dividir entre las horas de su horario
 # clave -> (valor por omision, valores permitidos), igual que las demas politicas.
 PRIMA_DOMINICAL = "sunday_premium_pct"
 POLITICA_DE_HORAS_EXTRA = {TOLERANCIA: (15, range(0, 241)), JORNADA: (8, range(1, 13)),
-                           PRIMA_DOMINICAL: (25, range(25, 101))}
+                           PRIMA_DOMINICAL: (25, range(25, 101)), DEL_HORARIO: (0, range(0, 2))}
 LIMITE_DOBLES = 9 * 60   # minutos dobles por semana (LFT art. 68)
 UMAS_EXENTAS_POR_SEMANA = 5
 
@@ -192,7 +195,8 @@ def horas_extra_del_periodo(db, empleados, periodo, parametros, diarios=None, ho
             dobles = max(min(minutos, LIMITE_DOBLES - acumulado), 0)
             triples = minutos - dobles
             acumulado += minutos
-            hora = horas.get(id_user) or diario / (Decimal(jornada.get((id_user, r.work_date), politica[JORNADA] * 60)) / 60)
+            minutos_jornada = jornada.get((id_user, r.work_date)) if politica[DEL_HORARIO] else None
+            hora = horas.get(id_user) or diario / (Decimal(minutos_jornada or politica[JORNADA] * 60) / 60)
             monto_doble = hora * 2 * dobles / 60
             dobles_semana += monto_doble
             filas.append((r, dobles, triples, monto_doble + hora * 3 * triples / 60, monto_doble))

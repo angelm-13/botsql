@@ -197,7 +197,7 @@ def datos_del_empleado(id_user) -> dict:
     """Lo que el simulador toma de un empleado real: forma de salario, grupo,
     ingreso y horas de su jornada (las de la politica si no tiene horario)."""
     from app.services import salary_service as salarios
-    from app.services.overtime_service import _minutos_de_jornada, _politica, JORNADA
+    from app.services.overtime_service import DEL_HORARIO, _minutos_de_jornada, _politica, JORNADA
     from app.services.work_schedule_service import _entero
     id_user = _entero(id_user, "id_user")
     hoy = date.today()
@@ -213,8 +213,11 @@ def datos_del_empleado(id_user) -> dict:
         grupo = db.get(PayrollGroup, fila.id_payroll_group) if fila else db.scalars(
             select(PayrollGroup).where(PayrollGroup.is_default.is_(True)).where(PayrollGroup.deletion_date.is_(None))).first()
         # Promedio de las jornadas de su horario en la semana que empieza hoy.
-        jornadas = list(_minutos_de_jornada(db, [id_user], hoy, hoy + timedelta(days=6)).values())
-        horas = round(sum(jornadas) / len(jornadas) / 60, 2) if jornadas else _politica(db, hoy)[JORNADA]
+        # Las de la politica (8 por omision), salvo que la empresa divida entre las de su horario.
+        politica = _politica(db, hoy)
+        jornadas = list(_minutos_de_jornada(db, [id_user], hoy, hoy + timedelta(days=6)).values()) \
+            if politica[DEL_HORARIO] else []
+        horas = round(sum(jornadas) / len(jornadas) / 60, 2) if jornadas else politica[JORNADA]
         return {
             "id_user": id_user, "full_name": empleado.full_name or "",
             "salary_type": sueldo.salary_type if sueldo else "daily",

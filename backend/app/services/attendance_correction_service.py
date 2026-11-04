@@ -12,8 +12,10 @@ haga responsable de checar:
   se agrega como checada `manual` y tambien cuenta.
 * Limite por empleado y mes calendario (el de la checada): cada hora corregida
   o agregada cuenta 1; corregir entrada y salida del mismo dia son 2. Por
-  omision 2 (`attendance_correction_limit` en Ajustes de nomina; cada empresa lo
-  puede cambiar). Al llegar al limite el supervisor ya no puede; RH si, con
+  omision SIN limite (0; decision de RH, 2026-11-04: el supervisor corrige las
+  veces que haga falta y RH vigila con la bitacora del reporte de asistencia).
+  Una empresa que quiera tope lo captura en `attendance_correction_limit`
+  (Ajustes de nomina): al llegar a el, el supervisor ya no puede; RH si, con
   motivo, y queda marcada como excepcion.
 * El contador lo ven el supervisor y RH, nunca el empleado.
 * No se corrige nada dentro de un periodo de nomina cerrado.
@@ -32,7 +34,8 @@ from app.utils.errors import AppError
 
 LIMITE = "attendance_correction_limit"
 # clave -> (valor por omision, valores permitidos), igual que POLITICA de vacaciones.
-POLITICA_DE_CHECADAS = {LIMITE: (2, range(0, 32))}
+# 0 = sin limite (lo de omision desde 2026-11-04).
+POLITICA_DE_CHECADAS = {LIMITE: (0, range(0, 32))}
 
 
 def limite(db, al_dia: date) -> int:
@@ -107,7 +110,7 @@ def corregir(user_data: dict, payload: dict) -> dict:
         empleado, es_rh = _exigir_que_pueda(db, user_data, id_empleado)
         _exigir_fuera_de_periodo_cerrado(db, nueva.date(), nueva.date())
         tope, usadas = limite(db, nueva.date()), _usadas(db, id_empleado, nueva.date())
-        excepcion = usadas >= tope
+        excepcion = bool(tope) and usadas >= tope
         if excepcion and not es_rh:
             raise AppError("errors.attendance_correction_limit_reached", 409, {"limit": tope, "used": usadas})
         anterior = checada.check_time if checada else None
@@ -127,7 +130,8 @@ def corregir(user_data: dict, payload: dict) -> dict:
             previous_time=anterior, new_time=nueva, reason=motivo, is_exception=excepcion, created_by=actor)
         db.add(correccion)
         db.flush()
-        return {**correccion.serialize(), "limit": tope, "used": usadas + 1, "remaining": max(tope - usadas - 1, 0)}
+        return {**correccion.serialize(), "limit": tope, "used": usadas + 1,
+                "remaining": max(tope - usadas - 1, 0) if tope else None}
 
 
 def del_mes(user_data: dict, id_user, mes: str) -> dict:
@@ -150,5 +154,5 @@ def del_mes(user_data: dict, id_user, mes: str) -> dict:
                                   .where(User.id_user.in_([f.created_by for f in filas] or [0]))).all())
         tope = limite(db, dia)
         return {"id_user": id_user, "month": dia.strftime("%Y-%m"), "limit": tope, "used": len(filas),
-                "remaining": max(tope - len(filas), 0),
+                "remaining": max(tope - len(filas), 0) if tope else None,
                 "corrections": [{**f.serialize(), "created_by_name": nombres.get(f.created_by) or ""} for f in filas]}

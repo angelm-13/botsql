@@ -3925,7 +3925,8 @@
       "after": "Now",
       "by": "Corrected by",
       "added": "Added",
-      "exception": "exception"
+      "exception": "exception",
+      "no_limit": "no limit"
     }
   },
   "invoice": {
@@ -5107,17 +5108,18 @@
       "vacation_unused_policy": "Unused days when they expire",
       "vacation_warning_days_1": "First warning before expiry (days; 0 = none)",
       "vacation_warning_days_2": "Second warning before expiry (days; 0 = none)",
-      "attendance_correction_limit": "Check-in corrections per employee per month",
+      "attendance_correction_limit": "Check-in corrections per employee per month (0 = no limit)",
       "attendance_warning_entry_minutes": "Warn the employee if no check-in (minutes after)",
       "attendance_warning_supervisor_minutes": "Warn the supervisor if still no check-in (minutes)",
       "attendance_warning_exit_minutes": "Warn the employee if no check-out (minutes after)",
       "overtime_tolerance_minutes": "Tolerance for unauthorized time (minutes)",
-      "overtime_day_hours": "Shift hours for employees without schedule",
+      "overtime_day_hours": "Hours the daily wage is divided by for overtime (default 8)",
       "sunday_premium_pct": "Sunday premium (% of daily salary)",
       "report_alert_late": "Attendance report: alert at this many late arrivals or more in the period (0 = no alert)",
       "report_alert_absences": "Attendance report: alert at this many absences or more in the period (0 = no alert)",
       "report_alert_manual": "Attendance report: alert at this many manual check-ins or more (0 = no alert)",
-      "report_alert_supervisor_manual": "Attendance report: alert on supervisors who enter this many manual check-ins or more (0 = no alert)"
+      "report_alert_supervisor_manual": "Attendance report: alert on supervisors who enter this many manual check-ins or more (0 = no alert)",
+      "overtime_hours_from_schedule": "Overtime: divide by the hours of their schedule instead"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -5275,7 +5277,10 @@
     "status_boss_approved": "Pending HR",
     "step": "Step",
     "step_boss": "Direct manager",
-    "step_hr": "HR"
+    "step_hr": "HR",
+    "boss_absent": "Their manager is away: the manager's manager can approve.",
+    "team_off": "Also off: {n} of {total} on their team",
+    "team_all_in": "Nobody else on their team is off on those dates."
   },
   "payroll_groups": {
     "eyebrow": "Human resources",
@@ -5570,7 +5575,20 @@
     "alert_absence_next_to_rest": "Absence next to a rest day or holiday",
     "alert_manual": "Many manual check-ins",
     "alert_pending": "Unjustified days",
-    "alert_supervisor": "Enters manual check-ins very often"
+    "alert_supervisor": "Enters manual check-ins very often",
+    "tab_report": "Report",
+    "tab_log": "Corrections log",
+    "log_by": "Corrected by",
+    "log_everyone": "Everyone",
+    "log_hint": "Every check-in corrected or added by hand: the old and new time, the reason, who did it and when. Up to one year.",
+    "log_range_error": "Choose a range of one year or less, with the end date after the start date.",
+    "log_date": "Day",
+    "log_change": "Change",
+    "log_reason": "Reason",
+    "log_when": "Done at",
+    "log_added": "Added {hora}",
+    "log_exception": "Exception",
+    "log_empty": "Nobody corrected check-ins on these dates."
   },
   "guide": {
     "how_it_works": "How does it work?",

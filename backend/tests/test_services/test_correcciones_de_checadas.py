@@ -71,7 +71,7 @@ class TestCorregir(_ConChecadas):
         r = self.corregir(BETO, id_attendance_record=self.checada(1, 8), new_time="2026-10-01T08:55")
         self.assertEqual(201, r.status_code)
         datos = self.json(r)
-        self.assertEqual(("2026-10-01T08:00:00", "2026-10-01T08:55:00", False, 1, 1),
+        self.assertEqual(("2026-10-01T08:00:00", "2026-10-01T08:55:00", False, 1, None),   # sin limite: no hay restantes
                          (datos["previous_time"], datos["new_time"], datos["is_exception"], datos["used"],
                           datos["remaining"]))
         with transaction_context() as db:
@@ -95,7 +95,21 @@ class TestCorregir(_ConChecadas):
 
 
 class TestLimite(_ConChecadas):
+    def con_limite(self, valor):
+        with transaction_context() as db:
+            db.add(PayrollParameter(parameter_key="attendance_correction_limit", value=valor,
+                                    valid_from=date(2026, 1, 1), created_by=1))
+
+    def test_por_omision_el_supervisor_corrige_sin_limite(self):
+        """Decision de RH (2026-11-04): sin tope; RH vigila con la bitacora."""
+        for dia, hora in ((1, 8), (1, 17), (2, 8), (2, 17), (5, 8)):
+            r = self.corregir(BETO, id_attendance_record=self.checada(dia, hora), new_time=f"2026-10-{dia:02d}T{hora:02d}:05")
+            self.assertEqual((201, False), (r.status_code, self.json(r)["is_exception"]))
+        self.assertEqual((0, 5, None), (self.json(self.contador(BETO))["limit"], self.json(self.contador(BETO))["used"],
+                                        self.json(self.contador(BETO))["remaining"]))
+
     def test_dos_al_mes_y_despues_solo_rh_como_excepcion(self):
+        self.con_limite(2)
         self.assertEqual(201, self.corregir(BETO, id_attendance_record=self.checada(1, 8),
                                             new_time="2026-10-01T09:00").status_code)
         self.assertEqual(201, self.corregir(BETO, id_attendance_record=self.checada(1, 17),

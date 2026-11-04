@@ -3527,7 +3527,8 @@
       "after": "Jetzt",
       "by": "Korrigiert von",
       "added": "Hinzugefügt",
-      "exception": "Ausnahme"
+      "exception": "Ausnahme",
+      "no_limit": "unbegrenzt"
     }
   },
   "task_fase": {
@@ -3687,17 +3688,18 @@
       "vacation_unused_policy": "Ungenutzte Tage bei Verfall",
       "vacation_warning_days_1": "Erste Warnung vor Verfall (Tage; 0 = keine)",
       "vacation_warning_days_2": "Zweite Warnung vor Verfall (Tage; 0 = keine)",
-      "attendance_correction_limit": "Stempelkorrekturen pro Person und Monat",
+      "attendance_correction_limit": "Stempelkorrekturen pro Person und Monat (0 = unbegrenzt)",
       "attendance_warning_entry_minutes": "Hinweis an die Person ohne Kommen-Stempel (Minuten danach)",
       "attendance_warning_supervisor_minutes": "Hinweis an Vorgesetzte, wenn weiter kein Kommen-Stempel (Minuten)",
       "attendance_warning_exit_minutes": "Hinweis an die Person ohne Gehen-Stempel (Minuten danach)",
       "overtime_tolerance_minutes": "Toleranz für ungenehmigte Zeit (Minuten)",
-      "overtime_day_hours": "Arbeitsstunden ohne Arbeitszeitplan",
+      "overtime_day_hours": "Stunden, durch die der Tageslohn für Überstunden geteilt wird (Standard 8)",
       "sunday_premium_pct": "Sonntagszuschlag (% des Tageslohns)",
       "report_alert_late": "Anwesenheitsbericht: Warnung ab so vielen Verspätungen im Zeitraum (0 = keine)",
       "report_alert_absences": "Anwesenheitsbericht: Warnung ab so vielen Fehltagen im Zeitraum (0 = keine)",
       "report_alert_manual": "Anwesenheitsbericht: Warnung ab so vielen manuellen Stempelungen (0 = keine)",
-      "report_alert_supervisor_manual": "Anwesenheitsbericht: Warnung für Vorgesetzte mit so vielen manuellen Stempelungen (0 = keine)"
+      "report_alert_supervisor_manual": "Anwesenheitsbericht: Warnung für Vorgesetzte mit so vielen manuellen Stempelungen (0 = keine)",
+      "overtime_hours_from_schedule": "Überstunden: durch die Stunden des Arbeitsplans teilen"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -3855,7 +3857,10 @@
     "status_boss_approved": "Wartet auf Personal",
     "step": "Schritt",
     "step_boss": "Direkte Vorgesetzte",
-    "step_hr": "Personal"
+    "step_hr": "Personal",
+    "boss_absent": "Die Führungskraft ist abwesend: deren Vorgesetzte kann zustimmen.",
+    "team_off": "Ebenfalls abwesend: {n} von {total} im Team",
+    "team_all_in": "Sonst fehlt niemand aus dem Team an diesen Tagen."
   },
   "payroll_groups": {
     "eyebrow": "Personalwesen",
@@ -4150,6 +4155,19 @@
     "alert_absence_next_to_rest": "Fehltag neben Ruhe- oder Feiertag",
     "alert_manual": "Viele manuelle Stempelungen",
     "alert_pending": "Unbegründete Tage",
-    "alert_supervisor": "Stempelt sehr oft manuell"
+    "alert_supervisor": "Stempelt sehr oft manuell",
+    "tab_report": "Bericht",
+    "tab_log": "Korrekturprotokoll",
+    "log_by": "Korrigiert von",
+    "log_everyone": "Alle",
+    "log_hint": "Jede manuell korrigierte oder hinzugefügte Stempelung: alte und neue Zeit, Grund, wer und wann. Bis zu einem Jahr.",
+    "log_range_error": "Bitte höchstens ein Jahr wählen, Enddatum nach dem Startdatum.",
+    "log_date": "Tag",
+    "log_change": "Änderung",
+    "log_reason": "Grund",
+    "log_when": "Erfasst am",
+    "log_added": "{hora} hinzugefügt",
+    "log_exception": "Ausnahme",
+    "log_empty": "In diesem Zeitraum wurde nichts korrigiert."
   }
 }

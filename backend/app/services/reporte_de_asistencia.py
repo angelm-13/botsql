@@ -141,3 +141,47 @@ def xlsx(desde, hasta, titulos: dict) -> tuple[bytes, str]:
     nombre = f"asistencia_{datos['start']}_{datos['end']}.xlsx"
     return libro(f"Asistencia {datos['start']}", tabla), nombre
 
+
+
+MAX_DIAS_BITACORA = 366
+
+
+def bitacora(desde, hasta, id_supervisor=None) -> dict:
+    """Bitacora de correcciones de checadas para RH (decision del 2026-11-04: el
+    supervisor corrige sin limite y RH ve quien movio que, para detectar malas
+    practicas). Cada correccion con la hora de antes y la nueva, el motivo, quien
+    la hizo y cuando; filtrable por quien la capturo."""
+    desde, hasta = _fecha(desde, "start"), _fecha(hasta, "end")
+    if hasta < desde or (hasta - desde).days + 1 > MAX_DIAS_BITACORA:
+        raise AppError("errors.invalid_field", 400, {"field": "end", "reason": "range"})
+    consulta = (select(AttendanceCorrection).where(AttendanceCorrection.check_date.between(desde, hasta))
+                .where(AttendanceCorrection.deletion_date.is_(None)))
+    if id_supervisor not in (None, ""):
+        try:
+            consulta = consulta.where(AttendanceCorrection.created_by == int(id_supervisor))
+        except (TypeError, ValueError) as exc:
+            raise AppError("errors.invalid_field", 400, {"field": "id_supervisor"}) from exc
+    with transaction_context() as db:
+        filas = db.scalars(consulta.order_by(AttendanceCorrection.creation_date.desc(),
+                                             AttendanceCorrection.id_attendance_correction.desc())).all()
+        quienes = {f.created_by for f in filas} | {f.id_user for f in filas}
+        # Para el filtro: todos los que han corregido algo en el rango, aunque el filtro deje a uno.
+        capturistas = set(db.scalars(select(AttendanceCorrection.created_by).distinct()
+                                     .where(AttendanceCorrection.check_date.between(desde, hasta))
+                                     .where(AttendanceCorrection.deletion_date.is_(None))))
+        nombres = dict(db.execute(select(User.id_user, User.full_name)
+                                  .where(User.id_user.in_(list(quienes | capturistas) or [0]))).all())
+        hora = lambda v: v.strftime("%H:%M") if v else None  # noqa: E731
+        return {
+            "start": desde.isoformat(), "end": hasta.isoformat(),
+            "supervisors": sorted(({"id_user": u, "full_name": nombres.get(u) or f"#{u}"} for u in capturistas),
+                                  key=lambda s: s["full_name"]),
+            "corrections": [{
+                "id_attendance_correction": f.id_attendance_correction, "date": f.check_date.isoformat(),
+                "id_user": f.id_user, "employee": nombres.get(f.id_user) or f"#{f.id_user}",
+                "previous_time": hora(f.previous_time), "new_time": hora(f.new_time), "added": f.previous_time is None,
+                "reason": f.reason, "is_exception": bool(f.is_exception),
+                "by": nombres.get(f.created_by) or f"#{f.created_by}", "id_by": f.created_by,
+                "created_at": f.creation_date.isoformat(timespec="minutes") if f.creation_date else None,
+            } for f in filas],
+        }

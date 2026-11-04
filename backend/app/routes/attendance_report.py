@@ -35,3 +35,12 @@ def attendance_report(user_data):
 def attendance_report_xlsx(user_data):
     contenido, nombre = reporte.xlsx(request.args.get('start'), request.args.get('end'), TITULOS)
     return Response(contenido, mimetype=MIME, headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
+
+
+@bp_attendance_report.route('/corrections', methods=['GET'])
+@token_required
+@require_entity_permission('attendance_report', 'read')
+def attendance_corrections_log(user_data):
+    """Bitacora de correcciones de checadas (?start=&end=&id_supervisor=)."""
+    return jsonify(reporte.bitacora(request.args.get('start'), request.args.get('end'),
+                                    request.args.get('id_supervisor')))

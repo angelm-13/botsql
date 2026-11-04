@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.models import AttendanceRecord, EntityPermission, Overtime, PayrollPeriod, User, WorkSchedule
+from app.models import AttendanceRecord, EntityPermission, Overtime, PayrollParameter, PayrollPeriod, User, WorkSchedule
 from app.models.session import transaction_context
 from app.services.overtime_service import del_rango, registrar
 from app.services.payroll_calculation_service import calcular_periodo, cerrar_periodo, reabrir_periodo
@@ -94,13 +94,32 @@ class TestCuanto(_ConHorasExtra):
         self.assertEqual((9.0, 3.0, 1687.50, 1125.00), (ana["overtime_double_hours"], ana["overtime_triple_hours"],
                                                         ana["overtime_pay"], ana["overtime_taxable"]))
 
-    def test_la_comida_del_horario_cambia_el_precio_de_la_hora(self):
+    def test_por_omision_la_hora_es_el_diario_entre_8_aunque_su_jornada_sea_otra(self):
+        """Decision de RH (2026-11-04): base de 8 horas, configurable."""
+        with transaction_context() as db:
+            for h in db.query(WorkSchedule):
+                h.meal_minutes = 30           # su jornada seria de 8.5 h
+        self.checa(6, (19, 0))
+        self.autoriza(6, 60)
+        self.assertEqual(125.0, self.ana()["overtime_pay"])          # 500 / 8 x 2
+
+    def test_la_empresa_puede_cambiar_las_8_horas(self):
+        with transaction_context() as db:
+            db.add(PayrollParameter(parameter_key="overtime_day_hours", value=10, valid_from=date(2026, 1, 1),
+                                    created_by=1))
+        self.checa(6, (19, 0))
+        self.autoriza(6, 60)
+        self.assertEqual(100.0, self.ana()["overtime_pay"])          # 500 / 10 x 2
+
+    def test_con_la_opcion_la_comida_del_horario_cambia_el_precio_de_la_hora(self):
         with transaction_context() as db:
             for h in db.query(WorkSchedule):
                 h.meal_minutes = 30
+            db.add(PayrollParameter(parameter_key="overtime_hours_from_schedule", value=1,
+                                    valid_from=date(2026, 1, 1), created_by=1))
         self.checa(6, (19, 0))
         self.autoriza(6, 60)
-        self.assertEqual(117.65, self.ana()["overtime_pay"])
+        self.assertEqual(117.65, self.ana()["overtime_pay"])         # 500 / 8.5 x 2
 
     def test_con_salario_minimo_lo_doble_no_grava(self):
         with transaction_context() as db:

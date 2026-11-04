@@ -199,9 +199,20 @@ export default function MyLeavesPage() {
             <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.type")}</th><th>{t("employee_leaves.from")}</th><th>{t("employee_leaves.to")}</th><th>{t("employee_leaves.notes")}</th><th>{t("employee_leaves.available")}</th><th>{t("my_leaves.step")}</th><th>{t("common.actions")}</th></tr></thead>
             <tbody>{pendientes.length ? pendientes.map((s) => (
               <tr key={s.id_employee_leave}>
-                <td><strong>{s.full_name}</strong></td><td>{t(`employee_leaves.type_${s.leave_type}`)}</td>
+                <td><strong>{s.full_name}</strong>
+                  {/* RH ve quien mas de su equipo falta esas fechas, para que el area no se quede sin gente. */}
+                  {s.step === "hr" && s.team_size > 0 && (
+                    <small className={s.team_off?.length ? "field-error" : "muted"} style={{ display: "block" }}>
+                      {s.team_off?.length
+                        ? `${t("my_leaves.team_off").replace("{n}", s.team_off.length).replace("{total}", s.team_size)}: ${s.team_off.map((o) => `${o.full_name} (${o.start_date} – ${o.end_date})`).join(", ")}`
+                        : t("my_leaves.team_all_in")}
+                    </small>
+                  )}
+                </td><td>{t(`employee_leaves.type_${s.leave_type}`)}</td>
                 <td>{s.start_date}</td><td>{s.end_date}</td><td><small>{s.notes || "—"}</small></td><td>{s.available}</td>
-                <td><span className={`quotation-status-badge ${s.step === "hr" ? "status-partially_approved" : "status-sent"}`}>{t(`my_leaves.step_${s.step}`)}</span></td>
+                <td><span className={`quotation-status-badge ${s.step === "hr" ? "status-partially_approved" : "status-sent"}`}>{t(`my_leaves.step_${s.step}`)}</span>
+                  {s.step === "boss" && s.boss_absent && <small className="muted" style={{ display: "block" }}>{t("my_leaves.boss_absent")}</small>}
+                </td>
                 <td className="row-actions">
                   {s.leave_type === "disability" && <button type="button" title={t("leave_sheet.title")} aria-label={`${t("leave_sheet.title")} ${s.full_name}`} onClick={() => setHoja(s.id_employee_leave)}><FileText size={15} /></button>}
                   <button type="button" title={t("my_leaves.approve")} aria-label={`${t("my_leaves.approve")} ${s.full_name}`} onClick={() => accion(() => approveEmployeeLeave(s.id_employee_leave), "my_leaves.approved_done")}><Check size={15} /></button>

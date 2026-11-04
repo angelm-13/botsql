@@ -346,12 +346,61 @@ def _jefe_directo(db, empleado: User) -> int | None:
     return jefe.id_user if jefe is not None and jefe.deletion_date is None else None
 
 
+def _ausente(db, id_user: int, dia: date) -> bool:
+    """Si tiene una ausencia ya aprobada que cubre ese dia (vacaciones, permiso o incapacidad)."""
+    return db.scalar(select(EmployeeLeave.id_employee_leave)
+                     .where(EmployeeLeave.id_user == id_user).where(EmployeeLeave.leave_status == APROBADA)
+                     .where(EmployeeLeave.deletion_date.is_(None))
+                     .where(EmployeeLeave.start_date <= dia).where(EmployeeLeave.end_date >= dia)
+                     .limit(1)) is not None
+
+
+def _aprueban_primero(db, empleado: User, hoy: date | None = None) -> tuple[set[int], bool]:
+    """(quienes pueden dar el primer paso, si su jefe esta ausente).
+
+    Su jefe directo; si hoy esta de vacaciones o con permiso, tambien el jefe de su
+    jefe como suplente (decision de RH, 2026-11-04). Si el jefe esta ausente y no
+    hay a quien suplir, el primer paso se salta y la solicitud va directo a RH.
+    Vacio = sin jefe: va directo a RH.
+    """
+    jefe = _jefe_directo(db, empleado)
+    if jefe is None:
+        return set(), False
+    if not _ausente(db, jefe, hoy or ahora_negocio().date()):
+        return {jefe}, False
+    suplente = _jefe_directo(db, db.get(User, jefe))
+    if suplente is None or suplente == empleado.id_user:
+        return set(), True
+    return {jefe, suplente}, True
+
+
 def _paso(db, ausencia: EmployeeLeave, empleado: User) -> str:
-    """'boss' si le toca a su jefe directo, 'hr' si ya le toca a RH."""
+    """'boss' si le toca a su jefe directo (o a su suplente), 'hr' si ya le toca a RH."""
     if ausencia.leave_status == SOLICITADA and ausencia.leave_type != "disability" \
-            and _jefe_directo(db, empleado) is not None:
+            and _aprueban_primero(db, empleado)[0]:
         return "boss"
     return "hr"
+
+
+def _equipo_ausente(db, empleado: User, desde: date, hasta: date, sin_id: int) -> tuple[list[dict], int]:
+    """Quienes de su equipo (el mismo jefe directo) faltan en esas fechas, y cuantos
+    son en el equipo: RH lo ve antes de aprobar para que el area no se quede sin gente."""
+    jefe = _jefe_directo(db, empleado)
+    if jefe is None:
+        return [], 0
+    equipo = {u.id_user: u for u in db.scalars(select(User).where(User.supervisor == jefe)
+                                               .where(User.deletion_date.is_(None))
+                                               .where(User.is_employee.is_(True)))}
+    otros = db.scalars(select(EmployeeLeave)
+                       .where(EmployeeLeave.id_user.in_([i for i in equipo if i != empleado.id_user] or [0]))
+                       .where(EmployeeLeave.leave_status.in_(ESTADOS_VIGENTES))
+                       .where(EmployeeLeave.id_employee_leave != sin_id)
+                       .where(EmployeeLeave.deletion_date.is_(None))
+                       .where(EmployeeLeave.start_date <= hasta).where(EmployeeLeave.end_date >= desde)
+                       .order_by(EmployeeLeave.start_date)).all()
+    return [{"id_user": a.id_user, "full_name": equipo[a.id_user].full_name or f"#{a.id_user}",
+             "start_date": a.start_date.isoformat(), "end_date": a.end_date.isoformat(),
+             "leave_type": a.leave_type, "leave_status": a.leave_status} for a in otros], len(equipo)
 
 
 def _usuarios_de_rh(db) -> list[int]:
@@ -460,11 +509,16 @@ def solicitar(actor_id: int, payload: dict) -> dict:
         db.add(ausencia)
         db.flush()
         resultado = ausencia.serialize()
-        jefe = empleado.supervisor
-    _notificar(jefe, notification_type="leave_requested", titulo="Solicitud de ausencia por autorizar",
-               mensaje=f"{empleado.full_name} {'reportó una incapacidad' if resultado['leave_type'] == 'disability' else 'pidió'}"
-                       f" del {resultado['start_date']} al {resultado['end_date']}.",
-               actor_id=actor_id, id_ausencia=resultado["id_employee_leave"])
+        if datos["leave_type"] == "disability":
+            # La incapacidad la revisa RH, pero su jefe tambien debe saberlo.
+            destinatarios = set(_usuarios_de_rh(db)) | ({_jefe_directo(db, empleado)} - {None})
+        else:
+            destinatarios = _aprueban_primero(db, empleado)[0] or set(_usuarios_de_rh(db))
+    for destinatario in sorted(destinatarios):
+        _notificar(destinatario, notification_type="leave_requested", titulo="Solicitud de ausencia por autorizar",
+                   mensaje=f"{empleado.full_name} {'reportó una incapacidad' if resultado['leave_type'] == 'disability' else 'pidió'}"
+                           f" del {resultado['start_date']} al {resultado['end_date']}.",
+                   actor_id=actor_id, id_ausencia=resultado["id_employee_leave"])
     return resultado
 
 
@@ -494,10 +548,11 @@ def por_autorizar(user_data: dict) -> list[dict]:
                            .where(EmployeeLeave.deletion_date.is_(None))
                            .order_by(EmployeeLeave.start_date)).all()
         empleados = {u.id_user: u for u in db.scalars(select(User).where(User.id_user.in_([a.id_user for a in todas] or [0])))}
+        primeros = {a.id_employee_leave: _aprueban_primero(db, empleados[a.id_user]) for a in todas}
         pasos = {a.id_employee_leave: _paso(db, a, empleados[a.id_user]) for a in todas}
         pendientes = [a for a in todas
                       if (pasos[a.id_employee_leave] == "boss" and a.id_user != actor_id
-                          and _jefe_directo(db, empleados[a.id_user]) == actor_id)
+                          and actor_id in primeros[a.id_employee_leave][0])
                       or (pasos[a.id_employee_leave] == "hr" and es_rh)]
         filas = _con_nombre(db, pendientes)
         hoy = ahora_negocio().date()
@@ -505,6 +560,11 @@ def por_autorizar(user_data: dict) -> list[dict]:
         for fila in filas:
             fila["available"] = (saldos_de.get(fila["id_user"]) or {}).get("available", 0)
             fila["step"] = pasos[fila["id_employee_leave"]]
+            # Su jefe directo esta ausente: aprueba el suplente (el jefe de su jefe).
+            fila["boss_absent"] = primeros[fila["id_employee_leave"]][1]
+            ausencia = next(a for a in pendientes if a.id_employee_leave == fila["id_employee_leave"])
+            fila["team_off"], fila["team_size"] = _equipo_ausente(
+                db, empleados[fila["id_user"]], ausencia.start_date, ausencia.end_date, ausencia.id_employee_leave)
         return filas
 
 
@@ -524,7 +584,7 @@ def revisar(user_data: dict, id_ausencia, aprobar: bool, nota=None) -> dict:
         if ausencia.leave_status not in ESTADOS_PENDIENTES:
             raise AppError("errors.employee_leave_not_pending", 409, {"leave_status": ausencia.leave_status})
         paso = _paso(db, ausencia, empleado)
-        if paso == "boss" and (propia or _jefe_directo(db, empleado) != actor_id):
+        if paso == "boss" and (propia or actor_id not in _aprueban_primero(db, empleado)[0]):
             if es_rh:
                 raise AppError("errors.employee_leave_waiting_boss", 409, {"leave_status": ausencia.leave_status})
             raise AppError("errors.permission_denied", 403, {"entity": "employee_leave", "action": "update"})

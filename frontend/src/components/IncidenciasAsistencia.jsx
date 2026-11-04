@@ -133,9 +133,9 @@ export default function IncidenciasAsistencia({ t, describirError }) {
                       <tr>
                         <td colSpan="11">
                           {contador && (
-                            <p className={contador.remaining ? "muted" : "field-error"}>
-                              {t("kronos.corrections.counter")} {contador.month}: {contador.used} / {contador.limit}
-                              {!contador.remaining && ` · ${t("kronos.corrections.limit_reached")}`}
+                            <p className={contador.remaining !== 0 ? "muted" : "field-error"}>
+                              {t("kronos.corrections.counter")} {contador.month}: {contador.used}{contador.limit ? ` / ${contador.limit}` : ` · ${t("kronos.corrections.no_limit")}`}
+                              {contador.remaining === 0 && ` · ${t("kronos.corrections.limit_reached")}`}
                             </p>
                           )}
                           {aviso && <div className="alert success" role="status">{aviso}</div>}

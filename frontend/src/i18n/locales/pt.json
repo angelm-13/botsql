@@ -3533,7 +3533,8 @@
       "after": "Agora",
       "by": "Corrigiu",
       "added": "Adicionada",
-      "exception": "exceção"
+      "exception": "exceção",
+      "no_limit": "sem limite"
     }
   },
   "task_fase": {
@@ -3693,17 +3694,18 @@
       "vacation_unused_policy": "Dias não usados ao vencer",
       "vacation_warning_days_1": "Primeiro aviso antes de vencer (dias; 0 = sem aviso)",
       "vacation_warning_days_2": "Segundo aviso antes de vencer (dias; 0 = sem aviso)",
-      "attendance_correction_limit": "Correções de ponto por funcionário ao mês",
+      "attendance_correction_limit": "Correções de ponto por funcionário ao mês (0 = sem limite)",
       "attendance_warning_entry_minutes": "Aviso ao funcionário sem marcação de entrada (minutos depois)",
       "attendance_warning_supervisor_minutes": "Aviso ao supervisor se continuar sem entrada (minutos)",
       "attendance_warning_exit_minutes": "Aviso ao funcionário sem marcação de saída (minutos depois)",
       "overtime_tolerance_minutes": "Tolerância para tempo não autorizado (minutos)",
-      "overtime_day_hours": "Horas de jornada para quem não tem horário",
+      "overtime_day_hours": "Horas pelas quais se divide o salário do dia para a hora extra (padrão 8)",
       "sunday_premium_pct": "Adicional dominical (% do salário diário)",
       "report_alert_late": "Relatório de presença: alerta com estes atrasos ou mais no período (0 = sem alerta)",
       "report_alert_absences": "Relatório de presença: alerta com estas faltas ou mais no período (0 = sem alerta)",
       "report_alert_manual": "Relatório de presença: alerta com estes registros manuais ou mais (0 = sem alerta)",
-      "report_alert_supervisor_manual": "Relatório de presença: alerta ao supervisor que registra à mão estas vezes ou mais (0 = sem alerta)"
+      "report_alert_supervisor_manual": "Relatório de presença: alerta ao supervisor que registra à mão estas vezes ou mais (0 = sem alerta)",
+      "overtime_hours_from_schedule": "Hora extra: dividir pelas horas do seu horário em vez das de cima"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -3861,7 +3863,10 @@
     "status_boss_approved": "Pendente do RH",
     "step": "Etapa",
     "step_boss": "Chefe direto",
-    "step_hr": "RH"
+    "step_hr": "RH",
+    "boss_absent": "O chefe está ausente: o chefe do chefe pode aprovar.",
+    "team_off": "Também faltam {n} de {total} da equipe",
+    "team_all_in": "Ninguém mais da equipe falta nessas datas."
   },
   "payroll_groups": {
     "eyebrow": "Recursos humanos",
@@ -4156,6 +4161,19 @@
     "alert_absence_next_to_rest": "Falta junto a descanso ou feriado",
     "alert_manual": "Muitos registros manuais",
     "alert_pending": "Dias sem justificar",
-    "alert_supervisor": "Registra à mão com frequência"
+    "alert_supervisor": "Registra à mão com frequência",
+    "tab_report": "Relatório",
+    "tab_log": "Registro de correções",
+    "log_by": "Corrigiu",
+    "log_everyone": "Todos",
+    "log_hint": "Cada ponto corrigido ou adicionado à mão: a hora anterior e a nova, o motivo, quem fez e quando. Até um ano.",
+    "log_range_error": "Escolha um intervalo de um ano ou menos, com a data final depois da inicial.",
+    "log_date": "Dia",
+    "log_change": "Mudança",
+    "log_reason": "Motivo",
+    "log_when": "Quando foi feito",
+    "log_added": "Adicionou {hora}",
+    "log_exception": "Exceção",
+    "log_empty": "Ninguém corrigiu pontos nessas datas."
   }
 }
