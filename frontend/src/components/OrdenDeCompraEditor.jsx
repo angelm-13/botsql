@@ -192,6 +192,12 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
   const sinProveedor = !form.id_customer_supplier;
   const sinRenglones = renglones.length === 0;
   const sinCostos = total === null;
+  // Lo que falta para poder enviarla, dicho en voz alta (el boton solo se apaga).
+  const faltantes = [
+    sinProveedor && t("order.missing_supplier", "elegir el proveedor"),
+    sinRenglones && t("order.missing_lines", "agregar al menos un renglón"),
+    !sinRenglones && sinCostos && t("order.missing_costs", "capturar el costo de cada renglón"),
+  ].filter(Boolean);
 
   return (
     <div className="oc-editor">
@@ -395,6 +401,11 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
           {t("common.cancel", "Cancelar")}
         </button>
       </div>
+      <p className={`oc-ayuda ${faltantes.length ? "oc-faltan" : "muted"}`}>
+        {faltantes.length
+          ? `${t("order.missing_to_send", "Para enviarla a autorización falta:")} ${faltantes.join(", ")}.`
+          : t("order.ready_to_send", "Lista para enviar. También puedes guardarla como borrador y terminarla después.")}
+      </p>
     </div>
   );
 }

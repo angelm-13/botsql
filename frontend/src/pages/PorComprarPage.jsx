@@ -2,11 +2,12 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useNavigate } from "react-router-dom";
 import { RefreshCw, ShoppingCart } from "lucide-react";
 import PageHeader from "../components/PageHeader.jsx";
+import { GuiaDelModulo } from "../components/GuiaDeCompras.jsx";
 import {
   confirmMaterialNeedBuy, getMaterialNeedsToBuy, getMyPermissions, linkMaterialNeed,
   returnMaterialNeed,
 } from "../api";
-import { estadoDeOrden } from "../utils/ordenDeCompra";
+import { conDatos, estadoDeOrden } from "../utils/ordenDeCompra";
 import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
 
@@ -144,6 +145,22 @@ export default function PorComprarPage() {
     : [];
   const todoSeleccionado = seleccionables.length > 0
     && seleccionables.every((id) => seleccion.includes(id));
+
+  // La guia de entrada, segun lo que el Gestor le da a quien mira.
+  const puntosDeGuia = [
+    t("guide.buy.source", "Aquí llega lo que piden los proyectos (lo captura el supervisor en su proyecto). \"Hay\" es lo que tiene el almacén y \"Falta\" lo que hay que comprar."),
+    puedeRevisar
+      && t("guide.buy.review", "Lo pedido con texto libre sale \"Por revisar\": decide si ya está en el almacén, si sí hay que comprarlo, o devuélvelo al supervisor si no se entiende."),
+    puedeArmarOrden
+      ? t("guide.buy.order", "Marca las casillas de lo que vas a comprar y presiona \"Armar orden de compra\". Lo que ya está en una orden muestra su folio.")
+      : t("guide.buy.reader", "Las órdenes de compra las arma Compras; aquí puedes ver qué falta y para cuándo."),
+    t("guide.buy.urgency", "Rojo = ya venció la fecha en que se necesitaba; ámbar = vence en 3 días o menos."),
+  ];
+  // Lo que se puede comprar pero nadie ha escogido: la pista para empezar.
+  const pistaDeSeleccion = !puedeArmarOrden || seleccionables.length === 0 ? ""
+    : seleccion.length === 0
+      ? t("purchase.hint_pick", "Marca las casillas de lo que vas a comprar para armar una orden.")
+      : conDatos(t("purchase.hint_picked", "Llevas {n} renglón(es). Cuando termines, arma la orden; puedes juntar varios proyectos con el mismo proveedor."), { n: seleccion.length });
 
   const filaDe = (g) => {
     const nombre = g.linked ? g.material?.material_description : g.description;
@@ -317,6 +334,9 @@ export default function PorComprarPage() {
         </button>
       </PageHeader>
 
+      <GuiaDelModulo id="por-comprar" titulo={t("guide.buy.title", "Cómo funciona Por comprar")}
+                     puntos={puntosDeGuia.filter(Boolean)} />
+
       <div className="por-comprar-barra">
         <label className="por-comprar-filtro">
           <input type="checkbox" checked={!soloFaltantes}
@@ -342,6 +362,7 @@ export default function PorComprarPage() {
             {t("purchase.make_order", "Armar orden de compra")} ({seleccion.length})
           </button>
         )}
+        {pistaDeSeleccion && <span className="por-comprar-pista">{pistaDeSeleccion}</span>}
       </div>
 
       {error && <div className="alert error">{error}</div>}
@@ -351,6 +372,9 @@ export default function PorComprarPage() {
           <strong>{soloFaltantes
             ? t("purchase.nothing_missing", "No falta nada por comprar.")
             : t("purchase.nothing_asked", "Ningún proyecto ha pedido nada.")}</strong>
+          <p className="muted">
+            {t("purchase.empty_help", "Lo que hace falta llega cuando un supervisor pide material desde su proyecto. Lo que ya cubre el almacén no aparece aquí; márcalo arriba para verlo.")}
+          </p>
         </div>
       )}
 
@@ -360,7 +384,9 @@ export default function PorComprarPage() {
             {t("purchase.section_review", "Por revisar")} <span className="necesidad-estado revisar">{gruposPorRevisar.length}</span>
           </h3>
           <p className="muted por-comprar-seccion-ayuda">
-            {t("purchase.section_review_help", "Texto libre que nadie ha confirmado: decide si ya existe en el almacén o hay que comprarlo.")}
+            {puedeRevisar
+              ? t("purchase.section_review_help", "Texto libre que nadie ha confirmado: decide si ya existe en el almacén o hay que comprarlo.")
+              : t("purchase.section_review_help_reader", "Texto libre que todavía no se confirma: quien conoce el almacén decide si ya existe o hay que comprarlo. Mientras, no se puede meter a una orden.")}
           </p>
           {tabla(gruposPorRevisar)}
         </>
@@ -371,6 +397,11 @@ export default function PorComprarPage() {
           <h3 className="por-comprar-seccion">
             {t("purchase.section_buy", "Por comprar")} <span className="necesidad-estado compra">{gruposPorComprar.length}</span>
           </h3>
+          <p className="muted por-comprar-seccion-ayuda">
+            {puedeArmarOrden
+              ? t("purchase.section_buy_help", "Confirmado que hay que comprarlo: marca las casillas y arma la orden. Lo que ya tiene folio va en una orden; ábrela en Órdenes de compra para seguirla.")
+              : t("purchase.section_buy_help_reader", "Confirmado que hay que comprarlo. Lo que ya tiene folio va en una orden de compra.")}
+          </p>
           {tabla(gruposPorComprar)}
         </>
       )}

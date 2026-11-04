@@ -82,6 +82,175 @@ export function excedeLoAutorizado(autorizado, real, porcentaje) {
   return monto > tope;
 }
 
+/**
+ * La guia del proceso: en que paso va la orden, que sigue y quien lo hace.
+ *
+ * Es UNA sola fuente para la barra de pasos, el recuadro "Que sigue" y el aviso que
+ * sale despues de cada accion. Quien puede hacer que lo dice el servidor
+ * (`orden.actions`, calculado para ESTE usuario); aqui solo se traduce a una frase.
+ * Cada frase lleva su clave de traduccion (`clave`), el texto en espanol por omision
+ * (`texto`) y los numeros que se le insertan (`datos`, con `{nombre}` en el texto).
+ */
+export const PASOS_DE_ORDEN = [
+  { clave: "draft", etiqueta: "Armar" },
+  { clave: "pending_authorization", etiqueta: "Autorizar" },
+  { clave: "authorized", etiqueta: "Comprar" },
+  { clave: "purchased", etiqueta: "Recibir" },
+  { clave: "received", etiqueta: "Recibida" },
+];
+
+const INDICE_DEL_PASO = {
+  draft: 0, rejected: 0, pending_authorization: 1, authorized: 2,
+  purchased: 3, partially_received: 3, received: 4, closed: 4,
+};
+
+/** El paso actual (indice en PASOS_DE_ORDEN) y si la orden se desvio (rechazada o cancelada). */
+export function pasoDeOrden(estado) {
+  if (estado === "cancelled") return { indice: -1, desvio: "cancelled", terminada: true };
+  return {
+    indice: INDICE_DEL_PASO[estado] ?? 0,
+    desvio: estado === "rejected" ? "rejected" : null,
+    terminada: estado === "received" || estado === "closed",
+  };
+}
+
+const frase = (clave, texto, tono = "info", datos = {}) => ({ clave: `order.next.${clave}`, texto, tono, datos });
+
+/** Inserta los `datos` en un texto con `{nombre}`. */
+export function conDatos(texto, datos = {}) {
+  return String(texto || "").replace(/\{(\w+)\}/g, (todo, k) => (k in datos ? String(datos[k]) : todo));
+}
+
+/** Cuanto ha llegado de toda la orden, en piezas. */
+export function avanceDeRecepcion(renglones) {
+  let total = 0;
+  let recibido = 0;
+  for (const r of renglones || []) {
+    total += Number(r.quantity) || 0;
+    recibido += Math.min(Number(r.quantity_received) || 0, Number(r.quantity) || 0);
+  }
+  return { total, recibido, faltan: Math.max(0, total - recibido) };
+}
+
+/**
+ * Que sigue con la orden, dicho a quien la esta viendo. Devuelve la frase principal y,
+ * si aplica, una secundaria (`extra`).
+ */
+export function queSigue(orden) {
+  const a = orden?.actions || {};
+  const estado = orden?.order_status;
+  const renglones = orden?.lines || [];
+  const comprobantes = orden?.vouchers || [];
+  const factura = comprobantes.some((v) => COMPROBANTES_DE_COMPRA.includes(v.kind));
+  const avance = avanceDeRecepcion(renglones);
+  const conProyectos = renglones.some((r) => r.id_proyect);
+
+  if (estado === "cancelled") {
+    return { principal: frase("cancelled", "Esta orden se canceló y ya no sigue. Si todavía hace falta el material, arma una orden nueva desde Por comprar.", "neutro") };
+  }
+  if (estado === "draft" || estado === "rejected") {
+    if (!a.edit) {
+      return { principal: estado === "rejected"
+        ? frase("rejected_others", "Se rechazó; quien la armó la está corrigiendo.", "neutro")
+        : frase("draft_others", "Todavía se está armando; no se ha enviado a autorización.", "neutro") };
+    }
+    const sinCosto = renglones.filter((r) => r.unit_cost === null || r.unit_cost === undefined || r.unit_cost === "").length;
+    let principal;
+    if (renglones.length === 0) {
+      principal = frase("draft_no_lines", "Agrega lo que vas a comprar (desde Por comprar o un renglón propio) para poder enviarla.", "alerta");
+    } else if (sinCosto > 0) {
+      principal = frase("draft_missing_costs", "Faltan costos en {n} renglón(es). Corrígela y captura el costo para poder enviarla.", "alerta", { n: sinCosto });
+    } else if (estado === "rejected") {
+      principal = frase("rejected_mine", "Se rechazó (el motivo está abajo). Corrígela y vuelve a enviarla, o cancélala si ya no aplica.", "alerta");
+    } else {
+      principal = frase("draft_ready", "Revisa proveedor, cantidades y costos, y envíala a autorización.");
+    }
+    return { principal, extra: comprobantes.length === 0
+      ? frase("draft_quote", "Si tienes la cotización del proveedor, súbela: ayuda a quien autoriza.", "neutro") : null };
+  }
+  if (estado === "pending_authorization") {
+    if (a.authorize) {
+      return { principal: orden.exceeds_budget
+        ? frase("authorize_over_budget", "Rebasa el presupuesto de un proyecto: si la autorizas, escribe el motivo. Si no, recházala.", "alerta")
+        : frase("authorize", "Te toca: revisa monto, proveedor y renglones; autorízala o recházala.", "accion") };
+    }
+    if (a.reject) {
+      return { principal: frase("authorize_own", "Tú la pediste, así que la autoriza otra persona. Si ya no aplica, puedes rechazarla.", "neutro") };
+    }
+    return { principal: frase("waiting_authorization", "Espera la autorización. Cuando se decida, te llega un aviso.", "neutro") };
+  }
+  if (estado === "authorized") {
+    if (factura) {
+      return { principal: a.purchase
+        ? frase("register_purchase", "Te toca: ya tiene comprobante. Registra la compra con la fecha y la forma de pago.", "accion")
+        : frase("purchase_others", "Ya tiene comprobante; falta registrar la compra.", "neutro") };
+    }
+    return { principal: a.attach_voucher
+      ? frase("upload_invoice", "Autorizada: ya puedes comprar. Sube la factura (de preferencia el XML) o el ticket para registrar la compra.", "accion")
+      : frase("buy_others", "Autorizada; falta comprarla y subir su factura o ticket.", "neutro") };
+  }
+  if (estado === "purchased" || estado === "partially_received") {
+    const parcial = estado === "partially_received";
+    const principal = a.receive
+      ? (parcial
+        ? frase("receive_rest", "Te toca: llegaron {recibido} de {total} piezas. Registra el resto cuando llegue.", "accion", avance)
+        : frase("receive", "Te toca: cuando llegue el material, registra cuánto llegó de cada renglón.", "accion"))
+      : (parcial
+        ? frase("partial_others", "Llegaron {recibido} de {total} piezas; el resto se registra cuando llegue.", "neutro", avance)
+        : frase("bought_others", "Comprada. Falta registrar la recepción cuando llegue el material.", "neutro"));
+    const pago = comprobantes.some((v) => v.kind === "payment_proof");
+    return { principal, extra: a.attach_voucher && !pago
+      ? frase("payment_proof", "Si pagaste por separado, sube el comprobante de pago.", "neutro") : null };
+  }
+  if (estado === "received" || estado === "closed") {
+    return { principal: conProyectos
+      ? frase("received_projects", "Llegó todo. El encargado de cada obra ya puede marcar \"Material recibido, iniciar\" en su proyecto.", "ok")
+      : frase("received", "Llegó todo. La orden está completa.", "ok") };
+  }
+  return { principal: frase("unknown", "Revisa el estado de la orden.", "neutro") };
+}
+
+/**
+ * El aviso corto que sale despues de una accion: que paso y que sigue. `accion` es la
+ * que se hizo; `orden` es la orden YA cambiada que devolvio el servidor.
+ */
+export function avisoTrasAccion(accion, orden) {
+  const estado = orden?.order_status;
+  const avance = avanceDeRecepcion(orden?.lines);
+  const aviso = (clave, texto, datos = {}) => ({ clave: `order.done.${clave}`, texto, datos });
+  switch (accion) {
+    case "guardar":
+      if (estado === "draft") return aviso("saved", "Borrador guardado. Envíalo a autorización cuando esté completo.");
+      return avisoTrasAccion("enviar", orden);
+    case "enviar":
+      return estado === "authorized"
+        ? aviso("auto_authorized", "Se autorizó sola por la política (monto bajo el límite). Ya puedes comprarla.")
+        : aviso("submitted", "Enviada a autorización. Quien autoriza recibe el aviso.");
+    case "autorizar":
+      return aviso("authorized", "Autorizada. Ya se puede comprar.");
+    case "rechazar":
+      return aviso("rejected", "Rechazada. El motivo queda en la orden para corregirla.");
+    case "cancelar":
+      return aviso("cancelled", "Orden cancelada.");
+    case "subir":
+      return estado === "authorized" && (orden?.vouchers || []).some((v) => COMPROBANTES_DE_COMPRA.includes(v.kind))
+        ? aviso("voucher_then_buy", "Comprobante guardado. Ahora registra la compra.")
+        : aviso("voucher", "Comprobante guardado.");
+    case "quitar":
+      return aviso("voucher_removed", "Comprobante retirado.");
+    case "comprar":
+      return estado === "pending_authorization"
+        ? aviso("reauthorization", "El comprobante sale más caro de lo autorizado: la orden volvió a autorización con el monto real.")
+        : aviso("bought", "Compra registrada. Falta registrar la recepción cuando llegue el material.");
+    case "recibir":
+      return estado === "received" || estado === "closed"
+        ? aviso("received", "Recepción completa: la orden quedó recibida.")
+        : aviso("received_part", "Recepción registrada: faltan {faltan} piezas por llegar.", avance);
+    default:
+      return null;
+  }
+}
+
 /** Los renglones de una orden agrupados por proyecto; sin proyecto, al final y juntos. */
 export function agruparPorProyecto(renglones) {
   const grupos = new Map();

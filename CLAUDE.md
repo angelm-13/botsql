@@ -6,6 +6,19 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-11-04 (b) — guia en Por comprar y Ordenes de compra
+
+Pedido de Alan: que quien entre a Compras sepa que hacer en cada etapa. **Sin commitear.** Solo
+frontend, sin tocar reglas: la logica de "que sigue" vive en UNA funcion (`queSigue`,
+`pasoDeOrden`, `avisoTrasAccion` en `utils/ordenDeCompra.js`, con pruebas) y se apoya en
+`orden.actions` del servidor. Piezas en `components/GuiaDeCompras.jsx`: guia de entrada por
+rol (se oculta con "Ya entendí" por usuario, en localStorage), barra de pasos, recuadro "Qué
+sigue" y aviso flotante tras cada accion. Editor: dice que falta para enviar. Textos es/en.
+**Bug preexistente corregido de paso**: `useI18n` creaba una `t` nueva en cada render y
+`PresupuestosDeCompra` recargaba `/purchase-budgets` cada 250 ms mientras la pantalla estaba
+abierta (tambien en produccion); `t` ahora es estable (`useCallback`). `npm test` no corre en
+Windows con Node 24 (pasa carpetas a `node --test`); correr el archivo directo.
+
 ## Bitacora 2026-11-04 — "Material recibido, iniciar" es del encargado de la obra
 
 Pedido de Adser (via Alan). **Sin commitear.** Compras llega hasta "Material en camino"

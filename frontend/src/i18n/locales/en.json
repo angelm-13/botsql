@@ -4635,6 +4635,7 @@
     "new_short": "New order",
     "filter_all": "All",
     "filter_pending": "To authorize",
+    "filter_receiving": "To receive",
     "filter_authorized": "To buy",
     "filter_bought": "Bought",
     "filter_open": "Drafts",
@@ -4712,7 +4713,70 @@
     "history": "Log",
     "reauthorization": "The voucher is more expensive than authorized: the order went back to authorization with the real amount.",
     "exceeded_banner": "This order went back to authorization because the voucher is more expensive than authorized. The real amount is authorized or it is rejected.",
-    "rejected_because": "It was rejected:"
+    "rejected_because": "It was rejected:",
+    "step": {
+      "draft": "Build",
+      "pending_authorization": "Authorize",
+      "authorized": "Buy",
+      "purchased": "Receive",
+      "received": "Received",
+      "rejected_note": "Rejected: sent back to be corrected.",
+      "cancelled_note": "Cancelled: the process stopped."
+    },
+    "next": {
+      "title": "What's next",
+      "cancelled": "This order was cancelled and will not continue. If the material is still needed, build a new order from To buy.",
+      "rejected_others": "It was rejected; whoever built it is correcting it.",
+      "draft_others": "It is still being built; it has not been sent for authorization yet.",
+      "draft_no_lines": "Add what you are going to buy (from To buy or your own line) to be able to send it.",
+      "draft_missing_costs": "{n} line(s) have no cost. Edit the order and enter the cost to be able to send it.",
+      "rejected_mine": "It was rejected (reason below). Correct it and send it again, or cancel it if it no longer applies.",
+      "draft_ready": "Check supplier, quantities and costs, and send it for authorization.",
+      "draft_quote": "If you have the supplier's quote, upload it: it helps whoever authorizes.",
+      "authorize_over_budget": "It exceeds a project's budget: if you authorize it, write the reason. Otherwise, reject it.",
+      "authorize": "Your turn: check amount, supplier and lines; authorize or reject it.",
+      "authorize_own": "You requested it, so someone else authorizes it. If it no longer applies, you can reject it.",
+      "waiting_authorization": "Waiting for authorization. You will be notified when it is decided.",
+      "register_purchase": "Your turn: it has a voucher. Record the purchase with the date and payment method.",
+      "purchase_others": "It has a voucher; the purchase still has to be recorded.",
+      "upload_invoice": "Authorized: you can buy now. Upload the invoice (preferably the XML) or the receipt to record the purchase.",
+      "buy_others": "Authorized; it still has to be bought and its invoice or receipt uploaded.",
+      "receive_rest": "Your turn: {recibido} of {total} pieces arrived. Record the rest when it arrives.",
+      "receive": "Your turn: when the material arrives, record how much arrived for each line.",
+      "partial_others": "{recibido} of {total} pieces arrived; the rest is recorded when it arrives.",
+      "bought_others": "Bought. The reception still has to be recorded when the material arrives.",
+      "payment_proof": "If you paid separately, upload the proof of payment.",
+      "received_projects": "Everything arrived. Each job's person in charge can now mark \"Material received, start\" in their project.",
+      "received": "Everything arrived. The order is complete.",
+      "unknown": "Check the order status."
+    },
+    "done": {
+      "saved": "Draft saved. Send it for authorization when it is complete.",
+      "auto_authorized": "Authorized automatically by the policy (amount under the limit). You can buy it now.",
+      "submitted": "Sent for authorization. The authorizer gets a notice.",
+      "authorized": "Authorized. It can be bought now.",
+      "rejected": "Rejected. The reason stays on the order so it can be corrected.",
+      "cancelled": "Order cancelled.",
+      "voucher_then_buy": "Voucher saved. Now record the purchase.",
+      "voucher": "Voucher saved.",
+      "voucher_removed": "Voucher removed.",
+      "reauthorization": "The voucher is higher than what was authorized: the order went back to authorization with the real amount.",
+      "bought": "Purchase recorded. The reception still has to be recorded when the material arrives.",
+      "received": "Reception complete: the order is received.",
+      "received_part": "Reception recorded: {faltan} pieces still to arrive."
+    },
+    "no_vouchers_yet": "No vouchers yet. The invoice or receipt is uploaded once the order is authorized; before that, only the quote.",
+    "voucher_hint_invoice": "Upload the invoice (the XML fills in number, amount and date) or the purchase receipt.",
+    "voucher_hint_quote": "Before it is authorized, only the supplier's quote can be uploaded.",
+    "voucher_hint_payment": "The purchase voucher is already here; you can add the proof of payment.",
+    "empty_all": "There are no purchase orders yet.",
+    "empty_all_buyer": "Start in To buy: pick what projects ask for and build the order, or use \"New order\".",
+    "empty_all_reader": "Purchasing builds the orders from what projects ask for.",
+    "missing_supplier": "choose the supplier",
+    "missing_lines": "add at least one line",
+    "missing_costs": "enter the cost of every line",
+    "missing_to_send": "To send it for authorization you still need to:",
+    "ready_to_send": "Ready to send. You can also save it as a draft and finish it later."
   },
   "policy": {
     "title": "Authorization rules",
@@ -4756,7 +4820,13 @@
     "return": "Not clear: send back",
     "return_why": "What does the supervisor need to fix?",
     "return_placeholder": "E.g. What material exactly?",
-    "return_send": "Send back"
+    "return_send": "Send back",
+    "hint_pick": "Tick what you are going to buy to build an order.",
+    "hint_picked": "{n} line(s) selected. When you are done, build the order; you can combine several projects with the same supplier.",
+    "empty_help": "Needs arrive when a supervisor requests material from their project. What the warehouse already covers is hidden; tick the option above to see it.",
+    "section_buy_help": "Confirmed to be bought: tick the boxes and build the order. Items with a number are already in an order; open it in Purchase orders to follow it.",
+    "section_buy_help_reader": "Confirmed to be bought. Items with a number are already in a purchase order.",
+    "section_review_help_reader": "Free text not confirmed yet: someone who knows the warehouse decides whether it exists or must be bought. Until then it cannot go into an order."
   },
   "stock_adjust": {
     "title": "Adjust stock",
@@ -5124,5 +5194,25 @@
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
     "rejected_done": "Request rejected."
+  },
+  "guide": {
+    "how_it_works": "How does it work?",
+    "got_it": "Got it",
+    "buy": {
+      "title": "How \"To buy\" works",
+      "source": "Here you see what projects ask for (the supervisor enters it in the project). \"In stock\" is what the warehouse has and \"Missing\" is what must be bought.",
+      "review": "Free-text requests show as \"To review\": decide whether the warehouse already has it, whether it must be bought, or send it back to the supervisor if it is unclear.",
+      "order": "Tick what you are going to buy and press \"Make purchase order\". Items already in an order show its number.",
+      "reader": "Purchasing builds the purchase orders; here you can see what is missing and when it is needed.",
+      "urgency": "Red = the date it was needed has passed; amber = due in 3 days or less."
+    },
+    "orders": {
+      "title": "How purchase orders work",
+      "flow": "Every order goes through: build it → authorize it → buy it (with invoice or receipt) → receive it at the warehouse.",
+      "buyer": "You build the order: pick what to buy from To buy, or use \"New order\". Then send it for authorization, upload the invoice and record the purchase.",
+      "authorizer": "You authorize: open the orders \"To authorize\", check amount and budget, and authorize or reject them with a reason.",
+      "receiver": "You receive: when the material arrives, open the orders \"To receive\" and record how much arrived for each line.",
+      "next": "When you open an order, the \"What's next\" box tells you its step and what you have to do."
+    }
   }
 }
