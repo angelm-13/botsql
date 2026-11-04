@@ -6,10 +6,13 @@
 #
 # Adaptado del ci.yml de cotizador_demo (Semgrep, gitleaks, pip-audit, npm audit).
 #
-# ESTADO: informativo. Los tres jobs terminan en verde aunque haya hallazgos
-# (--exit-code 0 / `|| true`). Primero se mide la línea base (cuántos hallazgos
-# salen por herramienta); después se triá y solo entonces se vuelve bloqueante
-# para severidad alta. Ver la Fase A de la ruta de cierre de la residencia.
+# ESTADO:
+#   - Semgrep y gitleaks BLOQUEAN el PR: cualquier hallazgo nuevo lo pone en rojo.
+#     Los falsos positivos ya revisados se justifican en el propio código
+#     (`nosemgrep` con motivo), en .semgrepignore y en .gitleaksignore.
+#   - pip-audit y npm audit siguen INFORMATIVOS: quedan avisos que piden un salto
+#     de versión mayor (pypdf, pillow, flask-cors, vite, react-router) y bloquear
+#     hoy dejaría todo PR en rojo. Se vuelven bloqueantes cuando bajen.
 #
 # Convención heredada: cada `uses:` va fijado al SHA del commit, con el tag mayor
 # y la fecha de resolución. Un tag como @v4 es MUTABLE.
@@ -45,14 +48,18 @@ jobs:
       - name: Instalar semgrep
         run: pip install semgrep==1.173.0
 
-      # Sin --error: informativo. semgrep imprime cada hallazgo con archivo y línea.
+      # --error: cualquier hallazgo hace fallar el job. Se guarda el código de salida
+      # para escribir el resumen ANTES de fallar (un `| tee` lo escondería).
       # --metrics=off: no manda telemetría a terceros.
       - name: Escanear
         run: |
+          rc=0
           semgrep --metrics=off --config p/security-audit --config p/secrets \
-            --severity WARNING --severity ERROR . | tee semgrep.txt
+            --severity WARNING --severity ERROR --error . > semgrep.txt 2>&1 || rc=$?
+          cat semgrep.txt
           echo "### Semgrep" >> "$GITHUB_STEP_SUMMARY"
-          grep -E "Code Findings|Findings:" semgrep.txt >> "$GITHUB_STEP_SUMMARY" || echo "Sin resumen de hallazgos" >> "$GITHUB_STEP_SUMMARY"
+          grep -E "Code Findings|Findings:" semgrep.txt >> "$GITHUB_STEP_SUMMARY" || echo "Sin hallazgos" >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
   gitleaks:
     name: gitleaks (secretos en todo el historial)
@@ -75,11 +82,14 @@ jobs:
 
       - name: Escanear historial
         run: |
-          gitleaks detect --source . --log-opts="--all" --redact --exit-code 0 \
-            --report-format json --report-path gitleaks.json || true
+          rc=0
+          gitleaks detect --source . --log-opts="--all" --redact --exit-code 2 \
+            --report-format json --report-path gitleaks.json || rc=$?
           n=$(python3 -c "import json;print(len(json.load(open('gitleaks.json'))))" 2>/dev/null || echo "?")
           echo "### gitleaks" >> "$GITHUB_STEP_SUMMARY"
           echo "Hallazgos en el historial: $n (los valores van redactados)" >> "$GITHUB_STEP_SUMMARY"
+          # 0 = limpio, 2 = hay secretos, cualquier otro = error de la herramienta (también falla).
+          exit $rc
 
   dependencias:
     name: Dependencias (pip-audit y npm audit)
