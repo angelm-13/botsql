@@ -45,6 +45,7 @@ import {
 import IconoDona from "../components/kpi-widgets/IconoDona.jsx";
 import { accionDeEnter, kpiAdmiteFiltros, puedeAgregar, puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import { claveDeGrupo, colorDeModulo } from "../kpi/kpiSelector.js";
+import { claveDeErrorDeKpi, vistaDelCatalogo } from "../kpi/kpiErrores.js";
 import { detallesDePersonas, nombreDePersona } from "../kpi/kpiPersonas.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
 import { chipDeTarjeta, computedAtDeSnapshots, estadoGlobalDeDatos, ultimoCalculoEfectivo } from "../kpi/kpiFrescura.js";
@@ -433,6 +434,9 @@ export default function Dashboard() {
   const [widgetsError, setWidgetsError] = useState("");
 
   const [kpiCatalog, setKpiCatalog] = useState([]);
+  // Un catalogo que aun no llega ("cargando") o que fallo ("error") NO es un catalogo vacio: el editor dice cada cosa por separado.
+  const [catalogoEstado, setCatalogoEstado] = useState("cargando");
+  const [catalogoIntento, setCatalogoIntento] = useState(0);
   // `ultimo_calculo` y `ahora` de GET /kpi_definition/ (UTC con zona): la linea global del estado de los datos.
   const [calculo, setCalculo] = useState({ ultimo: null, ahora: null });
   // Sube cada vez que "Actualizar datos" termina: las tarjetas vuelven a pedir sus datos sin desmontarse.
@@ -762,6 +766,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelado = false;
+    setCatalogoEstado("cargando");
     // El catalogo de KPIs y el de dimensiones (persona/catalogo/categoria/global) se piden juntos:
     // a cada KPI se le agrega el tipo de su dimension. Sin el catalogo de dimensiones (backend
     // viejo) el Dashboard se comporta como siempre.
@@ -770,15 +775,16 @@ export default function Dashboard() {
         if (cancelado) return;
         setKpiCatalog(enriquecerCatalogo(listOf(definiciones), listOf(dimensiones)));
         setCalculo({ ultimo: definiciones?.ultimo_calculo ?? null, ahora: definiciones?.ahora ?? null });
+        setCatalogoEstado("listo");
       })
-      .catch(() => { if (!cancelado) setKpiCatalog([]); });
+      .catch(() => { if (!cancelado) { setKpiCatalog([]); setCatalogoEstado("error"); } });
     // Solo id+nombre, sin pedir el catalogo de RH completo (`GET /user/` exige permiso de seguridad):
     // sirve al filtro por empleados. Los nombres de las graficas los manda el backend.
     getUserOptions().then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
     // Solo id+nombre de los equipos vigentes, sin pedir `GET /team/` (exige el modulo de seguridad).
     getTeamOptions().then((data) => { if (!cancelado) setTeams(listOf(data)); }).catch(() => { if (!cancelado) setTeams([]); });
     return () => { cancelado = true; };
-  }, []);
+  }, [catalogoIntento]);
 
   const userLabel = useCallback((idUser) => {
     const found = users.find((user) => String(user.id_user) === String(idUser));
@@ -854,6 +860,11 @@ export default function Dashboard() {
   // que hubiera en este tablero.
   function handleEditWidget(widget) {
     abrirEditor(activeId, estadoDeWidget(widget, kpiCatalog));
+  }
+
+  // Desde "Sin datos en el periodo": abre el editor del grafico directo en el paso "Periodo".
+  function handleCambiarPeriodo(widget) {
+    abrirEditor(activeId, { ...estadoDeWidget(widget, kpiCatalog), paso: 1 });
   }
 
   // Pasa un widget de fechas fijas a un rango relativo, a pedido de la persona y solo ese widget: el resto de sus
@@ -1021,6 +1032,7 @@ export default function Dashboard() {
                   onEdit={() => handleEditWidget(widget)}
                   onDelete={() => handleDeleteWidget(widget)}
                   onConvertirARelativo={(clave) => handleConvertirARelativo(widget, clave)}
+                  onCambiarPeriodo={() => handleCambiarPeriodo(widget)}
                   onReady={handleWidgetReady}
                   esNuevo={widget.id_kpi_dashboard_widget === idWidgetNuevo}
                   refresco={refresco}
@@ -1085,6 +1097,8 @@ export default function Dashboard() {
               panelState={currentPanelState}
               onChangePanelState={(patch) => updatePanelState(activeId, patch)}
               kpiCatalog={kpiCatalog}
+              catalogoEstado={catalogoEstado}
+              onReintentarCatalogo={() => setCatalogoIntento((n) => n + 1)}
               users={users}
               teams={teams}
               userLabel={userLabel}
@@ -1275,7 +1289,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady, refresco = 0 }) {
         );
         if (!cancelado) setSnapshots(resultados);
       } catch (err) {
-        if (!cancelado) { setError(err.message || "errors.request_failed"); setSnapshots([]); }
+        if (!cancelado) { setError(claveDeErrorDeKpi(err)); setSnapshots([]); }
       } finally {
         // Se avisa "listo" tanto en exito como en error (ver el comentario de
         // arriba sobre `onReady`).
@@ -1316,6 +1330,7 @@ const SKELETON_POR_TIPO = { numero: "numero", dona: "dona", tabla: "tabla" };
 // eslint-disable-next-line react-refresh/only-export-components
 export function CuerpoDeWidget({
   widget, datos, userLabel, productLabel, formatNumber, t, tx, animar, filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
+  onCambiarPeriodo,
 }) {
   const { snapshots, loading, error, vivoItems, vivoTotal, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, esTablaVivo } = datos;
   const ERRORES_CON_TEXTO_PROPIO = ["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"];
@@ -1352,6 +1367,7 @@ export function CuerpoDeWidget({
           animar={animar}
           filtroResponsable={filtroResponsable}
           onFiltrarResponsable={onFiltrarResponsable}
+          onCambiarPeriodo={onCambiarPeriodo}
         />
       )}
     </>
@@ -1426,7 +1442,7 @@ export function MarcoDeEjemplo({ tx, children }) {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function KpiWidgetCard({
-  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onConvertirARelativo, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo, refresco, recalculados, ahoraServidor, locale, palabrasDeFecha,
+  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onConvertirARelativo, onCambiarPeriodo, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo, refresco, recalculados, ahoraServidor, locale, palabrasDeFecha,
   filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
 }) {
   const datos = useDatosDeWidget({ widget, kpiCatalog, onReady, refresco });
@@ -1516,6 +1532,7 @@ export function KpiWidgetCard({
           filtroResponsable={filtroResponsable}
           onFiltrarResponsable={onFiltrarResponsable}
           onQuitarFiltroResponsable={onQuitarFiltroResponsable}
+          onCambiarPeriodo={onCambiarPeriodo}
         />
       </div>
 
@@ -1707,7 +1724,7 @@ function KpiTablaVivo({ items, total, cargar, onListo, tx, filtroExterno, onQuit
 // El mapa `tipo_grafica -> componente` vive en
 // components/kpi-widgets/tipoGraficaComponentes.js; aqui solo se arman las
 // props de cada uno (ver kpi/kpiAdaptadores.js).
-function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx, animar, filtroResponsable, onFiltrarResponsable }) {
+function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx, animar, filtroResponsable, onFiltrarResponsable, onCambiarPeriodo }) {
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
   const parametros = widget.parametros || {};
@@ -1724,6 +1741,11 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     <p className="kpi-empty-inline">
       <strong>{tx("state_no_data", "Sin datos en el periodo")}</strong>{" "}
       {tx("state_no_data_help", "Prueba con otro rango de fechas: este KPI no tuvo movimientos en el periodo elegido.")}
+      {onCambiarPeriodo && (
+        <button type="button" className="button ghost kpi-empty-accion" onClick={onCambiarPeriodo}>
+          {tx("change_period", "Cambiar periodo")}
+        </button>
+      )}
     </p>
   );
 
@@ -1839,7 +1861,7 @@ function tiposDeGraficaPermitidos(kpiInfos) {
   return tiposPermitidosPorKpi(kpiInfos, CHART_TYPES.map((opt) => opt.value));
 }
 
-export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, teams = [], userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
+export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, catalogoEstado = "listo", onReintentarCatalogo, users, teams = [], userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -2538,10 +2560,22 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
       onSubmit={handleSubmit}
       cerrarAlEnviar
     >
-      {kpiCatalog.length === 0 ? (
-        <div className="empty">
-          <strong>{tx("no_kpis_title", "No hay KPIs para mostrar")}</strong>
-          <p>{tx("no_kpis_body", "Puede que aún estén cargando o que no haya conexión: espera unos segundos y vuelve a abrir esta ventana. Si sigue igual, pide a tu administrador que te asigne KPIs.")}</p>
+      {vistaDelCatalogo({ estado: catalogoEstado, total: kpiCatalog.length }) !== "lista" ? (
+        <div className="empty" role={catalogoEstado === "error" ? "alert" : "status"}>
+          {catalogoEstado === "cargando" && <p>{tx("catalog_loading", "Cargando KPIs…")}</p>}
+          {catalogoEstado === "error" && (
+            <>
+              <strong>{tx("catalog_error_title", "No se pudieron cargar los KPIs")}</strong>
+              <p>{tx("catalog_error_body", "Revisa tu conexión a internet y vuelve a intentarlo.")}</p>
+              <button type="button" className="button" onClick={onReintentarCatalogo}>{tx("retry", "Reintentar")}</button>
+            </>
+          )}
+          {catalogoEstado === "listo" && (
+            <>
+              <strong>{tx("no_kpis_title", "No hay KPIs para mostrar")}</strong>
+              <p>{tx("no_kpis_body", "Puede que aún estén cargando o que no haya conexión: espera unos segundos y vuelve a abrir esta ventana. Si sigue igual, pide a tu administrador que te asigne KPIs.")}</p>
+            </>
+          )}
         </div>
       ) : (
         <>

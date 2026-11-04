@@ -265,3 +265,23 @@ test("la tabla de material prestado muestra los dias prestados y ordena por los 
   assert.match(html, /<th aria-sort="descending"><button[^>]*title="Más días primero — clic para invertir"/);
   assert.match(html, /<th aria-sort="none"><button[^>]*title="Ordenar por Fecha del vale"/);
 });
+
+// --- U12: "Cambiar periodo" en el estado sin datos -----------------------------------------------------------------------
+test("'Sin datos en el periodo' ofrece 'Cambiar periodo' solo cuando la tarjeta sabe abrir el editor", () => {
+  for (const tipo of ["numero", "barras", "linea", "area", "dona"]) {
+    const widget = widgetDe(tipo, PARAMETROS["viejo, fechas absolutas"]);
+    const datos = datosDe(widget, { snapshot: { rango_a: { total: 0, por_empleado: {}, por_periodo: {}, n_filas: 0, calculado: true }, rango_b: null } });
+    const sin = pintarCuerpo({ widget, datos });
+    const con = pintarCuerpo({ widget, datos, onCambiarPeriodo: () => {} });
+    assert.ok(con.includes("Sin datos en el periodo") && con.includes("Cambiar periodo"), `${tipo}: con el boton`);
+    assert.ok(sin.includes("Sin datos en el periodo") && !sin.includes("Cambiar periodo"), `${tipo}: sin onCambiarPeriodo (la vista previa del editor) no hay boton`);
+    assert.match(con, /<button type="button" class="button ghost kpi-empty-accion"/, `${tipo}: es un boton de verdad, alcanzable con el teclado`);
+  }
+});
+
+test("'Cambiar periodo' no sale en 'No calculado', con datos, ni en un error", () => {
+  const widget = widgetDe("barras", PARAMETROS["viejo, fechas absolutas"]);
+  const noCalculado = { rango_a: { total: 0, por_empleado: {}, por_periodo: {}, n_filas: 0, calculado: false }, rango_b: null };
+  assert.ok(!pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: noCalculado }), onCambiarPeriodo: () => {} }).includes("Cambiar periodo"));
+  assert.ok(!pintarCuerpo({ widget, datos: datosDe(widget, { error: "errors.network" }), onCambiarPeriodo: () => {} }).includes("Cambiar periodo"));
+});

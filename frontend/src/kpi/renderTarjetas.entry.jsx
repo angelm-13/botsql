@@ -36,11 +36,12 @@ export function pintarTarjeta({ widget, kpiCatalog }) {
 }
 
 /** El cuerpo con datos ya cargados (o vacios, o con error). */
-export function pintarCuerpo({ widget, datos }) {
+export function pintarCuerpo({ widget, datos, onCambiarPeriodo }) {
   return renderToStaticMarkup(
     <CuerpoDeWidget
       widget={widget}
       datos={datos}
+      onCambiarPeriodo={onCambiarPeriodo}
       userLabel={userLabel}
       productLabel={productLabel}
       formatNumber={formatNumber}
@@ -67,7 +68,7 @@ export function pintarSelector(props) {
 /** El panel "Agregar grafico" abierto en su primer paso («Que medir»), con su selector de KPI cableado como en la pantalla
  * real: sirve para comprobar lo que el Dashboard le pasa al selector (iconos y nombres de pestana, traducciones).
  * `traducir` (opcional) reemplaza al `tx` de prueba, que devuelve el texto de respaldo. */
-export function pintarPanel({ kpiCatalog, idsKpiSeleccionados = [], traducir, tipoGrafica = "barras", relleno, orientacion, agruparPor = "entidad" } = {}) {
+export function pintarPanel({ kpiCatalog, idsKpiSeleccionados = [], traducir, tipoGrafica = "barras", relleno, orientacion, agruparPor = "entidad", catalogoEstado = "listo" } = {}) {
   const panelState = {
     editingWidgetId: null, colapsado: false, paso: 0, idsKpiSeleccionados, tipoGrafica, ...(relleno ? { relleno } : {}), ...(orientacion ? { orientacion } : {}),
     ...rangoInicialDelBorrador(), comparar: false, desfaseComparacion: null,
@@ -79,6 +80,8 @@ export function pintarPanel({ kpiCatalog, idsKpiSeleccionados = [], traducir, ti
       panelState={panelState}
       onChangePanelState={() => {}}
       kpiCatalog={kpiCatalog}
+      catalogoEstado={catalogoEstado}
+      onReintentarCatalogo={() => {}}
       users={[]}
       userLabel={userLabel}
       productLabel={productLabel}
