@@ -71,3 +71,22 @@ test("propsSeries: las series A y B se llaman por sus fechas", () => {
   });
   assert.deepEqual(props.series.map((s) => s.nombre), ["6 oct – 4 nov 2026", "6 sep – 5 oct 2026"]);
 });
+
+import { diasDeRango, formatoDeRangoConDias } from "./kpiRango.js";
+
+test("diasDeRango cuenta ambos extremos y tolera lo invalido", () => {
+  assert.equal(diasDeRango("2026-10-06", "2026-11-04"), 30);
+  assert.equal(diasDeRango("2026-10-06", "2026-10-06"), 1);
+  assert.equal(diasDeRango("2026-01-01", "2026-12-31"), 365);
+  assert.equal(diasDeRango("2026-02-27", "2026-03-02"), 4, "cruza febrero");
+  assert.equal(diasDeRango("2026-11-04", "2026-10-06"), 0, "al reves");
+  assert.equal(diasDeRango("", "2026-10-06"), 0);
+});
+
+test("formatoDeRangoConDias arma '6 oct – 4 nov 2026 (30 días)' y '(1 día)' para un solo dia", () => {
+  assert.equal(formatoDeRangoConDias("2026-10-06", "2026-11-04"), "6 oct – 4 nov 2026 (30 días)");
+  assert.equal(formatoDeRangoConDias("2026-11-04", "2026-11-04"), "4 nov 2026 (1 día)");
+  assert.equal(formatoDeRangoConDias("2026-11-04", "2026-11-04", { textos: { uno: "1 day", otros: "{n} days" } }), "4 nov 2026 (1 day)");
+  assert.equal(formatoDeRangoConDias("2026-10-06", "2026-11-04", { textos: { uno: "1 day", otros: "{n} days" } }), "6 oct – 4 nov 2026 (30 days)");
+  assert.equal(formatoDeRangoConDias("", ""), "");
+});

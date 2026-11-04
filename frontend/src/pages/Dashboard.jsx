@@ -59,7 +59,7 @@ import {
 } from "../kpi/kpiFechasFijas.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_DE_RANGO_EN_TARJETA, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, textoDeRango,
-  formatoDeRango, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
+  formatoDeRango, formatoDeRangoConDias, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
 import { ofreceVerEjemplo, snapshotsDeEjemplo } from "../kpi/vistaPreviaDeEjemplo.js";
 import {
@@ -2350,7 +2350,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, cat
       <>
             <div className="kpi-picker-section">
               <span>{tx("date_range", "Periodo")}</span>
-              <div className="kpi-editor-chips" role="group" aria-label={tx("date_range", "Periodo")}>
+              <div className="kpi-editor-chips kpi-editor-chips-periodo" role="group" aria-label={tx("date_range", "Periodo")}>
                 {[...RANGOS_RELATIVOS, RANGO_PERSONALIZADO].map((clave) => (
                   <button
                     type="button"
@@ -2364,8 +2364,11 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, cat
                 ))}
               </div>
               {esRelativo && (
-                <p className="kpi-editor-rango-resuelto">
-                  {rangoResuelto.fecha_inicio} → {rangoResuelto.fecha_fin}
+                <p className="kpi-editor-rango-resuelto kpi-editor-rango-grande">
+                  {formatoDeRangoConDias(rangoResuelto.fecha_inicio, rangoResuelto.fecha_fin, {
+                    locale: localeEditor,
+                    textos: { uno: tx("range_days_one", "1 día"), otros: tx("range_days_other", "{n} días") },
+                  })}
                   <span> · {tx("range_relative_hint", "se recalcula cada vez que se abre el tablero")}</span>
                 </p>
               )}
@@ -2374,22 +2377,29 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, cat
             {idsKpiSeleccionados.length > 0 && primeraDimension !== "global" && (
               <div className="kpi-picker-section">
                 <span>{tx("group_by", "Agrupar por")}</span>
-                <div className="kpi-icon-option-group">
+                <div className="kpi-editor-segmentos" style={{ "--segmentos": 2 }} role="group" aria-label={tx("group_by", "Agrupar por")} aria-describedby="kpi-agrupar-ayuda">
                   <button
                     type="button"
-                    className={`kpi-chip-option ${agruparPor === "entidad" ? "active" : ""}`}
+                    className={`kpi-editor-chip ${agruparPor === "entidad" ? "activo" : ""}`}
+                    aria-pressed={agruparPor === "entidad"}
                     onClick={() => onChangePanelState({ agruparPor: "entidad" })}
                   >
                     {etiquetaDeAgrupar}
                   </button>
                   <button
                     type="button"
-                    className={`kpi-chip-option ${agruparPor === "periodo" ? "active" : ""}`}
+                    className={`kpi-editor-chip ${agruparPor === "periodo" ? "activo" : ""}`}
+                    aria-pressed={agruparPor === "periodo"}
                     onClick={() => onChangePanelState({ agruparPor: "periodo" })}
                   >
                     {tx("group_by_period", "Periodo (tendencia)")}
                   </button>
                 </div>
+                <p id="kpi-agrupar-ayuda" className="kpi-editor-ayuda">
+                  {etiquetaDeAgrupar === tx("group_by_employee", "Empleado")
+                    ? tx("group_by_help", "Empleado: una barra por persona. Periodo: cómo cambia a lo largo del tiempo.")
+                    : tx("group_by_help_other", "{entidad}: una barra por cada elemento. Periodo: cómo cambia a lo largo del tiempo.").replace("{entidad}", etiquetaDeAgrupar)}
+                </p>
               </div>
             )}
 

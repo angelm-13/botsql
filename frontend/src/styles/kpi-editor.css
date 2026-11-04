@@ -275,3 +275,13 @@
 .kpi-switch-texto { font-size: 14px; font-weight: 600; color: var(--kpi-ink-suave, #334155); }
 .kpi-editor-contra { margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) { .kpi-switch-pista, .kpi-switch-perilla { transition: none; } }
+
+/* Rango resuelto del paso "Periodo": grande y legible. */
+.kpi-editor-rango-grande { font-size: 14px; font-weight: 600; color: var(--kpi-ink); }
+.kpi-editor-rango-grande span { font-size: 12px; }
+/* Movil: las pastillas de periodo en 4 por fila, con altura tactil de 44 px. */
+@media (max-width: 720px) {
+  .kpi-editor-chips-periodo { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .kpi-editor-chips-periodo .kpi-editor-chip { min-height: 44px; padding: 6px 4px; border-radius: 10px; text-align: center; overflow-wrap: anywhere; line-height: 1.15; }
+  .kpi-editor-segmentos .kpi-editor-chip { min-height: 44px; }
+}
