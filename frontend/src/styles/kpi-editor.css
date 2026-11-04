@@ -281,7 +281,8 @@
 .kpi-editor-rango-grande span { font-size: 12px; }
 /* Movil: las pastillas de periodo en 4 por fila, con altura tactil de 44 px. */
 @media (max-width: 720px) {
-  .kpi-editor-chips-periodo { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-  .kpi-editor-chips-periodo .kpi-editor-chip { min-height: 44px; padding: 6px 4px; border-radius: 10px; text-align: center; overflow-wrap: anywhere; line-height: 1.15; }
+  /* La cuarta columna nunca baja del ancho de su palabra mas larga ("Personalizado"): las otras se reparten el resto y se parten por palabras. */
+  .kpi-editor-chips-periodo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(max-content, 1.2fr); gap: 6px; }
+  .kpi-editor-chips-periodo .kpi-editor-chip { min-height: 44px; padding: 6px 4px; border-radius: 10px; text-align: center; overflow-wrap: normal; word-break: normal; hyphens: none; font-size: 11px; line-height: 1.15; }
   .kpi-editor-segmentos .kpi-editor-chip { min-height: 44px; }
 }
