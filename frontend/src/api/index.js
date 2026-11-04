@@ -643,6 +643,9 @@ export const getPayrollSimulatorEmployee = (id) => request(`/payroll_simulator/e
 export const calculatePayrollSimulation = (payload) => request("/payroll_simulator/calculate", { method: "POST", body: payload });
 export const downloadPayrollSimulationPdf = (payload) => requestBlob("/payroll_simulator/pdf", { method: "POST", body: payload });
 export const addPayrollSimulationBonuses = (payload) => request("/payroll_simulator/bonuses", { method: "POST", body: payload });
+// Reporte de asistencia para RH (services/reporte_de_asistencia.py).
+export const getAttendanceReport = ({ start, end }) => request(`/attendance_report/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+export const downloadAttendanceReport = ({ start, end }) => requestBlob(`/attendance_report/xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
 // Bajas: finiquito y liquidacion (services/termination_service.py).
 export const getAllEmployeeTermination = (params = {}) => request("/employee_termination/", { params });
 export const createEmployeeTermination = (payload) => request("/employee_termination/", { method: "POST", body: payload });

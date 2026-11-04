@@ -14,10 +14,7 @@ egresos al otro, cada bloque con su total y al final el neto.
 """
 from __future__ import annotations
 
-import io
-import zipfile
 from decimal import Decimal, InvalidOperation
-from xml.sax.saxutils import escape
 
 from sqlalchemy import select
 
@@ -28,6 +25,7 @@ from app.services.payroll_calculation_service import (ABIERTO, CERRADO, CONCEPTO
 from app.services.payroll_movement_service import PayrollMovementService
 from app.utils.errors import AppError
 from app.utils.tiempo import ahora_utc
+from app.utils.xlsx_simple import libro
 
 TIPOS = ("earning", "deduction")
 SIEMPRE = ("SUELDO", "ISR", "IMSS")
@@ -182,23 +180,8 @@ def simular(id_payroll_period, lista, user_id: int) -> dict:
         return {**resultado, "simulated": True}
 
 
-def _celda(ref: str, valor) -> str:
-    if isinstance(valor, (int, float)):
-        return f'<c r="{ref}"><v>{valor}</v></c>'
-    return f'<c r="{ref}" t="inlineStr"><is><t>{escape(str(valor))}</t></is></c>'
-
-
-def _ref(col: int, fila: int) -> str:
-    letras = ""
-    col += 1
-    while col:
-        col, resto = divmod(col - 1, 26)
-        letras = chr(65 + resto) + letras
-    return f"{letras}{fila}"
-
-
 def xlsx(id_payroll_period, titulos: dict) -> tuple[bytes, str]:
-    """La hoja en un .xlsx minimo (sin dependencias: un .xlsx es un zip de XML)."""
+    """La hoja en .xlsx (utils/xlsx_simple.py)."""
     datos = hoja(id_payroll_period)
     ingresos = [c for c in datos["columns"] if c["type"] == "earning"]
     egresos = [c for c in datos["columns"] if c["type"] == "deduction"]
@@ -213,26 +196,5 @@ def xlsx(id_payroll_period, titulos: dict) -> tuple[bytes, str]:
 
     tabla = [encabezado] + [renglon(r["full_name"], r["days_worked"], r["amounts"], r) for r in datos["rows"]]
     tabla.append(renglon(titulos["totals"], "", datos["totals"], datos["totals"]))
-    filas = "".join(f'<row r="{i + 1}">' + "".join(_celda(_ref(j, i + 1), v) for j, v in enumerate(f)) + "</row>"
-                    for i, f in enumerate(tabla))
-    ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
-    rel = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
-    archivos = {
-        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-        '<Default Extension="xml" ContentType="application/xml"/>'
-        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
-        "_rels/.rels": '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
-        "xl/workbook.xml": f'<?xml version="1.0" encoding="UTF-8"?><workbook {ns} {rel}><sheets>'
-        f'<sheet name="Nomina {datos["id_payroll_period"]}" sheetId="1" r:id="rId1"/></sheets></workbook>',
-        "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
-        "xl/worksheets/sheet1.xml": f'<?xml version="1.0" encoding="UTF-8"?><worksheet {ns}><sheetData>{filas}</sheetData></worksheet>',
-    }
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
-        for nombre, contenido in archivos.items():
-            z.writestr(nombre, contenido)
-    return buffer.getvalue(), f"nomina_periodo_{datos['id_payroll_period']}.xlsx"
+    contenido = libro(f"Nomina {datos['id_payroll_period']}", tabla)
+    return contenido, f"nomina_periodo_{datos['id_payroll_period']}.xlsx"

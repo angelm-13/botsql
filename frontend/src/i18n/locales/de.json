@@ -1423,7 +1423,8 @@
     "my_leaves": "Mein Urlaub",
     "payroll_groups": "Abrechnungsgruppen",
     "terminations": "Austritte",
-    "payroll_simulator": "Lohnsimulator"
+    "payroll_simulator": "Lohnsimulator",
+    "attendance_report": "Anwesenheitsbericht"
   },
   "placeholders": {
     "bank": {
@@ -3692,7 +3693,11 @@
       "attendance_warning_exit_minutes": "Hinweis an die Person ohne Gehen-Stempel (Minuten danach)",
       "overtime_tolerance_minutes": "Toleranz für ungenehmigte Zeit (Minuten)",
       "overtime_day_hours": "Arbeitsstunden ohne Arbeitszeitplan",
-      "sunday_premium_pct": "Sonntagszuschlag (% des Tageslohns)"
+      "sunday_premium_pct": "Sonntagszuschlag (% des Tageslohns)",
+      "report_alert_late": "Anwesenheitsbericht: Warnung ab so vielen Verspätungen im Zeitraum (0 = keine)",
+      "report_alert_absences": "Anwesenheitsbericht: Warnung ab so vielen Fehltagen im Zeitraum (0 = keine)",
+      "report_alert_manual": "Anwesenheitsbericht: Warnung ab so vielen manuellen Stempelungen (0 = keine)",
+      "report_alert_supervisor_manual": "Anwesenheitsbericht: Warnung für Vorgesetzte mit so vielen manuellen Stempelungen (0 = keine)"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -4108,5 +4113,43 @@
     "saved": "Gespeichert und neu berechnet.",
     "add_concept": "Konzept hinzufügen",
     "download": "Excel herunterladen"
+  },
+  "attendance_report": {
+    "eyebrow": "Personal",
+    "title": "Anwesenheitsbericht",
+    "subtitle": "Woche oder Halbmonat je Mitarbeiter, mit Warnungen bei Wiederholungen. Nur lesen.",
+    "last_week": "Letzte Woche",
+    "last_fortnight": "Letzter Halbmonat",
+    "this_week": "Diese Woche",
+    "this_fortnight": "Dieser Halbmonat",
+    "from": "Von",
+    "to": "Bis",
+    "show": "Anzeigen",
+    "download": "Excel herunterladen",
+    "hint": "Bis zu 31 Tage. Manuelle Stempelungen sind die Korrekturen mit dem Grund der Vorgesetzten. Die Grenzen ändern Sie in den Abrechnungseinstellungen.",
+    "range_error": "Bitte höchstens 31 Tage wählen, Enddatum nach dem Startdatum.",
+    "with_alerts": "{n} von {total} Mitarbeitern mit Warnungen in diesem Zeitraum.",
+    "employee": "Mitarbeiter",
+    "late": "Verspätungen",
+    "absences": "Fehltage",
+    "pending": "Unbegründet",
+    "leave_days": "Urlaub und Freistellung",
+    "manual": "Manuelle Stempelungen",
+    "overtime": "Überstunden",
+    "alerts": "Warnungen",
+    "next_to_rest_short": "{n} neben Ruhetag",
+    "exceptions": "als Ausnahme",
+    "reasons": "Gründe ansehen",
+    "pending_hr": "Wartet auf Personal",
+    "empty": "In diesem Zeitraum hat niemand Arbeitsplan, Stempelungen oder Abwesenheiten.",
+    "supervisors_title": "Wer manuell stempelt",
+    "supervisors_hint": "Markiert ab {n} im Zeitraum.",
+    "supervisor": "Vorgesetzte",
+    "alert_late": "Wiederholte Verspätungen",
+    "alert_absences": "Wiederholte Fehltage",
+    "alert_absence_next_to_rest": "Fehltag neben Ruhe- oder Feiertag",
+    "alert_manual": "Viele manuelle Stempelungen",
+    "alert_pending": "Unbegründete Tage",
+    "alert_supervisor": "Stempelt sehr oft manuell"
   }
 }

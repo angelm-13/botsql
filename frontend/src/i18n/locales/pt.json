@@ -1424,7 +1424,8 @@
     "my_leaves": "Minhas férias",
     "payroll_groups": "Grupos de pagamento",
     "terminations": "Desligamentos",
-    "payroll_simulator": "Simulador de folha"
+    "payroll_simulator": "Simulador de folha",
+    "attendance_report": "Relatório de presença"
   },
   "placeholders": {
     "bank": {
@@ -3698,7 +3699,11 @@
       "attendance_warning_exit_minutes": "Aviso ao funcionário sem marcação de saída (minutos depois)",
       "overtime_tolerance_minutes": "Tolerância para tempo não autorizado (minutos)",
       "overtime_day_hours": "Horas de jornada para quem não tem horário",
-      "sunday_premium_pct": "Adicional dominical (% do salário diário)"
+      "sunday_premium_pct": "Adicional dominical (% do salário diário)",
+      "report_alert_late": "Relatório de presença: alerta com estes atrasos ou mais no período (0 = sem alerta)",
+      "report_alert_absences": "Relatório de presença: alerta com estas faltas ou mais no período (0 = sem alerta)",
+      "report_alert_manual": "Relatório de presença: alerta com estes registros manuais ou mais (0 = sem alerta)",
+      "report_alert_supervisor_manual": "Relatório de presença: alerta ao supervisor que registra à mão estas vezes ou mais (0 = sem alerta)"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -4114,5 +4119,43 @@
     "saved": "Salvo e recalculado.",
     "add_concept": "Adicionar conceito",
     "download": "Baixar Excel"
+  },
+  "attendance_report": {
+    "eyebrow": "Recursos humanos",
+    "title": "Relatório de presença",
+    "subtitle": "Semana ou quinzena de cada funcionário, com alertas do que se repete. Só leitura.",
+    "last_week": "Semana passada",
+    "last_fortnight": "Quinzena passada",
+    "this_week": "Esta semana",
+    "this_fortnight": "Esta quinzena",
+    "from": "De",
+    "to": "Até",
+    "show": "Ver",
+    "download": "Baixar Excel",
+    "hint": "Até 31 dias. Os registros manuais são as correções de ponto, com o motivo escrito pelo supervisor. Os limites dos alertas mudam em Ajustes da folha.",
+    "range_error": "Escolha um intervalo de 31 dias ou menos, com a data final depois da inicial.",
+    "with_alerts": "{n} de {total} funcionários com alertas neste período.",
+    "employee": "Funcionário",
+    "late": "Atrasos",
+    "absences": "Faltas",
+    "pending": "Sem justificar",
+    "leave_days": "Licenças e férias",
+    "manual": "Registros manuais",
+    "overtime": "Horas extras",
+    "alerts": "Alertas",
+    "next_to_rest_short": "{n} junto a descanso",
+    "exceptions": "por exceção",
+    "reasons": "Ver motivos",
+    "pending_hr": "Pendente do RH",
+    "empty": "Ninguém tem horário, registros ou licenças neste período.",
+    "supervisors_title": "Quem registra ponto à mão",
+    "supervisors_hint": "Marca quem registra {n} ou mais no período.",
+    "supervisor": "Supervisor",
+    "alert_late": "Atrasos repetidos",
+    "alert_absences": "Faltas repetidas",
+    "alert_absence_next_to_rest": "Falta junto a descanso ou feriado",
+    "alert_manual": "Muitos registros manuais",
+    "alert_pending": "Dias sem justificar",
+    "alert_supervisor": "Registra à mão com frequência"
   }
 }

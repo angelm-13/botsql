@@ -54,6 +54,7 @@ import WorkSchedulesPage from "./pages/WorkSchedulesPage.jsx";
 import PayrollGroupsPage from "./pages/PayrollGroupsPage.jsx";
 import TerminationsPage from "./pages/TerminationsPage.jsx";
 import PayrollSimulatorPage from "./pages/PayrollSimulatorPage.jsx";
+import AttendanceReportPage from "./pages/AttendanceReportPage.jsx";
 import EmployeeLeavesPage from "./pages/EmployeeLeavesPage.jsx";
 import MyLeavesPage from "./pages/MyLeavesPage.jsx";
 import PermissionPage from "./pages/PermissionPage.jsx";
@@ -238,6 +239,7 @@ export default function App() {
           <Route path="/payroll_groups" element={<RoleAccessRoute entityName="payroll_group"><PayrollGroupsPage /></RoleAccessRoute>} />
           <Route path="/terminations" element={<RoleAccessRoute entityName="employee_termination"><TerminationsPage /></RoleAccessRoute>} />
           <Route path="/payroll_simulator" element={<RoleAccessRoute entityName="payroll_simulator"><PayrollSimulatorPage /></RoleAccessRoute>} />
+          <Route path="/attendance_report" element={<RoleAccessRoute entityName="attendance_report"><AttendanceReportPage /></RoleAccessRoute>} />
           <Route path="/employee_leaves" element={<RoleAccessRoute entityName="employee_leave"><EmployeeLeavesPage /></RoleAccessRoute>} />
           <Route path="/kronos" element={<RoleAccessRoute entityName="payroll_period"><KronosPage /></RoleAccessRoute>} />
           <Route path="/kronos/device" element={<RoleAccessRoute entityName="kronos_device"><KronosDevicePage /></RoleAccessRoute>} />

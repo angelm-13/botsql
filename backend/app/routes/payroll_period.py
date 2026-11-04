@@ -242,8 +242,9 @@ def simulate_sheet_payroll_period(user_data, id_payroll_period):
 def xlsx_sheet_payroll_period(user_data, id_payroll_period):
     from flask import Response
     from app.services.payroll_sheet_service import xlsx
+    from app.utils.xlsx_simple import MIME
     titulos = {"employee": "Empleado", "days": "Dias", "earnings": "Total ingresos",
                "deductions": "Total egresos", "net": "Neto", "totals": "TOTALES"}
     contenido, nombre = xlsx(id_payroll_period, titulos)
-    return Response(contenido, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    return Response(contenido, mimetype=MIME,
                     headers={'Content-Disposition': f'attachment; filename="{nombre}"'})

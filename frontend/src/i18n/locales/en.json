@@ -1468,7 +1468,8 @@
     "my_leaves": "My time off",
     "payroll_groups": "Pay groups",
     "terminations": "Terminations",
-    "payroll_simulator": "Payroll simulator"
+    "payroll_simulator": "Payroll simulator",
+    "attendance_report": "Attendance report"
   },
   "placeholders": {
     "bank": {
@@ -5042,7 +5043,11 @@
       "attendance_warning_exit_minutes": "Warn the employee if no check-out (minutes after)",
       "overtime_tolerance_minutes": "Tolerance for unauthorized time (minutes)",
       "overtime_day_hours": "Shift hours for employees without schedule",
-      "sunday_premium_pct": "Sunday premium (% of daily salary)"
+      "sunday_premium_pct": "Sunday premium (% of daily salary)",
+      "report_alert_late": "Attendance report: alert at this many late arrivals or more in the period (0 = no alert)",
+      "report_alert_absences": "Attendance report: alert at this many absences or more in the period (0 = no alert)",
+      "report_alert_manual": "Attendance report: alert at this many manual check-ins or more (0 = no alert)",
+      "report_alert_supervisor_manual": "Attendance report: alert on supervisors who enter this many manual check-ins or more (0 = no alert)"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -5458,5 +5463,43 @@
     "saved": "Saved and recalculated.",
     "add_concept": "Add concept",
     "download": "Download Excel"
+  },
+  "attendance_report": {
+    "eyebrow": "Human resources",
+    "title": "Attendance report",
+    "subtitle": "Each employee's week or fortnight, with alerts for what repeats. Read-only.",
+    "last_week": "Last week",
+    "last_fortnight": "Last fortnight",
+    "this_week": "This week",
+    "this_fortnight": "This fortnight",
+    "from": "From",
+    "to": "To",
+    "show": "Show",
+    "download": "Download Excel",
+    "hint": "Up to 31 days. Manual check-ins are the check-in corrections, with the reason the supervisor wrote. Alert limits are changed in Payroll settings.",
+    "range_error": "Choose a range of 31 days or less, with the end date after the start date.",
+    "with_alerts": "{n} of {total} employees with alerts in this period.",
+    "employee": "Employee",
+    "late": "Late",
+    "absences": "Absences",
+    "pending": "Unjustified",
+    "leave_days": "Leave and vacation",
+    "manual": "Manual check-ins",
+    "overtime": "Overtime",
+    "alerts": "Alerts",
+    "next_to_rest_short": "{n} next to a rest day",
+    "exceptions": "as exception",
+    "reasons": "See reasons",
+    "pending_hr": "Pending HR",
+    "empty": "Nobody has a schedule, check-ins or leave in this period.",
+    "supervisors_title": "Who enters manual check-ins",
+    "supervisors_hint": "Flagged at {n} or more in the period.",
+    "supervisor": "Supervisor",
+    "alert_late": "Repeated late arrivals",
+    "alert_absences": "Repeated absences",
+    "alert_absence_next_to_rest": "Absence next to a rest day or holiday",
+    "alert_manual": "Many manual check-ins",
+    "alert_pending": "Unjustified days",
+    "alert_supervisor": "Enters manual check-ins very often"
   }
 }

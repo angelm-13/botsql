@@ -36,6 +36,9 @@ const PARAMETROS = [
   ["overtime_tolerance_minutes", "minutes", "options"], ["overtime_day_hours", "count", "options"],
   // Prima dominical (LFT art. 71): 25 % por omision; la empresa puede dar mas.
   ["sunday_premium_pct", "pct", "options"],
+  // Alertas del reporte de asistencia para RH (services/reporte_de_asistencia.py); 0 = sin esa alerta.
+  ["report_alert_late", "count", "options"], ["report_alert_absences", "count", "options"],
+  ["report_alert_manual", "count", "options"], ["report_alert_supervisor_manual", "count", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -65,6 +68,7 @@ const POLITICA_POR_OMISION = {
   attendance_correction_limit: 2,
   overtime_tolerance_minutes: 15, overtime_day_hours: 8, sunday_premium_pct: 25,
   attendance_warning_entry_minutes: 15, attendance_warning_supervisor_minutes: 30, attendance_warning_exit_minutes: 30,
+  report_alert_late: 3, report_alert_absences: 2, report_alert_manual: 2, report_alert_supervisor_manual: 5,
 };
 const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];
 const PERIODICIDADES = [1, 7, 10, 15, 30];

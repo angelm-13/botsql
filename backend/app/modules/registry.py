@@ -455,6 +455,10 @@ CAPACIDADES = (
     # solo Administrator (recibe todas las capacidades). Pasar los bonos a un
     # periodo real pide ademas el permiso de alta de `payroll_movement`.
     Capacidad("payroll_simulator", "Simulador de nomina", "rh", menu="sidebar"),
+    # Reporte de asistencia para RH (2026-11-04): semana o quincena con retardos,
+    # faltas, checadas a mano y horas extra, y alertas de patrones. Solo lectura.
+    # Por omision solo Administrator.
+    Capacidad("attendance_report", "Reporte de asistencia", "rh", menu="sidebar"),
     Capacidad("restaurant_waiter", "Meseros", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_kitchen", "Cocina", "restaurante", bits=EDITAR, menu="sidebar"),

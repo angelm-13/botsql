@@ -100,6 +100,8 @@ const navItems = [
   { path: "/terminations", key: "menu.terminations", label: "Bajas", entityName: "employee_termination", group: "Recursos humanos", location: "sidebar", order: 709 },
   // Capacidad payroll_simulator del Gestor (por omision solo Administrator).
   { path: "/payroll_simulator", key: "menu.payroll_simulator", label: "Simulador de nómina", entityName: "payroll_simulator", group: "Recursos humanos", location: "sidebar", order: 710 },
+  // Capacidad attendance_report del Gestor (por omision solo Administrator).
+  { path: "/attendance_report", key: "menu.attendance_report", label: "Reporte de asistencia", entityName: "attendance_report", group: "Recursos humanos", location: "sidebar", order: 711 },
   // employee_leave igual: sembrada "hidden", pantalla propia en la barra.
   // Autoservicio: la guarda la capacidad `my_leaves`, que el Gestor concede o
   // quita por rol. El backend solo le muestra lo suyo (o lo de su equipo si es jefe).

@@ -1504,7 +1504,8 @@
     "my_leaves": "Mis vacaciones",
     "payroll_groups": "Grupos de pago",
     "terminations": "Bajas",
-    "payroll_simulator": "Simulador de nómina"
+    "payroll_simulator": "Simulador de nómina",
+    "attendance_report": "Reporte de asistencia"
   },
   "placeholders": {
     "bank": {
@@ -5158,7 +5159,11 @@
       "attendance_warning_exit_minutes": "Aviso al empleado si no checa salida (minutos después)",
       "overtime_tolerance_minutes": "Tolerancia para el tiempo no autorizado (minutos)",
       "overtime_day_hours": "Horas de jornada para quien no tiene horario",
-      "sunday_premium_pct": "Prima dominical (% del salario diario)"
+      "sunday_premium_pct": "Prima dominical (% del salario diario)",
+      "report_alert_late": "Reporte de asistencia: alerta con estos retardos o más en el periodo (0 = sin alerta)",
+      "report_alert_absences": "Reporte de asistencia: alerta con estas faltas o más en el periodo (0 = sin alerta)",
+      "report_alert_manual": "Reporte de asistencia: alerta con estas checadas a mano o más (0 = sin alerta)",
+      "report_alert_supervisor_manual": "Reporte de asistencia: alerta al supervisor que captura a mano estas veces o más (0 = sin alerta)"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",
@@ -5574,5 +5579,43 @@
     "saved": "Guardado y recalculado.",
     "add_concept": "Agregar concepto",
     "download": "Descargar Excel"
+  },
+  "attendance_report": {
+    "eyebrow": "Recursos humanos",
+    "title": "Reporte de asistencia",
+    "subtitle": "Semana o quincena de cada empleado, con alertas de lo que se repite. Solo lectura.",
+    "last_week": "Semana pasada",
+    "last_fortnight": "Quincena pasada",
+    "this_week": "Esta semana",
+    "this_fortnight": "Esta quincena",
+    "from": "Desde",
+    "to": "Hasta",
+    "show": "Ver",
+    "download": "Descargar Excel",
+    "hint": "Hasta 31 días. Las checadas a mano son las correcciones de checadas, con el motivo que escribió el supervisor. Los límites de las alertas se cambian en Ajustes de nómina.",
+    "range_error": "Elige un rango de 31 días o menos, con la fecha final después de la inicial.",
+    "with_alerts": "{n} de {total} empleados con alertas en este periodo.",
+    "employee": "Empleado",
+    "late": "Retardos",
+    "absences": "Faltas",
+    "pending": "Sin justificar",
+    "leave_days": "Permisos y vacaciones",
+    "manual": "Checadas a mano",
+    "overtime": "Horas extra",
+    "alerts": "Alertas",
+    "next_to_rest_short": "{n} junto a descanso",
+    "exceptions": "por excepción",
+    "reasons": "Ver motivos",
+    "pending_hr": "Pendiente de RH",
+    "empty": "Nadie tiene horario, checadas ni permisos en este periodo.",
+    "supervisors_title": "Quién captura checadas a mano",
+    "supervisors_hint": "Se marca a quien captura {n} o más en el periodo.",
+    "supervisor": "Supervisor",
+    "alert_late": "Retardos repetidos",
+    "alert_absences": "Faltas repetidas",
+    "alert_absence_next_to_rest": "Falta junto a descanso o festivo",
+    "alert_manual": "Muchas checadas a mano",
+    "alert_pending": "Días sin justificar",
+    "alert_supervisor": "Captura a mano muy seguido"
   }
 }
