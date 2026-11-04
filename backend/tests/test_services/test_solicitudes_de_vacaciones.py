@@ -87,18 +87,48 @@ class TestRevisar(_ConEquipo):
     def _pendiente(self):
         return self.json(self.pedir())["id_employee_leave"]
 
-    def test_el_jefe_aprueba_y_ya_cuenta(self):
+    def test_el_jefe_aprueba_queda_pendiente_de_rh_y_rh_la_cierra(self):
+        """Jefe y luego RH (2026-11-04): con el si del jefe todavia no cuenta."""
         ident = self._pendiente()
-        r = self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(BETO), json={})
+        r = self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(BETO), json={"review_note": "ok"})
         self.assertEqual(200, r.status_code)
-        self.assertEqual(("approved", BETO), (self.json(r)["leave_status"], self.json(r)["reviewed_by"]))
-        ana = calcular_periodo(5, 1)["employees"][0]
-        self.assertEqual(4, ana["vacation_days"])
+        self.assertEqual(("boss_approved", BETO, "ok", None),
+                         (self.json(r)["leave_status"], self.json(r)["boss_reviewed_by"], self.json(r)["boss_review_note"],
+                          self.json(r)["reviewed_by"]))
+        self.assertEqual(0, calcular_periodo(5, 1)["employees"][0]["vacation_days"])
+        self.assertEqual((0, 4, 10), (self.saldo()["taken"], self.saldo()["pending"], self.saldo()["available"]))
+        with transaction_context() as db:
+            self.assertEqual(1, db.query(Notification).filter_by(id_user_recipient=RH,
+                                                                 notification_type="leave_requested").count())
+        r = self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(RH), json={})
+        self.assertEqual(("approved", RH, BETO), (self.json(r)["leave_status"], self.json(r)["reviewed_by"],
+                                                  self.json(r)["boss_reviewed_by"]))
+        self.assertEqual(4, calcular_periodo(5, 1)["employees"][0]["vacation_days"])
         s = self.saldo()
         self.assertEqual((4, 0, 10), (s["taken"], s["pending"], s["available"]))
         with transaction_context() as db:
-            self.assertEqual(1, db.query(Notification).filter_by(id_user_recipient=ANA,
+            self.assertEqual(2, db.query(Notification).filter_by(id_user_recipient=ANA,
                                                                  notification_type="leave_reviewed").count())
+
+    def test_rh_puede_rechazar_lo_que_aprobo_el_jefe(self):
+        ident = self._pendiente()
+        self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(BETO), json={})
+        r = self.client.post(f"/employee_leave/{ident}/reject", headers=self.h(RH), json={"review_note": "cierre"})
+        self.assertEqual(("rejected", "cierre"), (self.json(r)["leave_status"], self.json(r)["review_note"]))
+        self.assertEqual(14, self.saldo()["available"])
+
+    def test_sin_jefe_va_directo_a_rh_y_el_jefe_que_es_rh_cierra_los_dos_pasos(self):
+        with transaction_context() as db:
+            db.get(User, CARLA).supervisor = CARLA   # supervisor es obligatorio: "sin jefe" = ella misma
+            db.get(User, ANA).supervisor = RH
+        sin_jefe = self.json(self.pedir("2026-10-13", "2026-10-14", tipo="paid_leave", quien=CARLA))["id_employee_leave"]
+        self.assertEqual([("hr", CARLA)], [(x["step"], x["id_user"]) for x in
+                                           self.json(self.client.get("/employee_leave/pending", headers=self.h(RH)))["requests"]
+                                           if x["id_user"] == CARLA])
+        self.assertEqual("approved", self.json(self.client.post(f"/employee_leave/{sin_jefe}/approve",
+                                                                headers=self.h(RH)))["leave_status"])
+        r = self.json(self.client.post(f"/employee_leave/{self._pendiente()}/approve", headers=self.h(RH)))
+        self.assertEqual(("approved", RH, RH), (r["leave_status"], r["boss_reviewed_by"], r["reviewed_by"]))
 
     def test_rechazar_libera_el_saldo(self):
         ident = self._pendiente()
@@ -106,21 +136,29 @@ class TestRevisar(_ConEquipo):
         self.assertEqual(("rejected", "cierre de mes"), (self.json(r)["leave_status"], self.json(r)["review_note"]))
         self.assertEqual(14, self.saldo()["available"])
 
-    def test_solo_su_jefe_o_rh_y_nunca_el_propio_empleado(self):
+    def test_primero_su_jefe_despues_rh_y_nunca_el_propio_empleado(self):
         ident = self._pendiente()
         self.assertEqual(403, self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(CARLA)).status_code)
         self.assertEqual(403, self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(ANA)).status_code)
+        r = self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(RH))
+        self.assertEqual((409, "errors.employee_leave_waiting_boss"), (r.status_code, self.json(r)["error_key"]))
+        self.assertEqual(200, self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(BETO)).status_code)
+        self.assertEqual(403, self.client.post(f"/employee_leave/{ident}/reject", headers=self.h(BETO)).status_code)
         self.assertEqual(200, self.client.post(f"/employee_leave/{ident}/approve", headers=self.h(RH)).status_code)
-        self.assertEqual(409, self.client.post(f"/employee_leave/{ident}/reject", headers=self.h(BETO)).status_code)
+        self.assertEqual(409, self.client.post(f"/employee_leave/{ident}/reject", headers=self.h(RH)).status_code)
 
     def test_por_autorizar_el_jefe_ve_su_equipo_y_rh_todo(self):
         self._pendiente()
         self.assertEqual(201, self.pedir("2026-10-13", "2026-10-14", tipo="paid_leave", quien=CARLA).status_code)
         del_jefe = self.json(self.client.get("/employee_leave/pending", headers=self.h(BETO)))["requests"]
-        de_rh = self.json(self.client.get("/employee_leave/pending", headers=self.h(RH)))["requests"]
-        self.assertEqual([ANA], [x["id_user"] for x in del_jefe])
+        self.assertEqual([(ANA, "boss")], [(x["id_user"], x["step"]) for x in del_jefe])
         self.assertEqual("Ana", del_jefe[0]["full_name"])
-        self.assertEqual({ANA, CARLA}, {x["id_user"] for x in de_rh})
+        # RH ve lo de Ana hasta que su jefe la aprueba; al jefe ya no le aparece.
+        self.assertNotIn(ANA, {x["id_user"] for x in self.json(self.client.get("/employee_leave/pending", headers=self.h(RH)))["requests"]})
+        self.client.post(f"/employee_leave/{del_jefe[0]['id_employee_leave']}/approve", headers=self.h(BETO))
+        de_rh = self.json(self.client.get("/employee_leave/pending", headers=self.h(RH)))["requests"]
+        self.assertIn((ANA, "hr"), {(x["id_user"], x["step"]) for x in de_rh})
+        self.assertEqual([], self.json(self.client.get("/employee_leave/pending", headers=self.h(BETO)))["requests"])
 
     def test_al_aprobar_se_vuelve_a_validar(self):
         ident = self._pendiente()

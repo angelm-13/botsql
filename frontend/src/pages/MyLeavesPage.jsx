@@ -101,7 +101,7 @@ export default function MyLeavesPage() {
   }
 
   // Mismas insignias de estado que cotizaciones y periodos de nomina.
-  const TONO = { requested: "status-sent", approved: "status-approved", rejected: "status-rejected", cancelled: "" };
+  const TONO = { requested: "status-sent", boss_approved: "status-partially_approved", approved: "status-approved", rejected: "status-rejected", cancelled: "" };
   const estado = (s) => <span className={`quotation-status-badge ${TONO[s] || ""}`}>{t(`my_leaves.status_${s}`)}</span>;
   const campo = (nombre, props = {}) => (
     <input {...props} value={form[nombre] ?? ""} onChange={(e) => setForm((f) => ({ ...f, [nombre]: e.target.value }))} />
@@ -182,7 +182,7 @@ export default function MyLeavesPage() {
                   <td>{estado(a.leave_status)}</td><td><small>{a.review_note || "—"}</small></td>
                   <td className="row-actions">
                     {a.leave_type === "disability" && <button type="button" title={t("leave_sheet.title")} aria-label={`${t("leave_sheet.title")} ${a.start_date}`} onClick={() => setHoja(a.id_employee_leave)}><FileText size={15} /></button>}
-                    {a.leave_status === "requested" && <button type="button" title={t("my_leaves.cancel_request")} onClick={() => accion(() => cancelEmployeeLeave(a.id_employee_leave), "my_leaves.cancelled_done")}><X size={15} /></button>}
+                    {["requested", "boss_approved"].includes(a.leave_status) && <button type="button" title={t("my_leaves.cancel_request")} onClick={() => accion(() => cancelEmployeeLeave(a.id_employee_leave), "my_leaves.cancelled_done")}><X size={15} /></button>}
                   </td>
                 </tr>
               )) : <tr><td colSpan="6" className="kronos-empty">{t("my_leaves.no_requests")}</td></tr>}</tbody>
@@ -196,18 +196,19 @@ export default function MyLeavesPage() {
           <div className="kronos-table-heading"><div><p className="eyebrow">{t("my_leaves.tab_review")}</p><h3>{t("my_leaves.review_title")}</h3></div></div>
           <p className="muted">{t("my_leaves.review_hint")}</p>
           <table>
-            <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.type")}</th><th>{t("employee_leaves.from")}</th><th>{t("employee_leaves.to")}</th><th>{t("employee_leaves.notes")}</th><th>{t("employee_leaves.available")}</th><th>{t("common.actions")}</th></tr></thead>
+            <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.type")}</th><th>{t("employee_leaves.from")}</th><th>{t("employee_leaves.to")}</th><th>{t("employee_leaves.notes")}</th><th>{t("employee_leaves.available")}</th><th>{t("my_leaves.step")}</th><th>{t("common.actions")}</th></tr></thead>
             <tbody>{pendientes.length ? pendientes.map((s) => (
               <tr key={s.id_employee_leave}>
                 <td><strong>{s.full_name}</strong></td><td>{t(`employee_leaves.type_${s.leave_type}`)}</td>
                 <td>{s.start_date}</td><td>{s.end_date}</td><td><small>{s.notes || "—"}</small></td><td>{s.available}</td>
+                <td><span className={`quotation-status-badge ${s.step === "hr" ? "status-partially_approved" : "status-sent"}`}>{t(`my_leaves.step_${s.step}`)}</span></td>
                 <td className="row-actions">
                   {s.leave_type === "disability" && <button type="button" title={t("leave_sheet.title")} aria-label={`${t("leave_sheet.title")} ${s.full_name}`} onClick={() => setHoja(s.id_employee_leave)}><FileText size={15} /></button>}
                   <button type="button" title={t("my_leaves.approve")} aria-label={`${t("my_leaves.approve")} ${s.full_name}`} onClick={() => accion(() => approveEmployeeLeave(s.id_employee_leave), "my_leaves.approved_done")}><Check size={15} /></button>
                   <button type="button" title={t("my_leaves.reject")} aria-label={`${t("my_leaves.reject")} ${s.full_name}`} onClick={() => rechazar(s)}><X size={15} /></button>
                 </td>
               </tr>
-            )) : <tr><td colSpan="7" className="kronos-empty">{t("my_leaves.no_pending")}</td></tr>}</tbody>
+            )) : <tr><td colSpan="8" className="kronos-empty">{t("my_leaves.no_pending")}</td></tr>}</tbody>
           </table>
         </div>
       )}

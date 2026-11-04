@@ -28,6 +28,11 @@ editar `employee_leave`). Desde la revision contable (2026-10-28) tambien report
 su incapacidad con la hoja del IMSS, y esa solo la revisa RH. Lo que registra RH
 directamente queda aprobado. Al aprobar se vuelven a validar saldo, que no se
 enciman y que no caigan en un periodo cerrado.
+
+Dos pasos (decision de RH, 2026-11-04): primero la aprueba su jefe directo y
+queda boss_approved ("pendiente de RH"); despues RH la aprueba o la rechaza, y
+solo entonces cuenta. Sin jefe directo, o si es una incapacidad, va directo a RH.
+Si su jefe tambien es RH, su aprobacion cierra los dos pasos.
 """
 from __future__ import annotations
 
@@ -35,9 +40,9 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
-from app.models import EmployeeLeave, PayrollPeriod, User
-from app.models.employee_leave import (APROBADA, CANCELADA, ESTADOS_VIGENTES, RECHAZADA, SOLICITADA,
-                                       TIPOS_DE_AUSENCIA, TIPOS_DE_INCAPACIDAD)
+from app.models import EmployeeLeave, EntityPermission, PayrollPeriod, User
+from app.models.employee_leave import (APROBADA, CANCELADA, ESTADOS_PENDIENTES, ESTADOS_VIGENTES, JEFE_APROBO,
+                                       RECHAZADA, SOLICITADA, TIPOS_DE_AUSENCIA, TIPOS_DE_INCAPACIDAD)
 from app.models.session import transaction_context
 from app.services import payroll_tax_rules as ley
 from app.services.base_service import CrudService
@@ -50,7 +55,8 @@ VACACIONES = "vacation"
 # cuenta cuando RH la aprueba, y solo RH la revisa: el supervisor no ve la hoja.
 TIPOS_QUE_PIDE_EL_EMPLEADO = ("vacation", "paid_leave", "unpaid_leave", "disability")
 # Columnas que solo mueve el flujo de solicitud; la captura generica no las escribe.
-CAMPOS_DEL_FLUJO = ("leave_status", "requested_by", "reviewed_by", "reviewed_at", "review_note")
+CAMPOS_DEL_FLUJO = ("leave_status", "requested_by", "reviewed_by", "reviewed_at", "review_note",
+                    "boss_reviewed_by", "boss_reviewed_at", "boss_review_note")
 
 
 def _aniversario(ingreso: date, anios: int) -> date:
@@ -332,6 +338,30 @@ def _es_rh(user_data: dict) -> bool:
     return _has_entity_permission(user_data, "employee_leave", "update")
 
 
+def _jefe_directo(db, empleado: User) -> int | None:
+    """Quien aprueba primero; None si no tiene jefe (o es el mismo, o ya no existe)."""
+    if not empleado.supervisor or empleado.supervisor == empleado.id_user:
+        return None
+    jefe = db.get(User, empleado.supervisor)
+    return jefe.id_user if jefe is not None and jefe.deletion_date is None else None
+
+
+def _paso(db, ausencia: EmployeeLeave, empleado: User) -> str:
+    """'boss' si le toca a su jefe directo, 'hr' si ya le toca a RH."""
+    if ausencia.leave_status == SOLICITADA and ausencia.leave_type != "disability" \
+            and _jefe_directo(db, empleado) is not None:
+        return "boss"
+    return "hr"
+
+
+def _usuarios_de_rh(db) -> list[int]:
+    """Quienes revisan ausencias en el Gestor (editar employee_leave), para avisarles."""
+    roles = (select(EntityPermission.id_permission).where(EntityPermission.entity_name == "employee_leave")
+             .where(EntityPermission.scope_update != 0).where(EntityPermission.deletion_date.is_(None)))
+    return list(db.scalars(select(User.id_user).where(User.id_permission.in_(roles))
+                           .where(User.deletion_date.is_(None))))
+
+
 def _notificar(destinatario, notification_type: str, titulo: str, mensaje: str, actor_id: int,
                id_ausencia: int) -> None:
     """Avisa (campana) al jefe o al empleado. Se llama ya cerrada la transaccion y es
@@ -446,37 +476,41 @@ def cancelar(actor_id: int, id_ausencia) -> dict:
             raise AppError("errors.resource_not_found", 404)
         if ausencia.id_user != actor_id:
             raise AppError("errors.permission_denied", 403, {"entity": "employee_leave", "action": "update"})
-        if ausencia.leave_status != SOLICITADA:
+        if ausencia.leave_status not in ESTADOS_PENDIENTES:
             raise AppError("errors.employee_leave_not_pending", 409, {"leave_status": ausencia.leave_status})
         ausencia.leave_status = CANCELADA
         return ausencia.serialize()
 
 
 def por_autorizar(user_data: dict) -> list[dict]:
-    """Solicitudes pendientes que el actor puede revisar: las de su equipo, o todas si es RH."""
+    """Solicitudes que le toca revisar al actor: como jefe directo, las de su equipo
+    en su primer paso; como RH, las que ya aprobo su jefe, las de quien no tiene
+    jefe y las incapacidades. Cada fila dice su paso (`step`: boss o hr)."""
     actor_id = user_data.get("id_user")
+    es_rh = _es_rh(user_data)
     with transaction_context() as db:
-        consulta = (select(EmployeeLeave)
-                    .where(EmployeeLeave.leave_status == SOLICITADA)
-                    .where(EmployeeLeave.deletion_date.is_(None))
-                    .order_by(EmployeeLeave.start_date))
-        if not _es_rh(user_data):
-            equipo = select(User.id_user).where(User.supervisor == actor_id).where(User.id_user != actor_id)
-            # Las incapacidades las revisa solo RH (llevan la hoja medica).
-            consulta = (consulta.where(EmployeeLeave.id_user.in_(equipo))
-                        .where(EmployeeLeave.leave_type != "disability"))
-        pendientes = db.scalars(consulta).all()
+        todas = db.scalars(select(EmployeeLeave)
+                           .where(EmployeeLeave.leave_status.in_(ESTADOS_PENDIENTES))
+                           .where(EmployeeLeave.deletion_date.is_(None))
+                           .order_by(EmployeeLeave.start_date)).all()
+        empleados = {u.id_user: u for u in db.scalars(select(User).where(User.id_user.in_([a.id_user for a in todas] or [0])))}
+        pasos = {a.id_employee_leave: _paso(db, a, empleados[a.id_user]) for a in todas}
+        pendientes = [a for a in todas
+                      if (pasos[a.id_employee_leave] == "boss" and a.id_user != actor_id
+                          and _jefe_directo(db, empleados[a.id_user]) == actor_id)
+                      or (pasos[a.id_employee_leave] == "hr" and es_rh)]
         filas = _con_nombre(db, pendientes)
-        empleados = {u.id_user: u for u in db.scalars(select(User).where(User.id_user.in_([a.id_user for a in pendientes] or [0])))}
         hoy = ahora_negocio().date()
-        saldos_de = {s["id_user"]: s for s in _saldos(db, list(empleados.values()), hoy)}
+        saldos_de = {s["id_user"]: s for s in _saldos(db, [empleados[a.id_user] for a in pendientes], hoy)}
         for fila in filas:
             fila["available"] = (saldos_de.get(fila["id_user"]) or {}).get("available", 0)
+            fila["step"] = pasos[fila["id_employee_leave"]]
         return filas
 
 
 def revisar(user_data: dict, id_ausencia, aprobar: bool, nota=None) -> dict:
-    """Aprueba o rechaza una solicitud pendiente. Puede su supervisor o RH, nunca el propio empleado."""
+    """Aprueba o rechaza una solicitud pendiente en el paso que le toca: su jefe
+    directo primero y RH despues (ver el docstring del modulo)."""
     actor_id = user_data.get("id_user")
     if nota is not None and len(str(nota)) > 300:
         raise AppError("errors.invalid_field", 400, {"field": "review_note"})
@@ -487,25 +521,48 @@ def revisar(user_data: dict, id_ausencia, aprobar: bool, nota=None) -> dict:
         empleado = db.get(User, ausencia.id_user)
         es_rh = _es_rh(user_data)
         propia = ausencia.id_user == actor_id
-        if not es_rh and (propia or empleado.supervisor != actor_id or ausencia.leave_type == "disability"):
-            raise AppError("errors.permission_denied", 403, {"entity": "employee_leave", "action": "update"})
-        if ausencia.leave_status != SOLICITADA:
+        if ausencia.leave_status not in ESTADOS_PENDIENTES:
             raise AppError("errors.employee_leave_not_pending", 409, {"leave_status": ausencia.leave_status})
+        paso = _paso(db, ausencia, empleado)
+        if paso == "boss" and (propia or _jefe_directo(db, empleado) != actor_id):
+            if es_rh:
+                raise AppError("errors.employee_leave_waiting_boss", 409, {"leave_status": ausencia.leave_status})
+            raise AppError("errors.permission_denied", 403, {"entity": "employee_leave", "action": "update"})
+        if paso == "hr" and not es_rh:
+            raise AppError("errors.permission_denied", 403, {"entity": "employee_leave", "action": "update"})
+        # El jefe que tambien es RH cierra los dos pasos de una vez.
+        final = paso == "hr" or es_rh
+        nombre = empleado.full_name or f"#{empleado.id_user}"
         datos = {"id_user": ausencia.id_user, "leave_type": ausencia.leave_type, "start_date": ausencia.start_date,
                  "end_date": ausencia.end_date, "notes": ausencia.notes, "disability_type": ausencia.disability_type}
     if aprobar:
         # Desde que se pidio pudo cambiar el saldo, otra ausencia o el cierre de un periodo.
         EmployeeLeaveService._validar(datos, excluir_id=id_ausencia)
+    nota = (str(nota).strip() or None) if nota is not None else None
     with transaction_context() as db:
         ausencia = db.get(EmployeeLeave, int(id_ausencia))
-        ausencia.leave_status = APROBADA if aprobar else RECHAZADA
-        ausencia.reviewed_by = actor_id
-        ausencia.reviewed_at = ahora_utc()
-        ausencia.review_note = (str(nota).strip() or None) if nota is not None else None
+        ahora = ahora_utc()
+        if paso == "boss":
+            ausencia.boss_reviewed_by, ausencia.boss_reviewed_at, ausencia.boss_review_note = actor_id, ahora, nota
+        if final or not aprobar:
+            ausencia.leave_status = APROBADA if aprobar else RECHAZADA
+            ausencia.reviewed_by, ausencia.reviewed_at, ausencia.review_note = actor_id, ahora, nota
+        else:
+            ausencia.leave_status = JEFE_APROBO
         resultado = ausencia.serialize()
+        rh = _usuarios_de_rh(db) if resultado["leave_status"] == JEFE_APROBO else []
+    periodo = f"Del {resultado['start_date']} al {resultado['end_date']}."
+    if resultado["leave_status"] == JEFE_APROBO:
+        for destinatario in rh:
+            _notificar(destinatario, notification_type="leave_requested", titulo="Solicitud por autorizar (RH)",
+                       mensaje=f"Su jefe aprobó la solicitud de {nombre}. {periodo}",
+                       actor_id=actor_id, id_ausencia=resultado["id_employee_leave"])
+        _notificar(resultado["id_user"], notification_type="leave_reviewed", titulo="Tu jefe aprobó tu solicitud",
+                   mensaje=f"{periodo} Falta la aprobación de RH.", actor_id=actor_id,
+                   id_ausencia=resultado["id_employee_leave"])
+        return resultado
     _notificar(resultado["id_user"], notification_type="leave_reviewed",
                titulo="Tu solicitud fue aprobada" if aprobar else "Tu solicitud fue rechazada",
-               mensaje=f"Del {resultado['start_date']} al {resultado['end_date']}."
-               + (f" Nota: {resultado['review_note']}" if resultado["review_note"] else ""),
+               mensaje=periodo + (f" Nota: {nota}" if nota else ""),
                actor_id=actor_id, id_ausencia=resultado["id_employee_leave"])
     return resultado

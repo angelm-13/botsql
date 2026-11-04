@@ -54,7 +54,8 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from app.models import EmployeeSchedule, Overtime, User, WorkSchedule, WorkScheduleDay
-from app.models.overtime import AUTORIZADA, COMPENSAR, DESCANSO, DETECTADA, HORA_EXTRA, MANUAL, PAGAR
+from app.models.overtime import (AUTORIZADA, COMPENSAR, CONFIRMADA, DESCANSO, DETECTADA, HORA_EXTRA, MANUAL, PAGAR,
+                                 PENDIENTE_RH, RECHAZADA)
 from app.models.session import transaction_context
 from app.services import payroll_tax_rules as ley
 from app.utils.errors import AppError
@@ -158,13 +159,14 @@ def horas_extra_del_periodo(db, empleados, periodo, parametros, diarios=None, ho
         return {}
     candidatas = [r for r in db.scalars(
         select(Overtime).where(Overtime.id_user.in_(ids)).where(Overtime.deletion_date.is_(None))
-        .where(Overtime.settlement == PAGAR).where(Overtime.work_date <= periodo.period_end)
+        .where(Overtime.settlement == PAGAR).where(Overtime.approval_status == CONFIRMADA)
+        .where(Overtime.work_date <= periodo.period_end)
         .where((Overtime.id_payroll_period.is_(None)) | (Overtime.id_payroll_period == periodo.id_payroll_period)))]
     if not candidatas:
         return {}
     desde = _semana(min(r.work_date for r in candidatas))
     hasta = max(_semana(max(r.work_date for r in candidatas)) + timedelta(days=6), periodo.period_end)
-    todas = [r for r in _registros(db, ids, desde, hasta) if r.settlement == PAGAR]
+    todas = [r for r in _registros(db, ids, desde, hasta) if r.settlement == PAGAR and r.approval_status == CONFIRMADA]
     pagables = _verificar(todas, *_lo_checado(db, ids, desde, hasta))
     jornada = _minutos_de_jornada(db, ids, desde, hasta)
     politica = _politica(db, periodo.period_end)
@@ -260,11 +262,29 @@ def registrar(user_data: dict, payload: dict) -> dict:
         _, es_rh = _exigir_que_pueda(db, user_data, id_user)
         if origen == MANUAL and not es_rh:
             raise AppError("errors.permission_denied", 403, {"entity": "overtime", "action": "manual"})
+        # Jefe y luego RH (2026-11-04): lo que registra RH ya queda confirmado.
         registro = Overtime(id_user=id_user, work_date=dia, minutes=minutos, kind=tipo, origin=origen,
-                            settlement=liquidacion,
+                            settlement=liquidacion, approval_status=CONFIRMADA if es_rh else PENDIENTE_RH,
                             notes=notas or None, created_by=user_data.get("id_user"))
         db.add(registro)
         db.flush()
+        return registro.serialize()
+
+
+def confirmar(user_data: dict, id_overtime, confirmar_: bool, notas=None) -> dict:
+    """RH confirma (se paga) o rechaza (no se paga) lo que registro el jefe."""
+    notas = str(notas or "").strip()
+    if len(notas) > 300:
+        raise AppError("errors.invalid_field", 400, {"field": "notes"})
+    with transaction_context() as db:
+        registro = db.get(Overtime, int(id_overtime))
+        if registro is None or registro.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404)
+        if registro.approval_status != PENDIENTE_RH:
+            raise AppError("errors.overtime_not_pending", 409, {"approval_status": registro.approval_status})
+        registro.approval_status = CONFIRMADA if confirmar_ else RECHAZADA
+        if notas:
+            registro.notes = (f"{registro.notes} · RH: {notas}" if registro.notes else f"RH: {notas}")[:300]
         return registro.serialize()
 
 

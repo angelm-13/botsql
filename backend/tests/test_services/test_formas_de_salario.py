@@ -20,7 +20,7 @@ from decimal import Decimal
 
 from app.models import AttendanceRecord, EmployeeSalary, PayrollGroup, PayrollPeriod
 from app.models.session import transaction_context
-from app.services.overtime_service import registrar
+from app.services.overtime_service import confirmar, registrar
 from app.services.payroll_calculation_service import calcular_periodo
 from app.services.salary_service import EmployeeSalaryService
 from app.utils.errors import AppError
@@ -73,7 +73,9 @@ class TestFormas(_ConSueldos):
             for n, hora in enumerate((9, 19)):
                 db.add(AttendanceRecord(id_user=ANA, employee_no="71", check_time=datetime(2026, 10, 6, hora),
                                         source="kronos", source_ref=f"fs:{n}", created_by=1))
-        registrar({"id_user": BETO, "id_permission": 2}, {"id_user": ANA, "work_date": "2026-10-06", "minutes": 60})
+        hecho = registrar({"id_user": BETO, "id_permission": 2}, {"id_user": ANA, "work_date": "2026-10-06", "minutes": 60})
+        # Jefe y luego RH (Fase 30): solo lo que RH confirma se paga.
+        confirmar({"id_user": 1, "is_superuser": True}, hecho["id_overtime"], True)
         self.assertEqual(130.0, self.ana()["overtime_pay"])
 
 

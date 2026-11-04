@@ -12,6 +12,9 @@ AUTORIZADA, DETECTADA, MANUAL = "authorized", "detected", "manual"
 # Hora extra, o dia de descanso o festivo trabajado (LFT arts. 73 y 75).
 HORA_EXTRA, DESCANSO = "overtime", "rest_day"
 PAGAR, COMPENSAR = "pay", "compensate"
+# Confirmacion de RH (migracion 20261104100000): lo que registra el jefe queda
+# pending_hr hasta que RH lo confirma; solo approved se paga.
+PENDIENTE_RH, CONFIRMADA, RECHAZADA = "pending_hr", "approved", "rejected"
 
 
 class Overtime(Base):
@@ -31,6 +34,7 @@ class Overtime(Base):
         CheckConstraint("settlement IN ('pay', 'compensate')", name='ck_overtime_settlement'),
         CheckConstraint('minutes > 0', name='ck_overtime_minutes'),
         CheckConstraint("kind IN ('overtime', 'rest_day')", name='ck_overtime_kind'),
+        CheckConstraint("approval_status IN ('pending_hr', 'approved', 'rejected')", name='ck_overtime_approval'),
     )
 
     id_overtime: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
@@ -43,6 +47,8 @@ class Overtime(Base):
     origin: Mapped[str] = mapped_column(String(20), nullable=False, default=AUTORIZADA, server_default=AUTORIZADA)
     settlement: Mapped[str] = mapped_column(String(20), nullable=False, default=PAGAR, server_default=PAGAR)
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    approval_status: Mapped[str] = mapped_column(String(20), nullable=False, default=CONFIRMADA,
+                                                 server_default=CONFIRMADA)
     id_payroll_period: Mapped[int | None] = mapped_column(Integer, ForeignKey('payroll_period.id_payroll_period'),
                                                           nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
@@ -53,6 +59,7 @@ class Overtime(Base):
     def serialize(self) -> dict:
         return {'id_overtime': self.id_overtime, 'id_user': self.id_user, 'work_date': to_json_value(self.work_date),
                 'minutes': self.minutes, 'kind': self.kind, 'origin': self.origin, 'settlement': self.settlement, 'notes': self.notes,
+                'approval_status': self.approval_status,
                 'id_payroll_period': self.id_payroll_period, **_auditoria(self)}
 
     def serialize_summary(self) -> dict:

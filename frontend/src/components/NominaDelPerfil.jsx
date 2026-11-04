@@ -163,6 +163,7 @@ const NominaDelPerfil = forwardRef(function NominaDelPerfil({ idUser }, ref) {
               {horarios.map((h) => <option key={h.id_work_schedule} value={h.id_work_schedule}>{h.schedule_name}</option>)}
             </select>
             {ahora("horario", textoHorario)}
+            <small className="muted">{t("user_payroll.schedule_hint")}</small>
           </label>
           {desde("horario", "employee_schedule")}
           <div />
@@ -175,6 +176,7 @@ const NominaDelPerfil = forwardRef(function NominaDelPerfil({ idUser }, ref) {
               {grupos.map((g) => <option key={g.id_payroll_group} value={g.id_payroll_group}>{g.group_name} · {t(`payroll_groups.frequency_${g.pay_frequency}`)}</option>)}
             </select>
             {ahora("grupo", textoGrupo)}
+            <small className="muted">{t("user_payroll.group_hint")}</small>
           </label>
           {desde("grupo", "employee_payroll_group")}
           <div />

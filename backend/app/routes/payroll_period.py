@@ -203,3 +203,47 @@ def receipt_payroll_period(user_data, id_payroll_period, id_user):
     pdf, nombre = pdf_del_recibo(id_payroll_period, id_user)
     return Response(pdf, mimetype='application/pdf',
                     headers={'Content-Disposition': f'inline; filename="{nombre}"'})
+
+
+# Hoja de nomina tipo Excel (services/payroll_sheet_service.py).
+@bp_payroll_period.route('/<id_payroll_period>/sheet', methods=['GET'])
+@token_required
+@require_entity_permission('payroll_detail', 'read')
+def sheet_payroll_period(user_data, id_payroll_period):
+    from app.services.payroll_sheet_service import hoja
+    return jsonify(hoja(id_payroll_period))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/sheet', methods=['POST'])
+@token_required
+# Escribir una celda es escribir un movimiento y recalcular el periodo.
+@require_entity_permission('payroll_movement', 'create')
+@require_entity_permission('payroll_movement', 'update')
+@require_entity_permission('payroll_detail', 'create')
+def save_sheet_payroll_period(user_data, id_payroll_period):
+    from app.services.payroll_sheet_service import guardar
+    cuerpo = request.get_json(silent=True) or {}
+    return jsonify(guardar(id_payroll_period, cuerpo.get('changes'), user_data.get('id_user')))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/sheet/simulate', methods=['POST'])
+@token_required
+@require_entity_permission('payroll_detail', 'read')
+def simulate_sheet_payroll_period(user_data, id_payroll_period):
+    """Como quedaria la nomina con esas celdas; no guarda nada."""
+    from app.services.payroll_sheet_service import simular
+    cuerpo = request.get_json(silent=True) or {}
+    return jsonify(simular(id_payroll_period, cuerpo.get('changes'), user_data.get('id_user')))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/sheet.xlsx', methods=['GET'])
+@token_required
+@require_entity_permission('payroll_detail', 'read')
+def xlsx_sheet_payroll_period(user_data, id_payroll_period):
+    from flask import Response
+    from app.services.payroll_sheet_service import xlsx
+    titulos = {"employee": "Empleado", "days": "Dias", "earnings": "Total ingresos",
+               "deductions": "Total egresos", "net": "Neto", "totals": "TOTALES"}
+    contenido, nombre = xlsx(id_payroll_period, titulos)
+    return Response(contenido, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': f'attachment; filename="{nombre}"'})

@@ -2890,7 +2890,10 @@
     "termination_duplicate": "Ese empleado ya tiene una baja registrada.",
     "termination_before_hire_date": "La fecha de baja es anterior a su ingreso o no tiene fecha de ingreso.",
     "termination_without_salary": "El empleado no tiene salario capturado.",
-    "payroll_simulator_not_in_period": "Ese periodo no calcula a este empleado (no es de su grupo o ya está cerrado)."
+    "payroll_simulator_not_in_period": "Ese periodo no calcula a este empleado (no es de su grupo o ya está cerrado).",
+    "employee_leave_waiting_boss": "Primero la tiene que aprobar su jefe directo.",
+    "overtime_not_pending": "Ese registro ya no está pendiente de RH.",
+    "payroll_sheet_concept_calculated": "Ese concepto lo calcula el sistema; no se escribe a mano."
   },
   "logistics": {
     "module": "Logística",
@@ -5227,7 +5230,8 @@
     "weekday_short_4": "Vi",
     "weekday_short_5": "Sá",
     "weekday_short_6": "Do",
-    "meal": "Comida (min)"
+    "meal": "Comida (min)",
+    "not_group": "El horario no decide cuándo cobra el empleado: eso es su grupo de pago."
   },
   "employee_leaves": {
     "eyebrow": "Recursos humanos",
@@ -5280,7 +5284,7 @@
   },
   "my_leaves": {
     "title": "Mis vacaciones",
-    "subtitle": "Pide vacaciones o permisos y revisa tu saldo. Tu jefe o RH los autoriza.",
+    "subtitle": "Pide vacaciones o permisos y revisa tu saldo. Los aprueba tu jefe y después RH.",
     "tab_mine": "Mis solicitudes",
     "tab_review": "Por autorizar",
     "balance_title": "Mi saldo de vacaciones",
@@ -5291,7 +5295,7 @@
     "mine_title": "Mis solicitudes y ausencias",
     "status": "Estado",
     "review_note": "Nota de revisión",
-    "status_requested": "Pendiente",
+    "status_requested": "Pendiente de su jefe",
     "status_approved": "Aprobada",
     "status_rejected": "Rechazada",
     "status_cancelled": "Cancelada",
@@ -5308,7 +5312,11 @@
     "cancelled_done": "Solicitud cancelada.",
     "approved_done": "Solicitud aprobada.",
     "rejected_done": "Solicitud rechazada.",
-    "can_advance": "Puedes adelantar hasta"
+    "can_advance": "Puedes adelantar hasta",
+    "status_boss_approved": "Pendiente de RH",
+    "step": "Paso",
+    "step_boss": "Jefe directo",
+    "step_hr": "RH"
   },
   "payroll_groups": {
     "eyebrow": "Recursos humanos",
@@ -5342,7 +5350,8 @@
     "deleted": "Eliminado.",
     "confirm_delete": "¿Eliminar este registro?",
     "no_group": "Sin grupo (periodo anterior)",
-    "tab_salaries": "Sueldos"
+    "tab_salaries": "Sueldos",
+    "not_schedule": "El grupo no decide a qué hora entra el empleado: eso es su horario."
   },
   "leave_sheet": {
     "eyebrow": "Incapacidad",
@@ -5363,7 +5372,7 @@
     "new": "Registrar horas extra",
     "approve_title": "Aprobar como horas extra",
     "approve": "Aprobar como horas extra",
-    "hint": "Solo el supervisor del empleado o RH las registran. Se paga lo autorizado con tope en lo que marcan las checadas; si la salida está mal checada, corrígela en Incidencias y se paga lo real.",
+    "hint": "Solo el supervisor del empleado o RH las registran. Se paga lo autorizado con tope en lo que marcan las checadas; si la salida está mal checada, corrígela en Incidencias y se paga lo real. Lo que registra el jefe queda pendiente de RH: solo lo que RH confirma se paga.",
     "employee": "Empleado",
     "date": "Día",
     "hours": "Horas (h:mm)",
@@ -5403,7 +5412,15 @@
     "rest_day": "Descanso",
     "no_rest_days": "Nadie trabajó en su descanso sin autorización.",
     "came": "Vino",
-    "double_day": "Doble del día"
+    "double_day": "Doble del día",
+    "approval_pending_hr": "Pendiente de RH",
+    "approval_approved": "Confirmada por RH",
+    "approval_rejected": "Rechazada por RH",
+    "confirm_hr": "Confirmar (RH)",
+    "reject_hr": "Rechazar (RH)",
+    "reject_note": "¿Por qué se rechaza? (opcional)",
+    "confirmed_done": "Horas extra confirmadas: se pagan en la nómina.",
+    "rejected_done": "Horas extra rechazadas: no se pagan."
   },
   "salaries": {
     "title": "Cómo gana cada empleado",
@@ -5480,7 +5497,9 @@
     "current": "Hoy",
     "none": "sin asignar",
     "starts": "empieza el",
-    "scheduled": "desde el"
+    "scheduled": "desde el",
+    "schedule_hint": "Dice a qué hora entra y sale (retardos y faltas). No decide cuándo cobra.",
+    "group_hint": "Dice cada cuándo cobra (semanal, quincenal…). No cambia su hora de entrada."
   },
   "payroll_simulator": {
     "eyebrow": "Recursos humanos",
@@ -5537,5 +5556,23 @@
     "field_pay_frequency": "periodicidad",
     "field_date": "fecha",
     "field_day_hours": "horas de la jornada"
+  },
+  "payroll_sheet": {
+    "tab_summary": "Resumen",
+    "tab_sheet": "Hoja",
+    "earnings": "Ingresos",
+    "deductions": "Egresos",
+    "total": "Total",
+    "hint": "Las celdas grises las calcula el sistema. Escribe en las blancas (bonos, premios, préstamos, descuentos): al salir de la celda se guarda y se recalcula todo, ISR incluido.",
+    "closed_hint": "Periodo cerrado: la hoja es solo para ver.",
+    "simulate": "Simular",
+    "simulating": "Simulación: nada se guarda",
+    "apply": "Pasar a la nómina",
+    "discard": "Salir sin guardar",
+    "apply_confirm": "¿Guardar en la nómina real lo que escribiste en la simulación? Se recalcula el periodo.",
+    "applied": "Listo: la simulación quedó en la nómina.",
+    "saved": "Guardado y recalculado.",
+    "add_concept": "Agregar concepto",
+    "download": "Descargar Excel"
   }
 }

@@ -151,7 +151,7 @@ export default function PayrollGroupsPage() {
 
   return (
     <section className="entity-page kronos-page">
-      <PageHeader eyebrow={t("payroll_groups.eyebrow")} titulo={t("payroll_groups.title")} subtitulo={t("payroll_groups.subtitle")}>
+      <PageHeader eyebrow={t("payroll_groups.eyebrow")} titulo={t("payroll_groups.title")} subtitulo={`${t("payroll_groups.subtitle")} ${t("payroll_groups.not_schedule")}`}>
         <button className="button ghost" onClick={() => { setError(""); cargar(); }} disabled={loading}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
       </PageHeader>
       <div className="kronos-tabs" role="tablist">{pestana("groups")}{pestana("assignments")}{pestana("salaries")}</div>

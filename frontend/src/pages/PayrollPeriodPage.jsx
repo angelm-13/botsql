@@ -6,6 +6,7 @@ import { calculatePayrollPeriod, closePayrollPeriod, downloadPayrollReceipt, get
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
+import HojaDeNomina from "../components/HojaDeNomina.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
@@ -52,6 +53,8 @@ export default function PayrollPeriodPage() {
   const [errorMeta, setErrorMeta] = useState(null);
   // Resultado del ultimo "Calcular nomina" (payroll_calculation_service).
   const [calculation, setCalculation] = useState(null);
+  // Pestaña del periodo calculado: "summary" (resumen) o "sheet" (hoja tipo Excel).
+  const [pestana, setPestana] = useState("summary");
   const [notice, setNotice] = useState("");
 
   const currentUser = useMemo(() => readCurrentUser(), []);
@@ -604,6 +607,15 @@ export default function PayrollPeriodPage() {
       {calculation && (
         <div className="table-card">
           <h3>{t("payroll_calc.title")} · #{calculation.id_payroll_period} {stateBadge(calculation.period_state)}</h3>
+          <div className="toolbar" style={{ margin: "0 16px 8px" }}>
+            <button type="button" className={pestana === "summary" ? "button active" : "button"} onClick={() => setPestana("summary")}>{t("payroll_sheet.tab_summary")}</button>
+            <button type="button" className={pestana === "sheet" ? "button active" : "button"} onClick={() => setPestana("sheet")}>{t("payroll_sheet.tab_sheet")}</button>
+          </div>
+          {pestana === "sheet" ? (
+            // shortcut: se ofrece escribir con el permiso de actualizar periodos (el mismo de "Calcular"); el backend exige ademas los de movimientos.
+            <HojaDeNomina t={t} money={(v) => new Intl.NumberFormat(lang === "es" ? "es-MX" : lang, { style: "currency", currency: "MXN" }).format(Number(v || 0))}idPeriodo={calculation.id_payroll_period} puedeEscribir={canUpdate} ejecutar={periodAction}
+              onGuardado={async () => { const r = await getPayrollPeriodSummary(calculation.id_payroll_period).catch(() => null); if (r) setCalculation(r); }} />
+          ) : <>
           <p className="muted">{t("payroll_calc.hint")}</p>
           <p className="muted">{t("payroll_calc.tax_hint")}</p>
           <p className="muted">{t("payroll_calc.aguinaldo_hint")}</p>
@@ -630,6 +642,7 @@ export default function PayrollPeriodPage() {
           {calculation.without_salary.length > 0 && (
             <p className="muted">{t("payroll_calc.without_salary")}: {calculation.without_salary.map((row) => row.full_name).join(", ")}</p>
           )}
+          </>}
         </div>
       )}
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}

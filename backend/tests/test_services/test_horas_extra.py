@@ -23,6 +23,7 @@ from app.models import AttendanceRecord, EntityPermission, Overtime, PayrollPeri
 from app.models.session import transaction_context
 from app.services.overtime_service import del_rango, registrar
 from app.services.payroll_calculation_service import calcular_periodo, cerrar_periodo, reabrir_periodo
+from app.services.overtime_service import confirmar
 from app.utils.errors import AppError
 from tests.test_services.test_solicitudes_de_vacaciones import ANA, BETO, RH, _ConEquipo
 
@@ -43,8 +44,12 @@ class _ConHorasExtra(_ConEquipo):
                 db.add(AttendanceRecord(id_user=ANA, employee_no="71", check_time=datetime(2026, 10, dia, h, m),
                                         source="kronos", source_ref=f"he:{dia}:{n}", created_by=1))
 
-    def autoriza(self, dia, minutos, quien=JEFE, **extra):
-        return registrar(quien, {"id_user": ANA, "work_date": f"2026-10-{dia:02d}", "minutes": minutos, **extra})
+    def autoriza(self, dia, minutos, quien=JEFE, confirma_rh=True, **extra):
+        """Lo registra el jefe y, como en la operacion normal, RH lo confirma (jefe y luego RH)."""
+        hecho = registrar(quien, {"id_user": ANA, "work_date": f"2026-10-{dia:02d}", "minutes": minutos, **extra})
+        if confirma_rh and hecho["approval_status"] == "pending_hr":
+            hecho = confirmar(RRHH, hecho["id_overtime"], True)
+        return hecho
 
     def ana(self, periodo=5):
         return next(e for e in calcular_periodo(periodo, 1)["employees"] if e["id_user"] == ANA)
@@ -143,3 +148,28 @@ class TestQuienYCuando(_ConHorasExtra):
         reabrir_periodo(6, 1)
         with transaction_context() as db:
             self.assertEqual([None], [o.id_payroll_period for o in db.query(Overtime)])
+
+
+class TestJefeYLuegoRh(_ConHorasExtra):
+    """Lo que registra el jefe queda pendiente de RH y no se paga hasta que RH lo confirma (2026-11-04)."""
+
+    def test_pendiente_no_se_paga_confirmado_si_y_rechazado_no(self):
+        self.checa(6, (20, 0))
+        hecho = self.autoriza(6, 120, confirma_rh=False)
+        self.assertEqual("pending_hr", hecho["approval_status"])
+        self.assertEqual(0.0, self.ana()["overtime_pay"])
+        self.assertEqual("approved", confirmar(RRHH, hecho["id_overtime"], True)["approval_status"])
+        self.assertEqual(250.0, self.ana()["overtime_pay"])
+        otro = self.autoriza(7, 60, confirma_rh=False)
+        self.assertEqual("rejected", confirmar(RRHH, otro["id_overtime"], False, "no se pidio")["approval_status"])
+        with self.assertRaises(AppError) as error:
+            confirmar(RRHH, otro["id_overtime"], True)
+        self.assertEqual("errors.overtime_not_pending", error.exception.message_key)
+
+    def test_lo_que_registra_rh_ya_queda_confirmado_y_solo_rh_confirma(self):
+        self.assertEqual("approved", self.autoriza(6, 60, quien=RRHH, confirma_rh=False)["approval_status"])
+        hecho = self.autoriza(7, 60, confirma_rh=False)
+        r = self.client.post(f"/overtime/{hecho['id_overtime']}/review", headers=self.h(BETO, 2), json={"approve": True})
+        self.assertEqual(403, r.status_code)
+        r = self.client.post(f"/overtime/{hecho['id_overtime']}/review", headers=self.h(RH, 961), json={"approve": True})
+        self.assertEqual((200, "approved"), (r.status_code, self.json(r)["approval_status"]))

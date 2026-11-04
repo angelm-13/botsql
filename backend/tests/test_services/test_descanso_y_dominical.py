@@ -20,7 +20,8 @@ from datetime import date, datetime
 from app.models import AttendanceRecord, PayrollHoliday, PayrollParameter
 from app.models.session import transaction_context
 from app.services.overtime_service import del_rango, registrar
-from tests.test_services.test_horas_extra import JEFE, _ConHorasExtra
+from app.services.overtime_service import confirmar
+from tests.test_services.test_horas_extra import JEFE, RRHH, _ConHorasExtra
 from tests.test_services.test_solicitudes_de_vacaciones import ANA
 
 
@@ -31,7 +32,9 @@ class _ConDescansos(_ConHorasExtra):
             db.add(PayrollHoliday(holiday_date=date(2026, 10, 12), description="Festivo de prueba", created_by=1))
 
     def descanso(self, dia, **extra):
-        return registrar(JEFE, {"id_user": ANA, "work_date": f"2026-10-{dia:02d}", "kind": "rest_day", **extra})
+        hecho = registrar(JEFE, {"id_user": ANA, "work_date": f"2026-10-{dia:02d}", "kind": "rest_day", **extra})
+        # Jefe y luego RH: RH lo confirma para que se pague.
+        return confirmar(RRHH, hecho["id_overtime"], True)
 
 
 class TestPrimaDominical(_ConDescansos):

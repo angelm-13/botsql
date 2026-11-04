@@ -2846,7 +2846,10 @@
     "termination_duplicate": "That employee already has a termination registered.",
     "termination_before_hire_date": "The termination date is before the hire date or there is no hire date.",
     "termination_without_salary": "The employee has no salary.",
-    "payroll_simulator_not_in_period": "That period does not calculate this employee (other group or already closed)."
+    "payroll_simulator_not_in_period": "That period does not calculate this employee (other group or already closed).",
+    "employee_leave_waiting_boss": "Their direct manager has to approve it first.",
+    "overtime_not_pending": "That record is no longer pending HR.",
+    "payroll_sheet_concept_calculated": "That concept is calculated by the system; it cannot be typed."
   },
   "logistics": {
     "module": "Logistics",
@@ -5111,7 +5114,8 @@
     "weekday_short_4": "Fr",
     "weekday_short_5": "Sa",
     "weekday_short_6": "Su",
-    "meal": "Meal (min)"
+    "meal": "Meal (min)",
+    "not_group": "The schedule does not decide when the employee gets paid: that is their pay group."
   },
   "employee_leaves": {
     "eyebrow": "Human resources",
@@ -5164,7 +5168,7 @@
   },
   "my_leaves": {
     "title": "My time off",
-    "subtitle": "Request vacation or leave and check your balance. Your manager or HR approves.",
+    "subtitle": "Request vacation or leave and check your balance. Your manager approves it, then HR.",
     "tab_mine": "My requests",
     "tab_review": "To approve",
     "balance_title": "My vacation balance",
@@ -5175,7 +5179,7 @@
     "mine_title": "My requests and absences",
     "status": "Status",
     "review_note": "Review note",
-    "status_requested": "Pending",
+    "status_requested": "Pending manager",
     "status_approved": "Approved",
     "status_rejected": "Rejected",
     "status_cancelled": "Cancelled",
@@ -5192,7 +5196,11 @@
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
     "rejected_done": "Request rejected.",
-    "can_advance": "You can take in advance up to"
+    "can_advance": "You can take in advance up to",
+    "status_boss_approved": "Pending HR",
+    "step": "Step",
+    "step_boss": "Direct manager",
+    "step_hr": "HR"
   },
   "payroll_groups": {
     "eyebrow": "Human resources",
@@ -5226,7 +5234,8 @@
     "deleted": "Deleted.",
     "confirm_delete": "Delete this record?",
     "no_group": "No group (earlier period)",
-    "tab_salaries": "Salaries"
+    "tab_salaries": "Salaries",
+    "not_schedule": "The group does not decide when the employee starts work: that is their schedule."
   },
   "leave_sheet": {
     "eyebrow": "Disability",
@@ -5247,7 +5256,7 @@
     "new": "Register overtime",
     "approve_title": "Approve as overtime",
     "approve": "Approve as overtime",
-    "hint": "Only the employee's supervisor or HR register it. What is authorized is paid, capped at what the check-ins show; if the check-out is wrong, correct it in Incidences and the real time is paid.",
+    "hint": "Only the employee's supervisor or HR register it. What is authorized is paid, capped at what the check-ins show; if the check-out is wrong, correct it in Incidences and the real time is paid. What the manager records waits for HR: only what HR confirms is paid.",
     "employee": "Employee",
     "date": "Day",
     "hours": "Hours (h:mm)",
@@ -5287,7 +5296,15 @@
     "rest_day": "Rest day",
     "no_rest_days": "Nobody worked on a rest day without authorization.",
     "came": "Came in",
-    "double_day": "Double day"
+    "double_day": "Double day",
+    "approval_pending_hr": "Pending HR",
+    "approval_approved": "Confirmed by HR",
+    "approval_rejected": "Rejected by HR",
+    "confirm_hr": "Confirm (HR)",
+    "reject_hr": "Reject (HR)",
+    "reject_note": "Why is it rejected? (optional)",
+    "confirmed_done": "Overtime confirmed: it is paid in payroll.",
+    "rejected_done": "Overtime rejected: it is not paid."
   },
   "salaries": {
     "title": "How each employee is paid",
@@ -5364,7 +5381,9 @@
     "current": "Today",
     "none": "not assigned",
     "starts": "starts on",
-    "scheduled": "from"
+    "scheduled": "from",
+    "schedule_hint": "When they clock in and out (lateness and absences). It does not decide when they get paid.",
+    "group_hint": "How often they get paid (weekly, biweekly…). It does not change their start time."
   },
   "payroll_simulator": {
     "eyebrow": "Human resources",
@@ -5421,5 +5440,23 @@
     "field_pay_frequency": "pay frequency",
     "field_date": "date",
     "field_day_hours": "workday hours"
+  },
+  "payroll_sheet": {
+    "tab_summary": "Summary",
+    "tab_sheet": "Sheet",
+    "earnings": "Earnings",
+    "deductions": "Deductions",
+    "total": "Total",
+    "hint": "Grey cells are calculated by the system. Type in the white ones (bonuses, awards, loans, discounts): leaving the cell saves it and recalculates everything, ISR included.",
+    "closed_hint": "Closed period: the sheet is read-only.",
+    "simulate": "Simulate",
+    "simulating": "Simulation: nothing is saved",
+    "apply": "Apply to payroll",
+    "discard": "Leave without saving",
+    "apply_confirm": "Save what you typed in the simulation to the real payroll? The period is recalculated.",
+    "applied": "Done: the simulation is now in the payroll.",
+    "saved": "Saved and recalculated.",
+    "add_concept": "Add concept",
+    "download": "Download Excel"
   }
 }

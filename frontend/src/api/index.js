@@ -685,6 +685,8 @@ export const createAttendanceCorrection = (payload) => request("/attendance_corr
 export const getOvertime = (range) => request("/overtime/", { params: range });
 export const createOvertime = (payload) => request("/overtime/", { method: "POST", body: payload });
 export const deleteOvertime = (id) => request(`/overtime/${id}`, { method: "DELETE" });
+// RH confirma o rechaza lo que registro el jefe (jefe y luego RH).
+export const reviewOvertime = (id, payload) => request(`/overtime/${id}/review`, { method: "POST", body: payload });
 export const getAttendanceIncidences = ({ startDate, endDate }) => request(`/kronos/attendance/incidences?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
 export const getAllPayrollParameter = (params = {}) => request("/payroll_parameter/", { params });
 export const createPayrollParameter = (payload) => request("/payroll_parameter/", { method: "POST", body: payload });
@@ -718,6 +720,11 @@ export const closePayrollPeriod = (id, payload = {}) => request(`/payroll_period
 export const reopenPayrollPeriod = (id) => request(`/payroll_period/${id}/reopen`, { method: "POST" });
 export const getPayrollPeriodSummary = (id) => request(`/payroll_period/${id}/summary`);
 export const downloadPayrollReceipt = (id, idUser) => requestBlob(`/payroll_period/${id}/receipt/${idUser}`);
+// Hoja de nomina tipo Excel: ver, guardar celdas (recalcula), simular sin guardar y descargar .xlsx.
+export const getPayrollSheet = (id) => request(`/payroll_period/${id}/sheet`);
+export const savePayrollSheet = (id, changes) => request(`/payroll_period/${id}/sheet`, { method: "POST", body: { changes } });
+export const simulatePayrollSheet = (id, changes) => request(`/payroll_period/${id}/sheet/simulate`, { method: "POST", body: { changes } });
+export const downloadPayrollSheet = (id) => requestBlob(`/payroll_period/${id}/sheet.xlsx`);
 export const createPayrollPeriod = (payload) => request("/payroll_period/", { method: "POST", body: payload });
 export const updatePayrollPeriod = (id, payload) => request(`/payroll_period/${id}`, { method: "PUT", body: payload });
 export const deletePayrollPeriod = (id) => request(`/payroll_period/${id}`, { method: "DELETE" });

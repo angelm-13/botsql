@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
-import { Check, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { createOvertime, deleteOvertime, getOvertime } from "../api";
+import { Check, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { createOvertime, deleteOvertime, getMyPermissions, getOvertime, reviewOvertime } from "../api";
 import { useDialogo } from "../dialogo/useDialogo.js";
 
 // Pestaña "Horas extra" de Asistencias. El supervisor del empleado o RH las
@@ -21,6 +21,12 @@ function fechaLocal(d) {
 
 const horas = (minutos) => `${Math.floor(minutos / 60)}:${String(minutos % 60).padStart(2, "0")} h`;
 const TONO = { verified: "status-approved", partial: "status-partially_approved", not_worked: "status-rejected", manual: "status-sent" };
+// Jefe y luego RH: solo lo que RH confirma se paga.
+const TONO_RH = { pending_hr: "status-sent", approved: "status-approved", rejected: "status-rejected" };
+
+function actorGuardado() {
+  try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
+}
 
 export default function HorasExtra({ t, describirError, empleados }) {
   const dialogo = useDialogo();
@@ -31,6 +37,15 @@ export default function HorasExtra({ t, describirError, empleados }) {
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
   const [cargando, setCargando] = useState(false);
+  const [permisos, setPermisos] = useState([]);
+  const actor = useMemo(actorGuardado, []);
+  // RH es quien edita las checadas en el Gestor (attendance_record), igual que en el backend.
+  const esRh = Boolean(actor.is_superuser || actor.is_bootstrap_admin)
+    || Number(permisos.find((p) => p.entity_name === "attendance_record")?.scope_update || 0) !== 0;
+
+  useEffect(() => {
+    getMyPermissions().then((p) => setPermisos(p?.entity_permissions || [])).catch(() => setPermisos([]));
+  }, []);
 
   async function cargar(event) {
     event?.preventDefault();
@@ -55,6 +70,18 @@ export default function HorasExtra({ t, describirError, empleados }) {
       await createOvertime({ ...cuerpo, id_user: Number(cuerpo.id_user), minutes: minutos, notes: cuerpo.notes || null });
       setForm(null);
       setAviso(t("overtime.saved"));
+      await cargar();
+    } catch (e) {
+      setError(describirError(e));
+    }
+  }
+
+  async function revisarRh(r, aprobar) {
+    const notas = aprobar ? "" : await dialogo.pedirTexto(t("overtime.reject_note"));
+    if (notas === null) return;
+    try {
+      await reviewOvertime(r.id_overtime, { approve: aprobar, notes: notas || null });
+      setAviso(t(aprobar ? "overtime.confirmed_done" : "overtime.rejected_done"));
       await cargar();
     } catch (e) {
       setError(describirError(e));
@@ -171,9 +198,13 @@ export default function HorasExtra({ t, describirError, empleados }) {
                   <td>{r.kind === "rest_day" ? t("overtime.kind_rest_day") : horas(r.minutes)}<br /><small className="muted">{t(`overtime.origin_${r.origin}`)}</small></td>
                   <td>{r.origin === "manual" ? "—" : r.kind === "rest_day" ? (r.status === "verified" ? t("overtime.came") : "—") : horas(r.checked_minutes)}</td>
                   <td>{r.settlement === "compensate" ? <small>{t("overtime.settlement_compensate")}</small> : r.kind === "rest_day" ? (r.payable_minutes ? t("overtime.double_day") : "—") : horas(r.payable_minutes)}</td>
-                  <td><span className={`quotation-status-badge ${TONO[r.status] || ""}`}>{t(`overtime.status_${r.status}`)}</span>{r.id_payroll_period && <><br /><small className="muted">{t("overtime.paid_in")} #{r.id_payroll_period}</small></>}</td>
+                  <td><span className={`quotation-status-badge ${TONO[r.status] || ""}`}>{t(`overtime.status_${r.status}`)}</span>{r.id_payroll_period && <><br /><small className="muted">{t("overtime.paid_in")} #{r.id_payroll_period}</small></>}<br /><span className={`quotation-status-badge ${TONO_RH[r.approval_status] || ""}`}>{t(`overtime.approval_${r.approval_status}`)}</span></td>
                   <td><small>{r.notes || "—"}</small></td>
-                  <td className="row-actions">{!r.id_payroll_period && <button type="button" title={t("common.delete")} onClick={() => quitar(r)}><Trash2 size={15} /></button>}</td>
+                  <td className="row-actions">
+                    {esRh && r.approval_status === "pending_hr" && <button type="button" title={t("overtime.confirm_hr")} onClick={() => revisarRh(r, true)}><Check size={15} /></button>}
+                    {esRh && r.approval_status === "pending_hr" && <button type="button" title={t("overtime.reject_hr")} onClick={() => revisarRh(r, false)}><X size={15} /></button>}
+                    {!r.id_payroll_period && <button type="button" title={t("common.delete")} onClick={() => quitar(r)}><Trash2 size={15} /></button>}
+                  </td>
                 </tr>
               )) : <tr><td colSpan="8" className="kronos-empty">{t("overtime.no_registered")}</td></tr>}</tbody>
             </table>

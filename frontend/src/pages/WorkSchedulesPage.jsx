@@ -166,7 +166,7 @@ export default function WorkSchedulesPage() {
 
   return (
     <section className="entity-page kronos-page">
-      <PageHeader eyebrow={t("work_schedules.eyebrow")} titulo={t("work_schedules.title")} subtitulo={t("work_schedules.subtitle")}>
+      <PageHeader eyebrow={t("work_schedules.eyebrow")} titulo={t("work_schedules.title")} subtitulo={`${t("work_schedules.subtitle")} ${t("work_schedules.not_group")}`}>
         <button className="button ghost" onClick={() => { setError(""); cargar(); }} disabled={loading}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
       </PageHeader>
       <div className="kronos-tabs" role="tablist">{pestana("schedules")}{pestana("assignments")}{pestana("holidays")}</div>

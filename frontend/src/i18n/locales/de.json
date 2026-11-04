@@ -2608,7 +2608,10 @@
     "termination_duplicate": "Für diese Person ist bereits ein Austritt erfasst.",
     "termination_before_hire_date": "Das Austrittsdatum liegt vor dem Eintritt oder es gibt kein Eintrittsdatum.",
     "termination_without_salary": "Für die Person ist kein Gehalt erfasst.",
-    "payroll_simulator_not_in_period": "Dieser Zeitraum berechnet diese Person nicht (andere Gruppe oder bereits geschlossen)."
+    "payroll_simulator_not_in_period": "Dieser Zeitraum berechnet diese Person nicht (andere Gruppe oder bereits geschlossen).",
+    "employee_leave_waiting_boss": "Zuerst muss die direkte Führungskraft zustimmen.",
+    "overtime_not_pending": "Dieser Eintrag wartet nicht mehr auf das Personal.",
+    "payroll_sheet_concept_calculated": "Dieses Konzept berechnet das System; es wird nicht eingegeben."
   },
   "logistics": {
     "module": "Logistik",
@@ -3761,7 +3764,8 @@
     "weekday_short_4": "Fr",
     "weekday_short_5": "Sa",
     "weekday_short_6": "Su",
-    "meal": "Pause (Min.)"
+    "meal": "Pause (Min.)",
+    "not_group": "Der Arbeitsplan bestimmt nicht, wann bezahlt wird: das ist die Lohngruppe."
   },
   "employee_leaves": {
     "eyebrow": "Personal",
@@ -3814,7 +3818,7 @@
   },
   "my_leaves": {
     "title": "Mein Urlaub",
-    "subtitle": "Request vacation or leave and check your balance. Your manager or HR approves.",
+    "subtitle": "Urlaub oder Freistellung beantragen und Saldo prüfen. Erst genehmigt die Führungskraft, dann das Personal.",
     "tab_mine": "Meine Anträge",
     "tab_review": "Zu genehmigen",
     "balance_title": "My vacation balance",
@@ -3825,7 +3829,7 @@
     "mine_title": "My requests and absences",
     "status": "Status",
     "review_note": "Review note",
-    "status_requested": "Offen",
+    "status_requested": "Wartet auf Vorgesetzte",
     "status_approved": "Genehmigt",
     "status_rejected": "Abgelehnt",
     "status_cancelled": "Storniert",
@@ -3842,7 +3846,11 @@
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
     "rejected_done": "Request rejected.",
-    "can_advance": "Sie können vorziehen bis zu"
+    "can_advance": "Sie können vorziehen bis zu",
+    "status_boss_approved": "Wartet auf Personal",
+    "step": "Schritt",
+    "step_boss": "Direkte Vorgesetzte",
+    "step_hr": "Personal"
   },
   "payroll_groups": {
     "eyebrow": "Personalwesen",
@@ -3876,7 +3884,8 @@
     "deleted": "Gelöscht.",
     "confirm_delete": "Diesen Eintrag löschen?",
     "no_group": "Ohne Gruppe (früherer Zeitraum)",
-    "tab_salaries": "Gehälter"
+    "tab_salaries": "Gehälter",
+    "not_schedule": "Die Gruppe bestimmt nicht die Arbeitszeit: das ist der Arbeitsplan."
   },
   "leave_sheet": {
     "eyebrow": "Arbeitsunfähigkeit",
@@ -3897,7 +3906,7 @@
     "new": "Überstunden erfassen",
     "approve_title": "Als Überstunden genehmigen",
     "approve": "Als Überstunden genehmigen",
-    "hint": "Nur Vorgesetzte der Person oder die Personalabteilung erfassen sie. Bezahlt wird das Genehmigte, begrenzt auf das Gestempelte; ist das Gehen falsch gestempelt, in Vorfälle korrigieren.",
+    "hint": "Nur Vorgesetzte der Person oder die Personalabteilung erfassen sie. Bezahlt wird das Genehmigte, begrenzt auf das Gestempelte; ist das Gehen falsch gestempelt, in Vorfälle korrigieren. Was die Führungskraft erfasst, wartet auf das Personal: bezahlt wird nur, was das Personal bestätigt.",
     "employee": "Person",
     "date": "Tag",
     "hours": "Stunden (h:mm)",
@@ -3937,7 +3946,15 @@
     "rest_day": "Ruhetag",
     "no_rest_days": "Niemand hat ohne Genehmigung am Ruhetag gearbeitet.",
     "came": "Gekommen",
-    "double_day": "Doppelter Tag"
+    "double_day": "Doppelter Tag",
+    "approval_pending_hr": "Wartet auf Personal",
+    "approval_approved": "Vom Personal bestätigt",
+    "approval_rejected": "Vom Personal abgelehnt",
+    "confirm_hr": "Bestätigen (Personal)",
+    "reject_hr": "Ablehnen (Personal)",
+    "reject_note": "Warum abgelehnt? (optional)",
+    "confirmed_done": "Überstunden bestätigt: werden abgerechnet.",
+    "rejected_done": "Überstunden abgelehnt: werden nicht bezahlt."
   },
   "salaries": {
     "title": "Wie jede Person bezahlt wird",
@@ -4014,7 +4031,9 @@
     "current": "Heute",
     "none": "nicht zugewiesen",
     "starts": "beginnt am",
-    "scheduled": "ab"
+    "scheduled": "ab",
+    "schedule_hint": "Wann die Person kommt und geht (Verspätungen, Fehlzeiten). Bestimmt nicht, wann bezahlt wird.",
+    "group_hint": "Wie oft bezahlt wird (wöchentlich, zweiwöchentlich…). Ändert nicht die Arbeitszeit."
   },
   "payroll_simulator": {
     "eyebrow": "Personalwesen",
@@ -4071,5 +4090,23 @@
     "field_pay_frequency": "Rhythmus",
     "field_date": "Datum",
     "field_day_hours": "Stunden pro Arbeitstag"
+  },
+  "payroll_sheet": {
+    "tab_summary": "Übersicht",
+    "tab_sheet": "Tabelle",
+    "earnings": "Bezüge",
+    "deductions": "Abzüge",
+    "total": "Summe",
+    "hint": "Graue Zellen berechnet das System. In die weißen schreiben (Boni, Prämien, Darlehen, Abzüge): beim Verlassen der Zelle wird gespeichert und alles neu berechnet, ISR inklusive.",
+    "closed_hint": "Abgeschlossener Zeitraum: nur lesen.",
+    "simulate": "Simulieren",
+    "simulating": "Simulation: nichts wird gespeichert",
+    "apply": "In die Abrechnung übernehmen",
+    "discard": "Ohne Speichern verlassen",
+    "apply_confirm": "Das in der Simulation Eingegebene in die echte Abrechnung übernehmen? Der Zeitraum wird neu berechnet.",
+    "applied": "Fertig: die Simulation ist in der Abrechnung.",
+    "saved": "Gespeichert und neu berechnet.",
+    "add_concept": "Konzept hinzufügen",
+    "download": "Excel herunterladen"
   }
 }
