@@ -174,6 +174,19 @@ def _estado_de_datos(db, id_kpi_definition, condiciones):
     }
 
 
+def _orden_de_desempate(entidad):
+    """Llave de orden para empatar entidades con el mismo valor: el id MENOR primero, comparado como numero.
+
+    Las llaves de `por_entidad` llegan como texto (`.astext` del JSON del snapshot): ordenarlas como texto pone el "10" antes
+    que el "9". Un id numerico va antes que una etiqueta (la fila "Sin asignar" y las categorias de texto), y las etiquetas se
+    ordenan entre si como texto.
+    """
+    texto = str(entidad)
+    if texto.isascii() and texto.lstrip('-').isdigit():
+        return (0, int(texto), '')
+    return (1, 0, texto)
+
+
 def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False, ocultar_ceros=False, condiciones_extra=None):
     """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
@@ -292,7 +305,7 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     if ocultar_ceros:
         por_entidad = {entidad: valor for entidad, valor in por_entidad.items() if valor}
     if limite is not None:
-        mayores = sorted(por_entidad.items(), key=lambda par: (-par[1], str(par[0])))[:limite]
+        mayores = sorted(por_entidad.items(), key=lambda par: (-par[1], _orden_de_desempate(par[0])))[:limite]
         por_entidad = dict(mayores)
     return {**base, 'total': total, 'por_empleado': por_entidad, 'por_periodo': {}}
 
