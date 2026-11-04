@@ -3528,7 +3528,12 @@
       "by": "Korrigiert von",
       "added": "Hinzugefügt",
       "exception": "Ausnahme",
-      "no_limit": "unbegrenzt"
+      "no_limit": "unbegrenzt",
+      "kind": "Art des Vorfalls",
+      "kind_forgot": "Stempeln vergessen",
+      "kind_device_failure": "Gerät ausgefallen",
+      "kind_field_work": "Außendienst",
+      "kind_hourly_leave": "Stundenweise frei"
     }
   },
   "task_fase": {
@@ -3699,7 +3704,8 @@
       "report_alert_absences": "Anwesenheitsbericht: Warnung ab so vielen Fehltagen im Zeitraum (0 = keine)",
       "report_alert_manual": "Anwesenheitsbericht: Warnung ab so vielen manuellen Stempelungen (0 = keine)",
       "report_alert_supervisor_manual": "Anwesenheitsbericht: Warnung für Vorgesetzte mit so vielen manuellen Stempelungen (0 = keine)",
-      "overtime_hours_from_schedule": "Überstunden: durch die Stunden des Arbeitsplans teilen"
+      "overtime_hours_from_schedule": "Überstunden: durch die Stunden des Arbeitsplans teilen",
+      "report_summary_frequency": "Anwesenheitsübersicht für das Personal in der Glocke"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -3720,7 +3726,10 @@
     "choice_vacation_expiry_months_18": "18 Monate nach dem Jahrestag",
     "choice_vacation_unused_policy_0": "Verfallen",
     "choice_vacation_unused_policy_1": "Werden übertragen",
-    "choice_vacation_unused_policy_2": "Werden ausgezahlt"
+    "choice_vacation_unused_policy_2": "Werden ausgezahlt",
+    "choice_report_summary_frequency_0": "Nicht senden",
+    "choice_report_summary_frequency_1": "Wöchentlich (montags)",
+    "choice_report_summary_frequency_2": "Halbmonatlich (am 1. und 16.)"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",

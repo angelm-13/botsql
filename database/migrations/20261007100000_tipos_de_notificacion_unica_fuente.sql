@@ -62,6 +62,9 @@ ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
         'attendance_missing_check_in',
         'attendance_missing_check_in_team',
         'attendance_missing_check_out',
+        -- Alertas y resumen del reporte de asistencia para RH (2026-11-04).
+        'attendance_alert',
+        'attendance_summary',
         'custom'
     )
 );

@@ -14,23 +14,40 @@ attendance_correction, que ya llevan el motivo del supervisor) y horas extra
 
 Los limites se ajustan en Ajustes de nomina (0 = sin esa alerta). Las reglas
 de cada dia son las de attendance_rules.py; aqui solo se cuentan. Solo lectura.
+
+Avisos a RH (respuestas de RH, 2026-11-04: "si se cumple, que le avise a RH"):
+`avisar_alertas_de_asistencia` corre cada dia y, en cuanto alguien cumple un
+patron en la quincena en curso, avisa (campana) a quien tiene el reporte en el
+Gestor; un mismo patron no se repite en la misma quincena. `enviar_resumen_de_asistencia`
+manda el resumen de la semana o quincena anterior segun `report_summary_frequency`
+(0 no, 1 semanal los lunes, 2 quincenal los dias 1 y 16; por omision 2). El
+correo queda pendiente de la cuenta de envio de la empresa.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, select
 
-from app.models import AttendanceCorrection, Overtime, User
+from app.models import AttendanceCorrection, EntityPermission, Notification, Overtime, User
 from app.models.session import transaction_context
 from app.utils.errors import AppError
+from app.utils.tiempo import ahora_negocio
 from app.utils.xlsx_simple import libro
 
 RETARDOS, FALTAS = "report_alert_late", "report_alert_absences"
 A_MANO, SUPERVISOR_A_MANO = "report_alert_manual", "report_alert_supervisor_manual"
 # clave -> (valor por omision, valores permitidos), como las demas politicas.
+RESUMEN = "report_summary_frequency"   # 0 no, 1 semanal, 2 quincenal
 POLITICA_DEL_REPORTE = {RETARDOS: (3, range(0, 32)), FALTAS: (2, range(0, 32)),
-                        A_MANO: (2, range(0, 32)), SUPERVISOR_A_MANO: (5, range(0, 101))}
+                        A_MANO: (2, range(0, 32)), SUPERVISOR_A_MANO: (5, range(0, 101)),
+                        RESUMEN: (2, range(0, 3))}
+FALLA_DEL_CHECADOR = "device_failure"
+AVISO, AVISO_RESUMEN = "attendance_alert", "attendance_summary"
+NOMBRE_DE_ALERTA = {"late": "retardos repetidos", "absences": "faltas repetidas",
+                    "absence_next_to_rest": "falta junto a descanso o festivo",
+                    "manual": "muchas checadas a mano", "pending": "días sin justificar",
+                    "supervisor_manual": "captura checadas a mano muy seguido"}
 MAX_DIAS = 31
 ALTA, MEDIA = "high", "medium"
 
@@ -63,8 +80,10 @@ def _alertas(fila: dict, lim: dict) -> list[dict]:
         alertas.append({"code": "absences", "level": ALTA, "value": fila["absences"]})
     if fila["absences_next_to_rest"]:
         alertas.append({"code": "absence_next_to_rest", "level": ALTA, "value": fila["absences_next_to_rest"]})
-    if lim[A_MANO] and fila["manual_checks"] >= lim[A_MANO]:
-        alertas.append({"code": "manual", "level": MEDIA, "value": fila["manual_checks"]})
+    # Las de "fallo el checador" no son del empleado: no cuentan para esta alerta.
+    sin_falla = fila["manual_checks"] - fila["manual_by_kind"].get(FALLA_DEL_CHECADOR, 0)
+    if lim[A_MANO] and sin_falla >= lim[A_MANO]:
+        alertas.append({"code": "manual", "level": MEDIA, "value": sin_falla})
     if fila["pending_justification"]:
         alertas.append({"code": "pending", "level": MEDIA, "value": fila["pending_justification"]})
     return alertas
@@ -108,7 +127,9 @@ def reporte(desde, hasta) -> dict:
                 "manual_checks": len(correcciones),
                 "manual_added": sum(1 for c in correcciones if c.previous_time is None),
                 "manual_exceptions": sum(1 for c in correcciones if c.is_exception),
-                "manual_reasons": [{"date": c.check_date.isoformat(), "reason": c.reason,
+                "manual_by_kind": {k: sum(1 for c in correcciones if c.incident_kind == k)
+                                   for k in {c.incident_kind for c in correcciones if c.incident_kind}},
+                "manual_reasons": [{"date": c.check_date.isoformat(), "reason": c.reason, "kind": c.incident_kind,
                                     "by": nombres.get(c.created_by) or f"#{c.created_by}"}
                                    for c in sorted(correcciones, key=lambda c: c.check_date)],
                 "overtime_minutes": extra.get((id_user, CONFIRMADA), 0),
@@ -180,8 +201,102 @@ def bitacora(desde, hasta, id_supervisor=None) -> dict:
                 "id_attendance_correction": f.id_attendance_correction, "date": f.check_date.isoformat(),
                 "id_user": f.id_user, "employee": nombres.get(f.id_user) or f"#{f.id_user}",
                 "previous_time": hora(f.previous_time), "new_time": hora(f.new_time), "added": f.previous_time is None,
-                "reason": f.reason, "is_exception": bool(f.is_exception),
+                "reason": f.reason, "kind": f.incident_kind, "is_exception": bool(f.is_exception),
                 "by": nombres.get(f.created_by) or f"#{f.created_by}", "id_by": f.created_by,
                 "created_at": f.creation_date.isoformat(timespec="minutes") if f.creation_date else None,
             } for f in filas],
         }
+
+
+def _quincena_de(dia: date) -> tuple[date, date]:
+    inicio = dia.replace(day=1 if dia.day <= 15 else 16)
+    fin = dia.replace(day=15) if dia.day <= 15 else (dia.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    return inicio, fin
+
+
+def _de_rh(db) -> list[int]:
+    """Quienes tienen el reporte de asistencia en el Gestor (por omision, RH/Administrador)."""
+    roles = (select(EntityPermission.id_permission).where(EntityPermission.entity_name == "attendance_report")
+             .where(EntityPermission.scope_read != 0).where(EntityPermission.deletion_date.is_(None)))
+    return list(db.scalars(select(User.id_user).where(User.id_permission.in_(roles))
+                           .where(User.deletion_date.is_(None))))
+
+
+def _ya_avisados(db, tipo: str, destinatarios, inicio: date) -> dict:
+    """{(destinatario, target_id): codigos ya avisados} en los avisos de `tipo` del periodo que empieza en `inicio`."""
+    vistos: dict = {}
+    for n in db.scalars(select(Notification).where(Notification.notification_type == tipo)
+                        .where(Notification.id_user_recipient.in_(list(destinatarios) or [0]))
+                        .where(Notification.creation_date >= datetime.combine(inicio - timedelta(days=1), datetime.min.time()))):
+        meta = n.metadata_data or {}
+        if meta.get("start") == inicio.isoformat():
+            vistos.setdefault((n.id_user_recipient, n.target_id), set()).update(meta.get("codes") or [])
+    return vistos
+
+
+def _avisar(destinatario, tipo, titulo, mensaje, id_destino, metadata) -> bool:
+    from app.services.notification_service import create_notification
+    try:
+        # created_by es llave a user: lo escribe el sistema a nombre de quien lo recibe.
+        create_notification(id_user_recipient=destinatario, notification_type=tipo, title=titulo[:200],
+                            message=mensaje, created_by=destinatario, metadata=metadata,
+                            target_entity="attendance_report", target_id=id_destino)
+        return True
+    except Exception:
+        return False
+
+
+def avisar_alertas_de_asistencia(hoy: date | None = None) -> int:
+    """Avisa a RH de los patrones nuevos de la quincena en curso. Devuelve cuantos avisos mando."""
+    hoy = hoy or ahora_negocio().date()
+    inicio, fin = _quincena_de(hoy)
+    datos = reporte(inicio, hoy)
+    with transaction_context() as db:
+        rh = _de_rh(db)
+        vistos = _ya_avisados(db, AVISO, rh, inicio)
+    casos = [(f["id_user"], f["full_name"], {a["code"]: a["value"] for a in f["alerts"]}) for f in datos["employees"]]
+    casos += [(s["id_user"], s["full_name"], {"supervisor_manual": s["manual_checks"]}) for s in datos["supervisors"] if s["alert"]]
+    periodo = f"Quincena del {inicio:%d/%m} al {fin:%d/%m}"
+    enviados = 0
+    for destinatario in rh:
+        for id_user, nombre, codigos in casos:
+            nuevos = {c: v for c, v in codigos.items() if c not in vistos.get((destinatario, id_user), set())}
+            if not nuevos:
+                continue
+            detalle = ", ".join(f"{NOMBRE_DE_ALERTA[c]} ({v})" for c, v in nuevos.items())
+            enviados += _avisar(destinatario, AVISO, f"Alerta de asistencia: {nombre}", f"{detalle}. {periodo}.",
+                                id_user, {"start": inicio.isoformat(), "codes": sorted(nuevos)})
+    return enviados
+
+
+def enviar_resumen_de_asistencia(hoy: date | None = None) -> int:
+    """El resumen del periodo anterior a RH, si hoy toca segun `report_summary_frequency`."""
+    hoy = hoy or ahora_negocio().date()
+    with transaction_context() as db:
+        frecuencia = limites(db, hoy)[RESUMEN]
+    if frecuencia == 1 and hoy.weekday() == 0:
+        inicio, fin, nombre = hoy - timedelta(days=7), hoy - timedelta(days=1), "semana"
+    elif frecuencia == 2 and hoy.day in (1, 16):
+        inicio, fin = _quincena_de(hoy - timedelta(days=1))
+        nombre = "quincena"
+    else:
+        return 0
+    datos = reporte(inicio, fin)
+    cuenta: dict = {}
+    for f in datos["employees"]:
+        for a in f["alerts"]:
+            cuenta[a["code"]] = cuenta.get(a["code"], 0) + 1
+    detalle = "; ".join(f"{NOMBRE_DE_ALERTA[c]}: {n}" for c, n in sorted(cuenta.items(), key=lambda x: -x[1]))
+    mensaje = (f"Del {inicio:%d/%m} al {fin:%d/%m}: {datos['with_alerts']} de {len(datos['employees'])} empleados "
+               f"con alertas.{(' ' + detalle + '.') if detalle else ''}")
+    enviados = 0
+    with transaction_context() as db:
+        rh = _de_rh(db)
+        vistos = _ya_avisados(db, AVISO_RESUMEN, rh, inicio)
+    for destinatario in rh:
+        if (destinatario, destinatario) in vistos:
+            continue
+        # target_id = quien lo recibe: el clic solo abre el reporte (la campana pide un id).
+        enviados += _avisar(destinatario, AVISO_RESUMEN, f"Resumen de asistencia de la {nombre}", mensaje,
+                            destinatario, {"start": inicio.isoformat(), "codes": ["summary"]})
+    return enviados

@@ -41,6 +41,8 @@ const PARAMETROS = [
   // Alertas del reporte de asistencia para RH (services/reporte_de_asistencia.py); 0 = sin esa alerta.
   ["report_alert_late", "count", "options"], ["report_alert_absences", "count", "options"],
   ["report_alert_manual", "count", "options"], ["report_alert_supervisor_manual", "count", "options"],
+  // Resumen de asistencia a RH: 0 no, 1 semanal, 2 quincenal (services/reporte_de_asistencia.py).
+  ["report_summary_frequency", "choice", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -63,7 +65,7 @@ const DIAS_DE_LEY = {
 };
 // Valores que acepta cada clave de "eleccion", y lo que vale la politica sin
 // capturar. Espejo de POLITICA en services/politica_de_vacaciones.py.
-const ELECCIONES = { vacation_expiry_months: [12, 18], vacation_unused_policy: [0, 1, 2] };
+const ELECCIONES = { vacation_expiry_months: [12, 18], vacation_unused_policy: [0, 1, 2], report_summary_frequency: [0, 1, 2] };
 const POLITICA_POR_OMISION = {
   vacation_accrual_monthly: 0, vacation_advance_max_days: 0, vacation_expiry_months: 12,
   vacation_unused_policy: 0, vacation_warning_days_1: 60, vacation_warning_days_2: 30,
@@ -71,6 +73,7 @@ const POLITICA_POR_OMISION = {
   overtime_tolerance_minutes: 15, overtime_day_hours: 8, sunday_premium_pct: 25, overtime_hours_from_schedule: 0,
   attendance_warning_entry_minutes: 15, attendance_warning_supervisor_minutes: 30, attendance_warning_exit_minutes: 30,
   report_alert_late: 3, report_alert_absences: 2, report_alert_manual: 2, report_alert_supervisor_manual: 5,
+  report_summary_frequency: 2,
 };
 const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];
 const PERIODICIDADES = [1, 7, 10, 15, 30];

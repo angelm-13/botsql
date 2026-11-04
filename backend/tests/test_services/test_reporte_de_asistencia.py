@@ -11,7 +11,7 @@ import io
 import zipfile
 from datetime import date
 
-from app.models import EntityPermission, PayrollParameter
+from app.models import EntityPermission, Notification, PayrollParameter
 from app.models.session import transaction_context
 from app.routes.attendance_report import TITULOS
 from app.services.overtime_service import confirmar, registrar
@@ -127,3 +127,64 @@ class TestRutas(_ConChecadas):
                                               headers=self.h(RH, 962)).status_code)
         self.assertEqual(403, self.client.get(f"/attendance_report/corrections?start={DESDE}&end={HASTA}",
                                               headers=self.h(RH, 961)).status_code)
+
+
+class TestTipoDeIncidente(_ConChecadas):
+    """Tipo de incidente de cada correccion (respuestas de RH, 2026-11-04)."""
+
+    def test_se_guarda_se_cuenta_y_la_falla_del_checador_no_alerta(self):
+        for dia, tipo in ((1, "device_failure"), (2, "device_failure"), (5, "forgot")):
+            r = self.corregir(BETO, id_attendance_record=self.checada(dia, 8), new_time=f"2026-10-{dia:02d}T08:05",
+                              incident_kind=tipo)
+            self.assertEqual((201, tipo), (r.status_code, self.json(r)["incident_kind"]))
+        ana = next(f for f in reporte(DESDE, HASTA)["employees"] if f["id_user"] == ANA)
+        self.assertEqual((3, {"device_failure": 2, "forgot": 1}), (ana["manual_checks"], ana["manual_by_kind"]))
+        self.assertNotIn("manual", {a["code"] for a in ana["alerts"]})       # solo 1 que no fue falla del checador
+        self.assertEqual("device_failure", bitacora(DESDE, HASTA)["corrections"][-1]["kind"])
+
+    def test_un_tipo_que_no_existe(self):
+        r = self.corregir(BETO, id_attendance_record=self.checada(1, 8), new_time="2026-10-01T08:05", incident_kind="otro")
+        self.assertEqual(400, r.status_code)
+
+
+class TestAvisosARh(_ConChecadas):
+    """Si se cumple un patron, se le avisa a RH (quien tiene el reporte en el Gestor), sin repetir."""
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add(EntityPermission(id_permission=961, entity_name="attendance_report", scope_create=0,
+                                    scope_read=4, scope_update=0, scope_delete=0, created_by=1))
+
+    def avisos(self, tipo):
+        with transaction_context() as db:
+            return [(n.id_user_recipient, n.target_entity, n.target_id, n.title, n.message, n.metadata_data)
+                    for n in db.query(Notification).filter(Notification.notification_type == tipo)]
+
+    def test_avisa_una_vez_y_luego_solo_lo_nuevo(self):
+        from app.services.reporte_de_asistencia import avisar_alertas_de_asistencia
+        self.assertEqual(1, avisar_alertas_de_asistencia(date(2026, 10, 11)))
+        [(quien, destino, id_ana, titulo, mensaje, meta)] = self.avisos("attendance_alert")
+        self.assertEqual((RH, "attendance_report", ANA, "Alerta de asistencia: Ana"), (quien, destino, id_ana, titulo))
+        self.assertIn("faltas repetidas (4)", mensaje)
+        self.assertEqual(["absence_next_to_rest", "absences"], meta["codes"])
+        self.assertEqual(0, avisar_alertas_de_asistencia(date(2026, 10, 11)))   # nada nuevo: no repite
+        # Un patron nuevo en la misma quincena: se avisa solo ese.
+        for dia in (1, 2, 5):
+            self.corregir(BETO, id_attendance_record=self.checada(dia, 8), new_time=f"2026-10-{dia:02d}T09:30")
+        self.assertEqual(1, avisar_alertas_de_asistencia(date(2026, 10, 11)))
+        self.assertEqual(["late", "manual"], self.avisos("attendance_alert")[-1][5]["codes"])
+
+    def test_resumen_quincenal_por_omision_y_semanal_si_se_elige(self):
+        from app.services.reporte_de_asistencia import enviar_resumen_de_asistencia
+        self.assertEqual(0, enviar_resumen_de_asistencia(date(2026, 10, 15)))   # no es dia 1 ni 16
+        self.assertEqual(1, enviar_resumen_de_asistencia(date(2026, 10, 16)))
+        self.assertEqual(0, enviar_resumen_de_asistencia(date(2026, 10, 16)))   # ya se mando
+        [(quien, _, _, titulo, mensaje, meta)] = self.avisos("attendance_summary")
+        self.assertEqual((RH, "Resumen de asistencia de la quincena", "2026-10-01"), (quien, titulo, meta["start"]))
+        self.assertTrue(mensaje.startswith("Del 01/10 al 15/10: 1 de"))
+        with transaction_context() as db:
+            db.add(PayrollParameter(parameter_key="report_summary_frequency", value=1, valid_from=date(2026, 1, 1),
+                                    created_by=1))
+        self.assertEqual(0, enviar_resumen_de_asistencia(date(2026, 10, 16)))   # semanal: solo los lunes
+        self.assertEqual(1, enviar_resumen_de_asistencia(date(2026, 10, 12)))   # lunes: semana del 5 al 11

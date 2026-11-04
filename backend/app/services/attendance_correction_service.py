@@ -33,6 +33,9 @@ from app.models.session import transaction_context
 from app.utils.errors import AppError
 
 LIMITE = "attendance_correction_limit"
+# Tipo de incidente de cada correccion (respuestas de RH, 2026-11-04). "Fallo el
+# checador" no es mala practica del empleado: no cuenta para la alerta de checadas a mano.
+TIPOS_DE_INCIDENTE = ("forgot", "device_failure", "field_work", "hourly_leave")
 # clave -> (valor por omision, valores permitidos), igual que POLITICA de vacaciones.
 # 0 = sin limite (lo de omision desde 2026-11-04).
 POLITICA_DE_CHECADAS = {LIMITE: (0, range(0, 32))}
@@ -88,6 +91,9 @@ def corregir(user_data: dict, payload: dict) -> dict:
     if not motivo or len(motivo) > 300:
         raise AppError("errors.invalid_field", 400, {"field": "reason"})
     nueva = _hora(payload.get("new_time"))
+    tipo = payload.get("incident_kind") or None
+    if tipo is not None and tipo not in TIPOS_DE_INCIDENTE:
+        raise AppError("errors.invalid_field", 400, {"field": "incident_kind", "allowed": list(TIPOS_DE_INCIDENTE)})
     actor = user_data.get("id_user")
     with transaction_context() as db:
         checada = None
@@ -127,7 +133,8 @@ def corregir(user_data: dict, payload: dict) -> dict:
             db.flush()
         correccion = AttendanceCorrection(
             id_attendance_record=checada.id_attendance_record, id_user=id_empleado, check_date=nueva.date(),
-            previous_time=anterior, new_time=nueva, reason=motivo, is_exception=excepcion, created_by=actor)
+            previous_time=anterior, new_time=nueva, reason=motivo, incident_kind=tipo, is_exception=excepcion,
+            created_by=actor)
         db.add(correccion)
         db.flush()
         return {**correccion.serialize(), "limit": tope, "used": usadas + 1,

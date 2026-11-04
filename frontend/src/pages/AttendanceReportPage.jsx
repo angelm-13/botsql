@@ -124,7 +124,7 @@ export default function AttendanceReportPage() {
                   <td>{c.added ? t("attendance_report.log_added").replace("{hora}", c.new_time) : `${c.previous_time} → ${c.new_time}`}
                     {c.is_exception && <span className="quotation-status-badge status-partially_approved" style={{ marginLeft: 6 }}>{t("attendance_report.log_exception")}</span>}
                   </td>
-                  <td><small>{c.reason}</small></td>
+                  <td><small>{c.kind && <strong>{t(`kronos.corrections.kind_${c.kind}`)}: </strong>}{c.reason}</small></td>
                   <td>{c.by}</td>
                   <td><small className="muted">{(c.created_at || "").replace("T", " ")}</small></td>
                 </tr>
@@ -159,7 +159,7 @@ export default function AttendanceReportPage() {
                     {f.manual_reasons.length > 0 && (
                       <details><summary className="muted">{t("attendance_report.reasons")}</summary>
                         <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
-                          {f.manual_reasons.map((m, i) => <li key={i}><small>{m.date} · {m.by}: {m.reason}</small></li>)}
+                          {f.manual_reasons.map((m, i) => <li key={i}><small>{m.date} · {m.by}: {m.kind && <strong>{t(`kronos.corrections.kind_${m.kind}`)}. </strong>}{m.reason}</small></li>)}
                         </ul>
                       </details>
                     )}

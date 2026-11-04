@@ -58,4 +58,9 @@ BEAT_SCHEDULE = {
         "task": "app.jobs.tasks_rh.notify_missing_checks",
         "schedule": crontab(minute="*/5"),
     },
+    # RH: alertas de asistencia nuevas y el resumen semanal o quincenal (reporte de asistencia).
+    "rh-attendance-alerts-daily": {
+        "task": "app.jobs.tasks_rh.notify_attendance_alerts",
+        "schedule": crontab(hour=8, minute=30),
+    },
 }

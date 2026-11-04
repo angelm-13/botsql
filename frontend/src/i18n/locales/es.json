@@ -3979,7 +3979,12 @@
       "by": "Corrigió",
       "added": "Agregada",
       "exception": "excepción",
-      "no_limit": "sin límite"
+      "no_limit": "sin límite",
+      "kind": "Tipo de incidente",
+      "kind_forgot": "Olvidó checar",
+      "kind_device_failure": "Falló el checador",
+      "kind_field_work": "Comisión o diligencia",
+      "kind_hourly_leave": "Permiso por horas"
     }
   },
   "invoice": {
@@ -5234,7 +5239,8 @@
       "report_alert_absences": "Reporte de asistencia: alerta con estas faltas o más en el periodo (0 = sin alerta)",
       "report_alert_manual": "Reporte de asistencia: alerta con estas checadas a mano o más (0 = sin alerta)",
       "report_alert_supervisor_manual": "Reporte de asistencia: alerta al supervisor que captura a mano estas veces o más (0 = sin alerta)",
-      "overtime_hours_from_schedule": "Hora extra: dividir entre las horas de su horario en lugar de las de arriba"
+      "overtime_hours_from_schedule": "Hora extra: dividir entre las horas de su horario en lugar de las de arriba",
+      "report_summary_frequency": "Resumen de asistencia para RH en la campana"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",
@@ -5255,7 +5261,10 @@
     "choice_vacation_expiry_months_18": "18 meses después del aniversario",
     "choice_vacation_unused_policy_0": "Se pierden",
     "choice_vacation_unused_policy_1": "Pasan al siguiente año",
-    "choice_vacation_unused_policy_2": "Se pagan en la nómina"
+    "choice_vacation_unused_policy_2": "Se pagan en la nómina",
+    "choice_report_summary_frequency_0": "No mandar",
+    "choice_report_summary_frequency_1": "Cada semana (los lunes)",
+    "choice_report_summary_frequency_2": "Cada quincena (los días 1 y 16)"
   },
   "work_schedules": {
     "eyebrow": "RECURSOS HUMANOS",

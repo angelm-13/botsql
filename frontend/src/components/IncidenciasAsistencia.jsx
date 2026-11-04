@@ -19,6 +19,9 @@ function fechaLocal(d) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+// Tipos de incidente de una correccion (services/attendance_correction_service.py).
+const TIPOS_DE_INCIDENTE = ["forgot", "device_failure", "field_work", "hourly_leave"];
+
 export default function IncidenciasAsistencia({ t, describirError }) {
   const hoy = new Date();
   const [periodo, setPeriodo] = useState({ startDate: fechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), endDate: fechaLocal(hoy) });
@@ -57,7 +60,7 @@ export default function IncidenciasAsistencia({ t, describirError }) {
     event.preventDefault();
     setError("");
     const c = correccion;
-    const cuerpo = { new_time: `${c.date}T${c.time}`, reason: c.reason,
+    const cuerpo = { new_time: `${c.date}T${c.time}`, reason: c.reason, incident_kind: c.incident_kind || null,
       ...(c.id_attendance_record ? { id_attendance_record: Number(c.id_attendance_record) } : { id_user: c.id_user }) };
     try {
       const hecha = await createAttendanceCorrection(cuerpo);
@@ -152,6 +155,12 @@ export default function IncidenciasAsistencia({ t, describirError }) {
                                 <label className="field">{t("kronos.corrections.new_time")}
                                   <input required type="time" value={correccion.time} onChange={(ev) => setCorreccion((c) => ({ ...c, time: ev.target.value }))} />
                                 </label>
+                                <label className="field">{t("kronos.corrections.kind")}
+                                  <select required value={correccion.incident_kind || ""} onChange={(ev) => setCorreccion((c) => ({ ...c, incident_kind: ev.target.value }))}>
+                                    <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+                                    {TIPOS_DE_INCIDENTE.map((k) => <option key={k} value={k}>{t(`kronos.corrections.kind_${k}`)}</option>)}
+                                  </select>
+                                </label>
                                 <label className="field">{t("kronos.corrections.reason")}
                                   <input required maxLength={300} value={correccion.reason} onChange={(ev) => setCorreccion((c) => ({ ...c, reason: ev.target.value }))} />
                                 </label>
@@ -190,7 +199,7 @@ export default function IncidenciasAsistencia({ t, describirError }) {
                                   <td>{c.check_date}</td>
                                   <td>{c.previous_time ? c.previous_time.slice(11, 16) : t("kronos.corrections.added")}</td>
                                   <td>{c.new_time.slice(11, 16)}</td>
-                                  <td><small>{c.reason}</small></td>
+                                  <td><small>{c.incident_kind && <strong>{t(`kronos.corrections.kind_${c.incident_kind}`)}: </strong>}{c.reason}</small></td>
                                   <td><small>{c.created_by_name}{c.is_exception && ` · ${t("kronos.corrections.exception")}`}</small></td>
                                 </tr>
                               ))}</tbody>

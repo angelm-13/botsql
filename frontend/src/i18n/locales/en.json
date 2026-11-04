@@ -3926,7 +3926,12 @@
       "by": "Corrected by",
       "added": "Added",
       "exception": "exception",
-      "no_limit": "no limit"
+      "no_limit": "no limit",
+      "kind": "Incident type",
+      "kind_forgot": "Forgot to check in",
+      "kind_device_failure": "Device failed",
+      "kind_field_work": "Field work or errand",
+      "kind_hourly_leave": "Leave by the hour"
     }
   },
   "invoice": {
@@ -5119,7 +5124,8 @@
       "report_alert_absences": "Attendance report: alert at this many absences or more in the period (0 = no alert)",
       "report_alert_manual": "Attendance report: alert at this many manual check-ins or more (0 = no alert)",
       "report_alert_supervisor_manual": "Attendance report: alert on supervisors who enter this many manual check-ins or more (0 = no alert)",
-      "overtime_hours_from_schedule": "Overtime: divide by the hours of their schedule instead"
+      "overtime_hours_from_schedule": "Overtime: divide by the hours of their schedule instead",
+      "report_summary_frequency": "Attendance summary for HR in the bell"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -5140,7 +5146,10 @@
     "choice_vacation_expiry_months_18": "18 months after the anniversary",
     "choice_vacation_unused_policy_0": "They are lost",
     "choice_vacation_unused_policy_1": "They carry over",
-    "choice_vacation_unused_policy_2": "They are paid in payroll"
+    "choice_vacation_unused_policy_2": "They are paid in payroll",
+    "choice_report_summary_frequency_0": "Don't send",
+    "choice_report_summary_frequency_1": "Weekly (Mondays)",
+    "choice_report_summary_frequency_2": "Every fortnight (days 1 and 16)"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",

@@ -28,6 +28,8 @@ class AttendanceCorrection(Base):
     previous_time: Mapped[object] = mapped_column(DateTime, nullable=True)   # nula = checada agregada
     new_time: Mapped[object] = mapped_column(DateTime, nullable=False)
     reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    # forgot, device_failure, field_work, hourly_leave (attendance_correction_service); nula en las anteriores.
+    incident_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Hecha por RH cuando el empleado ya habia usado sus correcciones del mes.
     is_exception: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
     created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
@@ -39,7 +41,7 @@ class AttendanceCorrection(Base):
         return {'id_attendance_correction': self.id_attendance_correction,
                 'id_attendance_record': self.id_attendance_record, 'id_user': self.id_user,
                 'check_date': to_json_value(self.check_date), 'previous_time': to_json_value(self.previous_time),
-                'new_time': to_json_value(self.new_time), 'reason': self.reason,
+                'new_time': to_json_value(self.new_time), 'reason': self.reason, 'incident_kind': self.incident_kind,
                 'is_exception': bool(self.is_exception), **_auditoria(self)}
 
     def serialize_summary(self) -> dict:

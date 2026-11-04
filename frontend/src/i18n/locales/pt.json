@@ -3534,7 +3534,12 @@
       "by": "Corrigiu",
       "added": "Adicionada",
       "exception": "exceção",
-      "no_limit": "sem limite"
+      "no_limit": "sem limite",
+      "kind": "Tipo de incidente",
+      "kind_forgot": "Esqueceu de bater o ponto",
+      "kind_device_failure": "Falha do relógio de ponto",
+      "kind_field_work": "Serviço externo",
+      "kind_hourly_leave": "Licença por horas"
     }
   },
   "task_fase": {
@@ -3705,7 +3710,8 @@
       "report_alert_absences": "Relatório de presença: alerta com estas faltas ou mais no período (0 = sem alerta)",
       "report_alert_manual": "Relatório de presença: alerta com estes registros manuais ou mais (0 = sem alerta)",
       "report_alert_supervisor_manual": "Relatório de presença: alerta ao supervisor que registra à mão estas vezes ou mais (0 = sem alerta)",
-      "overtime_hours_from_schedule": "Hora extra: dividir pelas horas do seu horário em vez das de cima"
+      "overtime_hours_from_schedule": "Hora extra: dividir pelas horas do seu horário em vez das de cima",
+      "report_summary_frequency": "Resumo de presença para o RH no sino"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -3726,7 +3732,10 @@
     "choice_vacation_expiry_months_18": "18 meses após o aniversário",
     "choice_vacation_unused_policy_0": "Se perdem",
     "choice_vacation_unused_policy_1": "Passam para o ano seguinte",
-    "choice_vacation_unused_policy_2": "São pagas na folha"
+    "choice_vacation_unused_policy_2": "São pagas na folha",
+    "choice_report_summary_frequency_0": "Não enviar",
+    "choice_report_summary_frequency_1": "Toda semana (segundas)",
+    "choice_report_summary_frequency_2": "Toda quinzena (dias 1 e 16)"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",
