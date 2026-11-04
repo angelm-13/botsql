@@ -4868,7 +4868,70 @@
     "history": "Bitácora",
     "reauthorization": "El comprobante sale más caro de lo autorizado: la orden volvió a autorización con el monto real.",
     "exceeded_banner": "Esta orden volvió a autorización porque el comprobante sale más caro de lo autorizado. Se autoriza el monto real o se rechaza.",
-    "rejected_because": "Se rechazó:"
+    "rejected_because": "Se rechazó:",
+    "step": {
+      "draft": "Armar",
+      "pending_authorization": "Autorizar",
+      "authorized": "Comprar",
+      "purchased": "Recibir",
+      "received": "Recibida",
+      "rejected_note": "Rechazada: regresó a corregirse.",
+      "cancelled_note": "Cancelada: el proceso se detuvo."
+    },
+    "next": {
+      "title": "Qué sigue",
+      "cancelled": "Esta orden se canceló y ya no sigue. Si todavía hace falta el material, arma una orden nueva desde Por comprar.",
+      "rejected_others": "Se rechazó; quien la armó la está corrigiendo.",
+      "draft_others": "Todavía se está armando; no se ha enviado a autorización.",
+      "draft_no_lines": "Agrega lo que vas a comprar (desde Por comprar o un renglón propio) para poder enviarla.",
+      "draft_missing_costs": "Faltan costos en {n} renglón(es). Corrígela y captura el costo para poder enviarla.",
+      "rejected_mine": "Se rechazó (el motivo está abajo). Corrígela y vuelve a enviarla, o cancélala si ya no aplica.",
+      "draft_ready": "Revisa proveedor, cantidades y costos, y envíala a autorización.",
+      "draft_quote": "Si tienes la cotización del proveedor, súbela: ayuda a quien autoriza.",
+      "authorize_over_budget": "Rebasa el presupuesto de un proyecto: si la autorizas, escribe el motivo. Si no, recházala.",
+      "authorize": "Te toca: revisa monto, proveedor y renglones; autorízala o recházala.",
+      "authorize_own": "Tú la pediste, así que la autoriza otra persona. Si ya no aplica, puedes rechazarla.",
+      "waiting_authorization": "Espera la autorización. Cuando se decida, te llega un aviso.",
+      "register_purchase": "Te toca: ya tiene comprobante. Registra la compra con la fecha y la forma de pago.",
+      "purchase_others": "Ya tiene comprobante; falta registrar la compra.",
+      "upload_invoice": "Autorizada: ya puedes comprar. Sube la factura (de preferencia el XML) o el ticket para registrar la compra.",
+      "buy_others": "Autorizada; falta comprarla y subir su factura o ticket.",
+      "receive_rest": "Te toca: llegaron {recibido} de {total} piezas. Registra el resto cuando llegue.",
+      "receive": "Te toca: cuando llegue el material, registra cuánto llegó de cada renglón.",
+      "partial_others": "Llegaron {recibido} de {total} piezas; el resto se registra cuando llegue.",
+      "bought_others": "Comprada. Falta registrar la recepción cuando llegue el material.",
+      "payment_proof": "Si pagaste por separado, sube el comprobante de pago.",
+      "received_projects": "Llegó todo. El encargado de cada obra ya puede marcar \"Material recibido, iniciar\" en su proyecto.",
+      "received": "Llegó todo. La orden está completa.",
+      "unknown": "Revisa el estado de la orden."
+    },
+    "done": {
+      "saved": "Borrador guardado. Envíalo a autorización cuando esté completo.",
+      "auto_authorized": "Se autorizó sola por la política (monto bajo el límite). Ya puedes comprarla.",
+      "submitted": "Enviada a autorización. Quien autoriza recibe el aviso.",
+      "authorized": "Autorizada. Ya se puede comprar.",
+      "rejected": "Rechazada. El motivo queda en la orden para corregirla.",
+      "cancelled": "Orden cancelada.",
+      "voucher_then_buy": "Comprobante guardado. Ahora registra la compra.",
+      "voucher": "Comprobante guardado.",
+      "voucher_removed": "Comprobante retirado.",
+      "reauthorization": "El comprobante sale más caro de lo autorizado: la orden volvió a autorización con el monto real.",
+      "bought": "Compra registrada. Falta registrar la recepción cuando llegue el material.",
+      "received": "Recepción completa: la orden quedó recibida.",
+      "received_part": "Recepción registrada: faltan {faltan} piezas por llegar."
+    },
+    "no_vouchers_yet": "Todavía no hay comprobantes. La factura o el ticket se suben cuando la orden ya está autorizada; antes solo la cotización.",
+    "voucher_hint_invoice": "Sube la factura (el XML llena folio, monto y fecha solo) o el ticket de la compra.",
+    "voucher_hint_quote": "Antes de autorizarla solo se sube la cotización del proveedor.",
+    "voucher_hint_payment": "El comprobante de compra ya está; aquí puedes agregar el comprobante de pago.",
+    "empty_all": "Todavía no hay órdenes de compra.",
+    "empty_all_buyer": "Empieza en Por comprar: elige lo que piden los proyectos y arma la orden, o usa \"Nueva orden\".",
+    "empty_all_reader": "Las órdenes las arma Compras con lo que piden los proyectos.",
+    "missing_supplier": "elegir el proveedor",
+    "missing_lines": "agregar al menos un renglón",
+    "missing_costs": "capturar el costo de cada renglón",
+    "missing_to_send": "Para enviarla a autorización falta:",
+    "ready_to_send": "Lista para enviar. También puedes guardarla como borrador y terminarla después."
   },
   "policy": {
     "title": "Reglas de autorización",
@@ -4912,7 +4975,13 @@
     "return": "No se entiende: devolver",
     "return_why": "¿Qué tiene que corregir el supervisor?",
     "return_placeholder": "Ej. ¿Qué material es exactamente?",
-    "return_send": "Devolver"
+    "return_send": "Devolver",
+    "hint_pick": "Marca las casillas de lo que vas a comprar para armar una orden.",
+    "hint_picked": "Llevas {n} renglón(es). Cuando termines, arma la orden; puedes juntar varios proyectos con el mismo proveedor.",
+    "empty_help": "Lo que hace falta llega cuando un supervisor pide material desde su proyecto. Lo que ya cubre el almacén no aparece aquí; márcalo arriba para verlo.",
+    "section_buy_help": "Confirmado que hay que comprarlo: marca las casillas y arma la orden. Lo que ya tiene folio va en una orden; ábrela en Órdenes de compra para seguirla.",
+    "section_buy_help_reader": "Confirmado que hay que comprarlo. Lo que ya tiene folio va en una orden de compra.",
+    "section_review_help_reader": "Texto libre que todavía no se confirma: quien conoce el almacén decide si ya existe o hay que comprarlo. Mientras, no se puede meter a una orden."
   },
   "stock_adjust": {
     "title": "Ajustar existencia",
@@ -5617,5 +5686,25 @@
     "alert_manual": "Muchas checadas a mano",
     "alert_pending": "Días sin justificar",
     "alert_supervisor": "Captura a mano muy seguido"
+  },
+  "guide": {
+    "how_it_works": "¿Cómo funciona?",
+    "got_it": "Ya entendí",
+    "buy": {
+      "title": "Cómo funciona Por comprar",
+      "source": "Aquí llega lo que piden los proyectos (lo captura el supervisor en su proyecto). \"Hay\" es lo que tiene el almacén y \"Falta\" lo que hay que comprar.",
+      "review": "Lo pedido con texto libre sale \"Por revisar\": decide si ya está en el almacén, si sí hay que comprarlo, o devuélvelo al supervisor si no se entiende.",
+      "order": "Marca las casillas de lo que vas a comprar y presiona \"Armar orden de compra\". Lo que ya está en una orden muestra su folio.",
+      "reader": "Las órdenes de compra las arma Compras; aquí puedes ver qué falta y para cuándo.",
+      "urgency": "Rojo = ya venció la fecha en que se necesitaba; ámbar = vence en 3 días o menos."
+    },
+    "orders": {
+      "title": "Cómo funcionan las órdenes de compra",
+      "flow": "Cada orden pasa por: armarla → autorizarla → comprarla (con factura o ticket) → recibirla en el almacén.",
+      "buyer": "Tú armas la orden: desde Por comprar elige lo que vas a comprar, o usa \"Nueva orden\". Luego la envías a autorización, subes la factura y registras la compra.",
+      "authorizer": "Tú autorizas: abre las órdenes \"Por autorizar\", revisa monto y presupuesto, y autorízalas o recházalas con un motivo.",
+      "receiver": "Tú recibes: cuando llegue el material, abre las órdenes \"Por recibir\" y anota cuánto llegó de cada renglón.",
+      "next": "Al abrir una orden, el recuadro \"Qué sigue\" te dice en qué paso va y qué te toca."
+    }
   }
 }

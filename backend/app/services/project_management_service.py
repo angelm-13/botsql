@@ -36,11 +36,14 @@ from app.utils.tiempo import a_iso_utc
 # significa que el taller ya tenga en mano lo que necesita. Por eso
 # `authorized` ya NO tiene salida directa a `in_progress` -- ver
 # PROJECT_TRANSITIONS. La entrada a esta espera y la salida hacia
-# `in_progress` las da quien confirma el material, no el taller: quien tiene la
-# capacidad `project_supply` (Compras, que sabe si la compra ya llego) o, de
-# respaldo, `project_authorization` (Gerente). Antes (2026-09-25) eran solo de
-# quien autoriza; cambio del 2026-10-16. Tener una tarea capturada ya no es
-# condicion para arrancar. El taller SI conserva su propio
+# `in_progress` son de dos personas distintas (2026-11-04): ENTRAR a la espera
+# ("Material en camino") lo da quien consigue el material -la capacidad
+# `project_supply`, Compras, o de respaldo `project_authorization`, Gerente-; SALIR
+# de ella ("Material recibido, iniciar") lo da quien tiene la obra en la mano y ve
+# llegar el material: el Jefe de taller asignado si lleva maquila, el supervisor
+# que la lidera si no (ver `_encargado_de_la_obra`), con Gerente de respaldo. Del
+# 2026-10-16 a esa fecha los dos pasos eran de Compras. Tener una tarea capturada
+# ya no es condicion para arrancar. El taller SI conserva su propio
 # `in_progress -> waiting_material` para cuando el trabajo ya arranco y el
 # material se acaba a medias -- ese caso no cambia.
 PROJECT_STATUSES = (
@@ -79,14 +82,11 @@ PROJECT_TRANSITIONS = {
     # se completa. Quien lo pide cambia (ver `transition_project`).
     "in_progress": {"waiting_material", "stopped", "collected", "blocked"},
     # `waiting_material` sirve DOS momentos distintos con el mismo estatus:
-    # la espera obligatoria de entrada (desde `authorized`, la controla
-    # Gerente) y la pausa a medio trabajo (desde `in_progress`, la controla
-    # el taller). La salida siempre es la misma transicion tecnica
-    # (`waiting_material -> in_progress`), pero `transition_project` distingue
-    # quien puede pedirla mirando de donde viene el proyecto -- no hay forma
-    # de saber aqui si el material que se esperaba era el de arranque o el de
-    # una pausa a medias. No se salta a terminado porque lo que faltaba era
-    # justo para poder terminarlo.
+    # la espera obligatoria de entrada (desde `authorized`, la abre Compras)
+    # y la pausa a medio trabajo (desde `in_progress`, la abre el taller). La
+    # salida es la misma en los dos casos y la da el encargado de la obra
+    # (`_encargado_de_la_obra`): es quien ve llegar el material. No se salta a
+    # terminado porque lo que faltaba era justo para poder terminarlo.
     "waiting_material": {"in_progress", "stopped"},
     "stopped": {"in_progress"},
     "collected": {"completed"},
@@ -669,16 +669,32 @@ def _puede_ejecutar(db, user_data: dict) -> bool:
 
 
 def _puede_dar_el_material(db, user_data: dict) -> bool:
-    """Puede dar los dos pasos de material: a "en espera" y de ahi a "en proceso".
+    """Puede abrir la espera de material: "Material en camino" (`authorized -> waiting_material`).
 
-    Quien tiene `project_supply` en el Gestor (hoy Compras: sabe cuando llega lo
-    que pidio) o, de respaldo, quien autoriza proyectos (`project_authorization`,
-    Gerente), que ya daba estos pasos antes. Las dos son capacidades que el
-    Gestor concede; el codigo solo dice QUE pasos abre cada una, no a QUIEN se
-    le concede.
+    Quien tiene `project_supply` en el Gestor (hoy Compras: le toca conseguir el
+    material) o, de respaldo, quien autoriza proyectos (`project_authorization`,
+    Gerente). Las dos son capacidades que el Gestor concede; el codigo solo dice
+    QUE paso abren, no a QUIEN se le conceden. La salida de la espera ya no es
+    suya (2026-11-04): la da el encargado de la obra, ver `_encargado_de_la_obra`.
     """
     return (_has_capability(db, user_data, "project_supply")
             or _has_capability(db, user_data, "project_authorization"))
+
+
+def _encargado_de_la_obra(db, project, user_data: dict) -> bool:
+    """El actor tiene la obra en la mano: marca "Material recibido, iniciar".
+
+    Con maquila, el Jefe de taller asignado al proyecto (`id_supervisor`, y con la
+    capacidad `project_execution`: en datos viejos `id_supervisor` llego a guardar
+    a un supervisor). Sin maquila, el supervisor que lo lidera (`leader`); el
+    taller ni ve esos proyectos. Es por proyecto, no por rol, como recolectar y
+    completar: lo decide quien lleva ESTA obra.
+    """
+    actor = _actor_id(user_data)
+    if project.requires_maquila:
+        return (_safe_int(project.id_supervisor) == actor
+                and _puede_ejecutar(db, user_data))
+    return is_project_leader(project, user_data)
 
 
 def _scope_name(db, user_data: dict) -> str:
@@ -1692,9 +1708,12 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         puede_autorizar = scope in {"authorization", "unrestricted"}
         # Quien lo ejecuta: el taller, o el lider sobre el proyecto que lidera.
         puede_ejecutar = _puede_ejecutar(db, user_data) or leads_it
-        # Dar los dos pasos de material: `project_supply` (Compras) o, de
-        # respaldo, quien autoriza.
+        # "Material en camino": `project_supply` (Compras) o, de respaldo,
+        # quien autoriza.
         puede_dar_material = _puede_dar_el_material(db, user_data)
+        # "Material recibido, iniciar": el encargado de la obra (Jefe de taller
+        # con maquila, supervisor sin ella) o, de respaldo, quien autoriza.
+        puede_iniciar = _encargado_de_la_obra(db, project, user_data) or puede_autorizar
         # Recolectar: con maquila lo cambia el Jefe de taller; sin ella, el
         # supervisor responsable (el taller ni ve ese proyecto). Completar lo
         # recolectado (fase final) es del responsable o de Gerencia.
@@ -1706,13 +1725,13 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             (validated_target in {"submitted", "authorized", "denied", "blocked"} and puede_autorizar)
             # El material de una orden de compra puede surtir a varios
             # proyectos a la vez (ver el comentario en PROJECT_STATUSES):
-            # entrar a la espera obligatoria (desde `authorized`) y salir de
-            # ella hacia el arranque real (`in_progress`) las decide quien da
-            # el material -Compras, que sabe si la compra ya llego, o Gerente
-            # de respaldo-, no el taller. Cambio del 2026-10-16: antes eran
-            # solo de quien autoriza.
+            # entrar a la espera obligatoria (desde `authorized`) es de quien
+            # consigue el material -Compras, o Gerente de respaldo-; salir de
+            # ella hacia el arranque real (`in_progress`) es del encargado de
+            # la obra, que es quien ve llegar el material (2026-11-04; del
+            # 2026-10-16 a esa fecha las dos eran de Compras).
             or (validated_target == "waiting_material" and current == "authorized" and puede_dar_material)
-            or (validated_target == "in_progress" and current == "waiting_material" and puede_dar_material)
+            or (validated_target == "in_progress" and current == "waiting_material" and puede_iniciar)
             # El resto de "en proceso" (reanudar tras un paro) y
             # "detenido"/"terminado" los sigue controlando quien ejecuta.
             or (validated_target == "in_progress" and current == "stopped" and puede_ejecutar)
@@ -1850,11 +1869,20 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                 avisos.append(dict(
                     destinatarios=_users_with_capability(db, "project_supply"),
                     titulo="Proyecto autorizado: falta conseguir el material",
-                    mensaje="fue autorizado; cuando llegue el material, pasalo a en proceso",
+                    mensaje="fue autorizado; consigue el material y marcalo como en camino",
                 ))
+        elif validated_target == "waiting_material" and current == "authorized":
+            # Le toca al encargado de la obra: cuando le llegue el material, el
+            # marca "Material recibido, iniciar". Con maquila, el Jefe de taller
+            # asignado; sin ella, el supervisor que la lidera.
+            avisos.append(dict(
+                destinatarios=[project.id_supervisor if project.requires_maquila else project.leader],
+                titulo="Material en camino",
+                mensaje="Compras ya esta consiguiendo el material; cuando te llegue, marca material recibido para iniciar",
+            ))
         elif validated_target == "in_progress" and current == "waiting_material":
-            # El taller sabe que ya puede arrancar: avisa al Jefe de taller que
-            # lo tomo y al responsable del proyecto.
+            # Arranco: avisa al Jefe de taller y al responsable del proyecto (a
+            # quien dio el paso no, ver `_notificar_proyecto`).
             avisos.append(dict(
                 destinatarios=[project.leader, project.id_supervisor],
                 titulo="Proyecto en proceso",

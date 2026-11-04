@@ -1,0 +1,90 @@
+/* Guia de Compras: explicacion al entrar, barra de pasos, "Que sigue" y aviso flotante. */
+
+.guia-modulo {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: start;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid #bfe3d6;
+  border-radius: 16px;
+  background: #f1faf6;
+  color: #173b52;
+}
+.guia-modulo strong { display: block; margin-bottom: 4px; }
+.guia-modulo ol { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }
+.guia-icono { color: #1b7a60; margin-top: 2px; }
+.guia-cerrar {
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  border: 1px solid #bfe3d6; background: #fff; color: #1b7a60; border-radius: 10px;
+  padding: 5px 9px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.guia-reabrir {
+  display: inline-flex; align-items: center; gap: 5px; margin: 0 0 12px;
+  border: 0; background: transparent; color: #1b7a60; font-size: 13px; font-weight: 700;
+  cursor: pointer; padding: 2px 0;
+}
+@media (max-width: 640px) {
+  .guia-modulo { grid-template-columns: auto 1fr; }
+  .guia-cerrar { grid-column: 1 / -1; justify-self: start; }
+}
+
+/* Barra de pasos de la orden */
+.oc-pasos-envoltura { margin: 10px 0 14px; }
+.oc-pasos {
+  display: flex; gap: 4px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap;
+}
+.oc-paso {
+  flex: 1 1 0; min-width: 72px; display: flex; flex-direction: column; align-items: center;
+  gap: 4px; position: relative; font-size: 12px; color: #64748b; text-align: center;
+}
+.oc-paso::before {
+  content: ""; position: absolute; top: 11px; left: calc(-50% + 14px); right: calc(50% + 14px);
+  height: 2px; background: #e2e8f0;
+}
+.oc-paso:first-child::before { display: none; }
+.oc-paso-punto {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11px; font-weight: 800; background: #f1f5f9; border: 2px solid #e2e8f0; z-index: 1;
+}
+.oc-paso-hecho { color: #14532d; }
+.oc-paso-hecho .oc-paso-punto { background: #1b7a60; border-color: #1b7a60; color: #fff; }
+.oc-paso-hecho::before, .oc-paso-actual::before, .oc-paso-desvio::before { background: #1b7a60; }
+.oc-paso-actual { color: #173b52; font-weight: 800; }
+.oc-paso-actual .oc-paso-punto { background: #fff; border-color: #1b7a60; color: #1b7a60; box-shadow: 0 0 0 4px #d1fae5; }
+.oc-paso-desvio { color: #7f1d1d; font-weight: 800; }
+.oc-paso-desvio .oc-paso-punto { background: #fee2e2; border-color: #dc2626; color: #7f1d1d; }
+.oc-pasos-cancelada { opacity: .55; }
+.oc-pasos-nota { display: block; margin-top: 6px; color: #7f1d1d; font-size: 12.5px; text-align: center; }
+
+/* Que sigue */
+.oc-que-sigue {
+  display: flex; gap: 10px; align-items: flex-start; margin: 0 0 14px; padding: 12px 14px;
+  border-radius: 14px; border: 1px solid #dbeafe; background: #eff6ff; color: #1e3a8a;
+}
+.oc-que-sigue p { margin: 2px 0 0; font-size: 14px; line-height: 1.45; }
+.oc-que-sigue-titulo { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.oc-que-sigue-extra { font-size: 13px !important; opacity: .85; }
+.oc-que-sigue-icono { flex: none; margin-top: 3px; }
+.oc-que-sigue-accion { border-color: #a7dcc8; background: #ecfdf5; color: #14532d; }
+.oc-que-sigue-alerta { border-color: #fde68a; background: #fffbeb; color: #78350f; }
+.oc-que-sigue-ok { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.oc-que-sigue-neutro { border-color: #e2e8f0; background: #f8fafc; color: #334155; }
+
+/* Aviso flotante tras una accion */
+.aviso-flotante {
+  position: fixed; right: 20px; bottom: 20px; z-index: 60; max-width: min(420px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px;
+  background: #173b52; color: #fff; font-size: 14px; box-shadow: 0 18px 40px rgba(15, 23, 42, .25);
+  animation: aviso-entra .2s ease-out;
+}
+.aviso-flotante button { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 2px; opacity: .8; }
+@media (max-width: 640px) { .aviso-flotante { left: 16px; right: 16px; bottom: 16px; } }
+@keyframes aviso-entra { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Lo que falta para enviar la orden (editor) */
+.oc-faltan { color: #78350f; font-weight: 600; }
+
+/* Indicacion junto a la seleccion de Por comprar */
+.por-comprar-pista { font-size: 13px; color: #475569; }
