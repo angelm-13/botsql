@@ -1744,7 +1744,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Subtotal facturado (antes de impuesto), por empleado y por dia.",
+        descripcion="Subtotal facturado (antes de impuesto), por empleado y por día.",
     ),
     KpiDefinition(
         clave="egresos_por_empleado",
@@ -1757,7 +1757,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Facturas de compra capturadas, por empleado y por dia.",
+        descripcion="Facturas de compra capturadas, por empleado y por día.",
     ),
     KpiDefinition(
         clave="desarrollo_por_empleado",
@@ -1813,7 +1813,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Incidentes cancelados, por empleado y por dia de cancelacion.",
+        descripcion="Incidentes cancelados, por empleado y por día de cancelación.",
     ),
     KpiDefinition(
         clave="ordenes_laboratorio_entregadas_por_tecnico",
@@ -1827,7 +1827,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Ordenes de servicio entregadas, por tecnico.",
+        descripcion="Órdenes de servicio entregadas, por técnico.",
     ),
     KpiDefinition(
         clave="tiempo_promedio_reparacion_laboratorio_por_tecnico",
@@ -1841,7 +1841,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Dias promedio de reparacion, por tecnico.",
+        descripcion="Días promedio de reparación, por técnico.",
     ),
     KpiDefinition(
         clave="costo_promedio_reparacion_laboratorio_por_tecnico",
@@ -1855,7 +1855,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Costo promedio de reparacion, por tecnico.",
+        descripcion="Costo promedio de reparación, por técnico.",
     ),
     KpiDefinition(
         clave="documentos_vencidos_por_responsable",
@@ -1885,7 +1885,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="linea",
-        descripcion="Ventas facturadas de toda la empresa, por dia.",
+        descripcion="Ventas facturadas de toda la empresa, por día.",
     ),
     KpiDefinition(
         clave="egresos_totales",
@@ -1898,7 +1898,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="linea",
-        descripcion="Facturas de compra de toda la empresa, por dia.",
+        descripcion="Facturas de compra de toda la empresa, por día.",
     ),
     KpiDefinition(
         clave="material_prestado_por_responsable",
@@ -1913,7 +1913,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Prestamos de material iniciados, por responsable y por dia.",
+        descripcion="Préstamos de material iniciados, por responsable y por día.",
     ),
     KpiDefinition(
         clave="prestamos_vencidos_por_responsable",
@@ -1977,7 +1977,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("barras", "tabla"),
         grafica_default="barras",
-        descripcion="Incidencias/vales abiertos, por responsable: el usuario a cuyo nombre esta el material.",
+        descripcion="Incidencias/vales abiertos, por responsable: el usuario a cuyo nombre está el material.",
     ),
     KpiDefinition(
         clave="incidencias_pendientes",
@@ -1991,7 +1991,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=("numero",),
         grafica_default="numero",
-        descripcion="Foto de cuantas incidencias siguen sin cerrar hoy.",
+        descripcion="Foto de cuántas incidencias siguen sin cerrar hoy.",
     ),
     KpiDefinition(
         clave="incidencias_abiertas_vs_cerradas",
@@ -2009,7 +2009,7 @@ KPI_REGISTRY = (
         # categoria, no por posicion -- coral para "abierta" (llama la
         # atencion, hay que atenderla), verde para "cerrada" (resuelta, bien).
         colores_categoria={"abierta": "#ef6f5c", "cerrada": "#22b573"},
-        descripcion="Cuantas incidencias se abren y cuantas se cierran, por dia.",
+        descripcion="Cuántas incidencias se abren y cuántas se cierran, por día.",
     ),
     KpiDefinition(
         clave="material_por_estado",

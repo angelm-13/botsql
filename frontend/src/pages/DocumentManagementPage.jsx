@@ -25,10 +25,10 @@ const ERROR_TEXT = {
   "documents.invalid_file_type": "Tipo de archivo no permitido.",
   "documents.mime_mismatch": "El contenido del archivo no corresponde a su extension.",
   "documents.invalid_file_size": "El archivo esta vacio o pasa del tamano permitido.",
-  "documents.single_relation_required": "Indica a quien esta ligado el documento.",
-  "documents.expiration_required": "Este tipo de documento necesita fecha de vencimiento (en empleado y proveedor tambien puedes marcar \"Sin vencimiento\").",
-  "errors.permission_denied": "Tu rol no tiene permiso para esta accion.",
-  "errors.resource_not_found": "El documento ya no existe o no esta disponible para ti.",
+  "documents.single_relation_required": "Indica a quién está ligado el documento.",
+  "documents.expiration_required": "Este tipo de documento necesita fecha de vencimiento (en empleado y proveedor también puedes marcar \"Sin vencimiento\").",
+  "errors.permission_denied": "Tu rol no tiene permiso para esta acción.",
+  "errors.resource_not_found": "El documento ya no existe o no está disponible para ti.",
 };
 
 function errorText(caught) {

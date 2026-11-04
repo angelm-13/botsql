@@ -1329,7 +1329,7 @@ export function CuerpoDeWidget({
         <p className="kpi-empty-inline">{tx("widget_missing_kpi", "A este gráfico le falta un KPI. Edítalo para configurarlo.")}</p>
       )}
       {!loading && error === "errors.rango_excede_limite" && (
-        <p className="kpi-error-inline">{tx("range_exceeds_limit", "El rango de fechas de este gráfico excede el máximo permitido (aprox. un año). Edítalo para acortarlo.")}</p>
+        <p className="kpi-error-inline">{tx("range_exceeds_limit", "El rango de fechas excede el máximo permitido (aprox. un año). Ajusta las fechas.")}</p>
       )}
       {!loading && error === "tabla_no_soportada" && (
         <p className="kpi-empty-inline">{tx("widget_table_coming_soon", "Este tipo de tabla estará disponible próximamente.")}</p>
@@ -1723,7 +1723,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   const mensajeSinDatos = (
     <p className="kpi-empty-inline">
       <strong>{tx("state_no_data", "Sin datos en el periodo")}</strong>{" "}
-      {tx("state_no_data_help", "Prueba con otro rango de fechas: este KPI no tuvo movimientos en este.")}
+      {tx("state_no_data_help", "Prueba con otro rango de fechas: este KPI no tuvo movimientos en el periodo elegido.")}
     </p>
   );
 
@@ -2149,11 +2149,11 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     if (!esTabla) {
       if (!parametros.fecha_inicio || !parametros.fecha_fin) rechazar(tx("range_required", "Elige el rango de fechas."));
       if (diffDias(parametros.fecha_inicio, parametros.fecha_fin) > KPI_RANGO_DIAS_MAX) {
-        rechazar(tx("range_exceeds_limit", "El rango de fechas no puede exceder un año. Ajusta las fechas."));
+        rechazar(tx("range_exceeds_limit", "El rango de fechas excede el máximo permitido (aprox. un año). Ajusta las fechas."));
       }
       if (comparar && (!parametros.fecha_inicio_b || !parametros.fecha_fin_b)) rechazar(tx("range_b_required", "Elige el rango de comparación o desactívala."));
       if (comparar && diffDias(parametros.fecha_inicio_b, parametros.fecha_fin_b) > KPI_RANGO_DIAS_MAX) {
-        rechazar(tx("range_exceeds_limit", "El rango de comparación no puede exceder un año. Ajusta las fechas."));
+        rechazar(tx("range_exceeds_limit", "El rango de fechas excede el máximo permitido (aprox. un año). Ajusta las fechas."));
       }
     }
 
@@ -2165,7 +2165,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
       const clave = err.message || "errors.request_failed";
       setError(
         clave === "errors.rango_excede_limite"
-          ? tx("range_exceeds_limit", "El rango de fechas excede el máximo permitido (aprox. un año). Ajusta las fechas e inténtalo de nuevo.")
+          ? tx("range_exceeds_limit", "El rango de fechas excede el máximo permitido (aprox. un año). Ajusta las fechas.")
           : t(clave, clave),
       );
       throw err;
@@ -2540,8 +2540,8 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     >
       {kpiCatalog.length === 0 ? (
         <div className="empty">
-          <strong>{tx("no_kpis_title", "No tienes KPIs asignados")}</strong>
-          <p>{tx("no_kpis_body", "Pide a un administrador que te asigne permiso sobre algún KPI para poder graficarlo aquí.")}</p>
+          <strong>{tx("no_kpis_title", "No hay KPIs para mostrar")}</strong>
+          <p>{tx("no_kpis_body", "Puede que aún estén cargando o que no haya conexión: espera unos segundos y vuelve a abrir esta ventana. Si sigue igual, pide a tu administrador que te asigne KPIs.")}</p>
         </div>
       ) : (
         <>
@@ -2621,7 +2621,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                   className="button primary"
                   disabled={saving || idsKpiSeleccionados.length === 0}
                 >
-                  {editingWidgetId ? tx("update_widget", "Actualizar") : tx("add_widget", "Agregar gráfico")}
+                  {editingWidgetId ? tx("update_widget", "Guardar cambios") : tx("add_widget", "Agregar gráfico")}
                 </button>
               )}
             </div>

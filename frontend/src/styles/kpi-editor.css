@@ -1,6 +1,6 @@
 /* Editor de graficos: pasos, cuerpo en dos columnas, vista previa y barra
-   inferior. Lo comparten el editor REAL del Dashboard (pages/Dashboard.jsx,
-   KpiWidgetPanel) y el de demostracion de /dashboard-preview. Los tokens
+   inferior. Lo usa el editor del Dashboard (pages/Dashboard.jsx,
+   KpiWidgetPanel). Los tokens
    (--kpi-*) vienen de kpi-widgets.css. */
 
 .kpi-editor-pasos { list-style: none; display: flex; gap: 4px; margin: 0 0 16px; padding: 4px; background: var(--kpi-fondo); border-radius: 12px; flex-wrap: wrap; }
