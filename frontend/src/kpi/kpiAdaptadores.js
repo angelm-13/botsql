@@ -25,7 +25,7 @@ function etiquetasCortasDePersonas(nombres, esPorPersona) {
 }
 
 /** Props de NumeroWidget para un widget "numero" de un solo KPI. */
-export function propsNumero({ snapshot, kpiInfo, formatNumber, textos }) {
+export function propsNumero({ snapshot, kpiInfo, formatNumber, textos, etiquetaRangoB = "", comparacionActiva = false }) {
   const total = snapshot.rango_a.total;
   const hayComparacion = Boolean(snapshot?.rango_b);
   const totalB = snapshot.rango_b?.total;
@@ -44,8 +44,12 @@ export function propsNumero({ snapshot, kpiInfo, formatNumber, textos }) {
     formatear: (valor) => formatConUnidad(formatNumber(valor), unidad),
     variacion: delta,
     variacionTexto,
-    leyendaVariacion: textos.vsAnterior,
-    textoSinVariacion: textos.sinComparacion,
+    // La leyenda dice CONTRA QUE FECHAS se compara ("vs. 6 sep – 5 oct"); solo sin fechas conocidas cae en el texto generico.
+    leyendaVariacion: etiquetaRangoB && textos.vsRango ? textos.vsRango(etiquetaRangoB) : textos.vsAnterior,
+    // Se pidio comparar pero la respuesta no trae el periodo B: no se promete una variacion que no hay, ni se pide "Activa Comparar".
+    textoSinVariacion: comparacionActiva && !hayComparacion && textos.comparacionNoDisponible
+      ? textos.comparacionNoDisponible(etiquetaRangoB)
+      : textos.sinComparacion,
     direccion: kpiInfo?.direccion || "neutral",
   };
 }

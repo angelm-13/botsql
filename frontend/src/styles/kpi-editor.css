@@ -263,3 +263,15 @@
   /* La ayuda del relleno sigue disponible para el lector de pantalla (aria-describedby), pero no ocupa lugar en pantallas angostas. */
   .kpi-editor-ayuda-relleno { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+
+/* Interruptor "Comparar contra otro periodo" (role="switch"). */
+.kpi-editor-comparar { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.kpi-switch { border: 0; background: transparent; padding: 0; cursor: pointer; display: inline-flex; align-items: center; min-height: 32px; }
+.kpi-switch-pista { width: 38px; height: 22px; border-radius: 999px; background: #cbd5e1; position: relative; transition: background .15s; }
+.kpi-switch-perilla { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, .3); transition: transform .15s; }
+.kpi-switch.activo .kpi-switch-pista { background: var(--kpi-acento, #1b7a60); }
+.kpi-switch.activo .kpi-switch-perilla { transform: translateX(16px); }
+.kpi-switch:focus-visible .kpi-switch-pista { outline: 2px solid var(--kpi-acento, #1b7a60); outline-offset: 2px; }
+.kpi-switch-texto { font-size: 14px; font-weight: 600; color: var(--kpi-ink-suave, #334155); }
+.kpi-editor-contra { margin-top: 2px; }
+@media (prefers-reduced-motion: reduce) { .kpi-switch-pista, .kpi-switch-perilla { transition: none; } }

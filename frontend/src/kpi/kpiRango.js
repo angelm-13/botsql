@@ -154,6 +154,19 @@ export function formatoDeRango(inicio, fin, { locale = "es-MX" } = {}) {
   return `${a.dia} ${mesA} ${a.anio} – ${b.dia} ${mesB} ${b.anio}`;
 }
 
+/** Como `formatoDeRango`, pero SIN el año cuando todo el rango cae en `anioDeReferencia` ("6 sep – 5 oct"): para leyendas chicas, donde el
+ * año ya lo dice el rango principal. Si algun extremo es de otro año, lleva el año completo. Sin `anioDeReferencia` es `formatoDeRango`. */
+export function formatoDeRangoCorto(inicio, fin, { locale = "es-MX", anioDeReferencia = null } = {}) {
+  const a = partesDeFecha(inicio);
+  const b = partesDeFecha(fin);
+  if (!a || !b) return "";
+  if (!anioDeReferencia || a.anio !== anioDeReferencia || b.anio !== anioDeReferencia) return formatoDeRango(inicio, fin, { locale });
+  const mesA = nombreDeMes(a.mes, a.anio, "short", locale);
+  const mesB = nombreDeMes(b.mes, b.anio, "short", locale);
+  if (a.mes === b.mes) return a.dia === b.dia ? `${a.dia} ${mesA}` : `${a.dia} – ${b.dia} ${mesA}`;
+  return `${a.dia} ${mesA} – ${b.dia} ${mesB}`;
+}
+
 /** "1 de octubre de 2026 al 30 de octubre de 2026": para el tooltip. */
 export function formatoDeRangoLargo(inicio, fin, { locale = "es-MX", al = "al" } = {}) {
   const a = partesDeFecha(inicio);

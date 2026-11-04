@@ -46,6 +46,7 @@ import IconoDona from "../components/kpi-widgets/IconoDona.jsx";
 import { accionDeEnter, kpiAdmiteFiltros, puedeAgregar, puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import { claveDeGrupo, colorDeModulo } from "../kpi/kpiSelector.js";
 import { claveDeErrorDeKpi, vistaDelCatalogo } from "../kpi/kpiErrores.js";
+import { anioDelRangoPrincipal, etiquetaDeRangoComparado, rangoComparadoDe, textoVsRango } from "../kpi/kpiComparacion.js";
 import { detallesDePersonas, nombreDePersona } from "../kpi/kpiPersonas.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
 import { chipDeTarjeta, computedAtDeSnapshots, estadoGlobalDeDatos, ultimoCalculoEfectivo } from "../kpi/kpiFrescura.js";
@@ -58,7 +59,7 @@ import {
 } from "../kpi/kpiFechasFijas.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_DE_RANGO_EN_TARJETA, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, textoDeRango,
-  parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
+  formatoDeRango, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
 import { ofreceVerEjemplo, snapshotsDeEjemplo } from "../kpi/vistaPreviaDeEjemplo.js";
 import {
@@ -1098,6 +1099,7 @@ export default function Dashboard() {
               onChangePanelState={(patch) => updatePanelState(activeId, patch)}
               kpiCatalog={kpiCatalog}
               catalogoEstado={catalogoEstado}
+              locale={locale}
               onReintentarCatalogo={() => setCatalogoIntento((n) => n + 1)}
               users={users}
               teams={teams}
@@ -1330,7 +1332,7 @@ const SKELETON_POR_TIPO = { numero: "numero", dona: "dona", tabla: "tabla" };
 // eslint-disable-next-line react-refresh/only-export-components
 export function CuerpoDeWidget({
   widget, datos, userLabel, productLabel, formatNumber, t, tx, animar, filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
-  onCambiarPeriodo,
+  onCambiarPeriodo, locale,
 }) {
   const { snapshots, loading, error, vivoItems, vivoTotal, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, esTablaVivo } = datos;
   const ERRORES_CON_TEXTO_PROPIO = ["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"];
@@ -1368,6 +1370,7 @@ export function CuerpoDeWidget({
           filtroResponsable={filtroResponsable}
           onFiltrarResponsable={onFiltrarResponsable}
           onCambiarPeriodo={onCambiarPeriodo}
+          locale={locale}
         />
       )}
     </>
@@ -1378,7 +1381,7 @@ export function CuerpoDeWidget({
 // borrador pasa por armarParametros, igual que al guardar) y lo pinta con el
 // mismo cuerpo que la tarjeta del tablero. Skeleton mientras espera -tanto la
 // pausa de tecleo como la respuesta del servidor-.
-function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, formatNumber, t, tx, textosEjemplo }) {
+function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, formatNumber, t, tx, textosEjemplo, locale }) {
   const widgetRetrasado = useValorRetrasado(widget, 400);
   const datos = useDatosDeWidget({ widget: widgetRetrasado, kpiCatalog });
   const pendiente = JSON.stringify(widget) !== JSON.stringify(widgetRetrasado);
@@ -1405,6 +1408,7 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
       t={t}
       tx={tx}
       animar={false}
+      locale={locale}
     />
   );
   return (
@@ -1533,6 +1537,7 @@ export function KpiWidgetCard({
           onFiltrarResponsable={onFiltrarResponsable}
           onQuitarFiltroResponsable={onQuitarFiltroResponsable}
           onCambiarPeriodo={onCambiarPeriodo}
+          locale={locale}
         />
       </div>
 
@@ -1615,9 +1620,11 @@ function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, emple
 // modulo, el delta contra el periodo de comparacion y, a la derecha, la
 // mini-tendencia -- o, sin comparacion, el rango que se esta viendo (nunca se
 // deja la mitad de la tarjeta en blanco).
-function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
+function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar, locale = "es-MX" }) {
   const parametros = parametrosEfectivos(widget.parametros);
   const hayComparacion = Boolean(snapshot?.rango_b);
+  const comparacionActiva = Boolean(parametros.fecha_inicio_b && parametros.fecha_fin_b);
+  const etiquetaRangoB = etiquetaDeRangoComparado(rangoComparadoDe({ snapshot, parametros }), { locale, anioDeReferencia: anioDelRangoPrincipal({ snapshot, parametros }) });
   const tendencia = useTendenciaKpi({
     activo: hayComparacion,
     idKpiDefinition: kpiInfo?.id_kpi_definition,
@@ -1631,9 +1638,15 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
     snapshot,
     kpiInfo,
     formatNumber,
+    etiquetaRangoB,
+    comparacionActiva,
     textos: {
       vsAnterior: tx("vs_compare", "vs. periodo anterior"),
+      vsRango: (rango) => textoVsRango(tx("vs_compare_range", "vs. {rango}"), rango),
       sinComparacion: tx("no_compare_hint", "Activa \"Comparar\" para ver la variación"),
+      comparacionNoDisponible: (rango) => (rango
+        ? textoVsRango(tx("compare_unavailable_range", "Sin datos para comparar vs. {rango}"), rango)
+        : tx("compare_unavailable", "Sin datos para comparar")),
     },
   });
   const Componente = TIPO_GRAFICA_COMPONENTE.numero;
@@ -1724,7 +1737,7 @@ function KpiTablaVivo({ items, total, cargar, onListo, tx, filtroExterno, onQuit
 // El mapa `tipo_grafica -> componente` vive en
 // components/kpi-widgets/tipoGraficaComponentes.js; aqui solo se arman las
 // props de cada uno (ver kpi/kpiAdaptadores.js).
-function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx, animar, filtroResponsable, onFiltrarResponsable, onCambiarPeriodo }) {
+function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx, animar, filtroResponsable, onFiltrarResponsable, onCambiarPeriodo, locale = "es-MX" }) {
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
   const parametros = widget.parametros || {};
@@ -1791,7 +1804,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
         />
       );
     }
-    return <KpiNumero widget={widget} snapshot={snapshot} kpiInfo={kpiInfo} formatNumber={formatNumber} tx={tx} animar={animar} />;
+    return <KpiNumero widget={widget} snapshot={snapshot} kpiInfo={kpiInfo} formatNumber={formatNumber} tx={tx} animar={animar} locale={locale} />;
   }
 
   if (widget.tipo_grafica === "dona") {
@@ -1809,6 +1822,11 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     return <Componente {...props} descripcion={descripcion} animar={animar} textoRecorte={textoRecorteDona} />;
   }
 
+  // Fechas de cada serie para la leyenda (las que devolvio el servidor; si no vienen, las de los parametros).
+  const etiquetasDeSeries = {
+    a: etiquetaDeRangoComparado(snapshots[0]?.rango_a?.inicio ? { inicio: snapshots[0].rango_a.inicio, fin: snapshots[0].rango_a.fin } : (parametros.fecha_inicio && parametros.fecha_fin ? { inicio: parametros.fecha_inicio, fin: parametros.fecha_fin } : null), { locale, completa: true }),
+    b: etiquetaDeRangoComparado(rangoComparadoDe({ snapshot: snapshots[0], parametros }), { locale, completa: true }),
+  };
   const props = propsSeries({
     tipo: widget.tipo_grafica,
     snapshots,
@@ -1822,9 +1840,10 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     esBajoStock,
     formatNumber,
     textos: {
-      rangoA: tx("range_a", "Periodo A"),
-      rangoB: tx("range_b", "Periodo B"),
-      comparacionCorta: tx("vs_compare_short", "comparación"),
+      // La leyenda dice las fechas de cada serie; sin fechas conocidas cae en los nombres de siempre.
+      rangoA: etiquetasDeSeries.a || tx("range_a", "Periodo A"),
+      rangoB: etiquetasDeSeries.b || tx("range_b", "Periodo B"),
+      comparacionCorta: etiquetasDeSeries.b ? textoVsRango(tx("vs_compare_range", "vs. {rango}"), etiquetasDeSeries.b) : tx("vs_compare_short", "comparación"),
     },
   });
   if (!props.datos.length) return mensajeSinDatos;
@@ -1861,7 +1880,7 @@ function tiposDeGraficaPermitidos(kpiInfos) {
   return tiposPermitidosPorKpi(kpiInfos, CHART_TYPES.map((opt) => opt.value));
 }
 
-export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, catalogoEstado = "listo", onReintentarCatalogo, users, teams = [], userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
+export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, catalogoEstado = "listo", onReintentarCatalogo, locale, users, teams = [], userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -2205,6 +2224,11 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, cat
   const periodoBResuelto = esRelativo
     ? (desfaseComparacion ? rangoDesfasado(rangoResuelto, desfaseComparacion) : periodoAnterior(rangoResuelto))
     : null;
+  // Contra que fechas compara: las de hoy (relativo) o las dos fechas elegidas a mano (personalizado). null mientras falten.
+  const rangoBDelEditor = esRelativo
+    ? { inicio: periodoBResuelto.fecha_inicio_b, fin: periodoBResuelto.fecha_fin_b }
+    : (fechaInicioB && fechaFinB ? { inicio: fechaInicioB, fin: fechaFinB } : null);
+  const localeEditor = locale || "es-MX";
 
   // Lo que va en cada paso es lo que antes eran tres columnas lado a lado;
   // el orden y los controles son los mismos, solo que ahora se recorren con
@@ -2407,10 +2431,24 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, cat
               </div>
             )}
 
-            <label className="field checkbox-field">
-              <input type="checkbox" checked={comparar} onChange={(event) => onChangePanelState({ comparar: event.target.checked })} />
-              <span>{esRelativo ? tx("compare_relative_toggle", "Comparar") : tx("compare_toggle", "Comparar contra otro periodo")}</span>
-            </label>
+            <div className="kpi-editor-comparar">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={comparar}
+                aria-labelledby="kpi-comparar-texto"
+                className={`kpi-switch${comparar ? " activo" : ""}`}
+                onClick={() => onChangePanelState({ comparar: !comparar })}
+              >
+                <span className="kpi-switch-pista" aria-hidden="true"><span className="kpi-switch-perilla" /></span>
+              </button>
+              <span id="kpi-comparar-texto" className="kpi-switch-texto">{tx("compare_toggle", "Comparar contra otro periodo")}</span>
+            </div>
+            {comparar && rangoBDelEditor && (
+              <p className="kpi-editor-rango-resuelto kpi-editor-contra">
+                {textoVsRango(tx("vs_compare_range", "vs. {rango}"), formatoDeRango(rangoBDelEditor.inicio, rangoBDelEditor.fin, { locale: localeEditor }))}
+              </p>
+            )}
 
             {comparar && esRelativo && (
               <>
@@ -2426,7 +2464,6 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, cat
                     ))}
                   </select>
                 </label>
-                <p className="kpi-editor-rango-resuelto">{periodoBResuelto.fecha_inicio_b} → {periodoBResuelto.fecha_fin_b}</p>
               </>
             )}
 
@@ -2618,6 +2655,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, cat
                     <span className="muted">{kpisSeleccionadosInfo[0].descripcion}</span>
                   )}
                   <VistaPreviaEditor
+                    locale={locale}
                     widget={widgetDeBorrador(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado, kpiInfos: kpisSeleccionadosInfo })}
                     kpiCatalog={kpiCatalog}
                     userLabel={userLabel}

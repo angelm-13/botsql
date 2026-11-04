@@ -197,10 +197,46 @@ test("las graficas llevan una descripcion para lector de pantalla y, con relleno
 
 test("el numero muestra la unidad, la comparacion y la ayuda cuando no se compara", () => {
   const widget = widgetDe("numero", PARAMETROS["viejo, con comparacion"]);
-  const sinComparar = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: SNAPSHOT }) });
-  assert.ok(sinComparar.includes("Activa"), "invita a activar Comparar");
-  const comparado = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: SNAPSHOT_COMPARADO }) });
-  assert.ok(comparado.includes("vs. periodo anterior"));
+  // Un widget SIN comparacion sigue invitando a activarla (su resultado no cambia).
+  const sinComparacion = widgetDe("numero", PARAMETROS["viejo, fechas absolutas"]);
+  assert.ok(pintarCuerpo({ widget: sinComparacion, datos: datosDe(sinComparacion, { snapshot: SNAPSHOT }) }).includes("Activa"), "invita a activar Comparar");
+  // Uno que YA compara, con la respuesta sin periodo B, no pide "Activa Comparar": dice contra que fechas no hubo datos.
+  const sinB = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: SNAPSHOT }) });
+  assert.ok(!sinB.includes("Activa"), "ya esta activada");
+  assert.ok(sinB.includes("Sin datos para comparar vs. 1 – 31 jul"), sinB);
+});
+
+test("la leyenda del numero comparado siempre dice contra que fechas (6 casos donde antes decia solo 'vs. periodo anterior' o nada)", () => {
+  const conRangos = (b, a = { inicio: "2026-10-06", fin: "2026-11-04" }) => ({
+    rango_a: { ...SNAPSHOT_COMPARADO.rango_a, ...a },
+    rango_b: b ? { ...SNAPSHOT_COMPARADO.rango_b, ...b } : null,
+  });
+  const pinta = (parametros, snapshot) => { const w = widgetDe("numero", parametros); return pintarCuerpo({ widget: w, datos: datosDe(w, { snapshot }) }); };
+  const relativo = { rango_relativo: "30_dias", fecha_inicio: "2026-10-06", fecha_fin: "2026-11-04", comparar_anterior: true, fecha_inicio_b: "2026-09-06", fecha_fin_b: "2026-10-05" };
+  // 1. periodo anterior: las fechas salen del servidor.
+  assert.match(pinta(relativo, conRangos({ inicio: "2026-09-06", fin: "2026-10-05" })), /vs\. 6 sep – 5 oct/);
+  // 2. "hace 30 dias" (comparar_desfase_dias): el rango B NO es el periodo anterior y la leyenda ya no lo afirma.
+  const desfase = { rango_relativo: "hoy", comparar_desfase_dias: 30, fecha_inicio: "2026-11-04", fecha_fin: "2026-11-04", fecha_inicio_b: "2026-10-05", fecha_fin_b: "2026-10-05" };
+  const htmlDesfase = pinta(desfase, conRangos({ inicio: "2026-10-05", fin: "2026-10-05" }, { inicio: "2026-11-04", fin: "2026-11-04" }));
+  assert.match(htmlDesfase, /vs\. 5 oct/);
+  assert.ok(!htmlDesfase.includes("periodo anterior"));
+  // 3. fechas fijas (rango B elegido a mano, en otro año): lleva el año completo.
+  assert.match(pinta(PARAMETROS["viejo, con comparacion"], conRangos({ inicio: "2025-07-01", fin: "2025-07-31" }, { inicio: "2026-08-01", fin: "2026-08-31" })), /vs\. 1 – 31 jul 2025/);
+  // 4. el servidor no devolvio rango_b: se usa el que calcula el cliente de los parametros.
+  assert.match(pinta(relativo, conRangos(null)), /Sin datos para comparar vs\. 6 sep – 5 oct/);
+  // 5. total B en cero: la variacion sigue saliendo con sus fechas.
+  assert.match(pinta(relativo, conRangos({ inicio: "2026-09-06", fin: "2026-10-05", total: 0 })), /vs\. 6 sep – 5 oct/);
+  // 6. sin rango en la respuesta ni en los parametros, pero con comparacion: cae en el texto de siempre.
+  assert.match(pinta({ comparar_anterior: true }, { ...SNAPSHOT_COMPARADO, rango_a: { ...SNAPSHOT_COMPARADO.rango_a }, rango_b: { ...SNAPSHOT_COMPARADO.rango_b } }), /vs\. periodo anterior/);
+});
+
+test("un widget guardado con el formato viejo de comparacion se pinta igual que antes (mismos numeros y misma variacion)", () => {
+  for (const parametros of [PARAMETROS["viejo, con comparacion"], PARAMETROS["rango relativo con comparar el periodo anterior"], PARAMETROS["rango relativo \"hoy\" comparado con hace 30 dias"]]) {
+    const w = widgetDe("numero", parametros);
+    const html = pintarCuerpo({ widget: w, datos: datosDe(w, { snapshot: SNAPSHOT_COMPARADO }) });
+    assert.ok(html.includes("14"), "el valor");
+    assert.ok(html.includes("6 (-30.0%)") || html.includes("-30"), "la variacion se calcula igual");
+  }
 });
 
 test("la tabla en vivo: con filas, vacia, y una tabla sobre un KPI que no es vivo", () => {
