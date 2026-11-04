@@ -1,0 +1,110 @@
+# Escaneo de seguridad en cada pull request hacia initAlan.
+#
+# Archivo APARTE de build-images.yml a propósito: este workflow no construye ni
+# despliega nada, no usa secretos y solo pide permiso de lectura. Un fallo aquí
+# no puede tocar ningún ambiente.
+#
+# Adaptado del ci.yml de cotizador_demo (Semgrep, gitleaks, pip-audit, npm audit).
+#
+# ESTADO: informativo. Los tres jobs terminan en verde aunque haya hallazgos
+# (--exit-code 0 / `|| true`). Primero se mide la línea base (cuántos hallazgos
+# salen por herramienta); después se triá y solo entonces se vuelve bloqueante
+# para severidad alta. Ver la Fase A de la ruta de cierre de la residencia.
+#
+# Convención heredada: cada `uses:` va fijado al SHA del commit, con el tag mayor
+# y la fecha de resolución. Un tag como @v4 es MUTABLE.
+name: ci-seguridad
+
+on:
+  pull_request:
+    branches: [initAlan]
+  # Disparo manual. GitHub solo lo permite desde ramas distintas a la default
+  # cuando el archivo ya existe en ella; mientras tanto el trigger útil es el PR.
+  workflow_dispatch: {}
+
+# Un push nuevo al mismo PR cancela la corrida anterior.
+concurrency:
+  group: ci-seguridad-${{ github.ref }}
+  cancel-in-progress: true
+
+# Solo lectura. Este workflow no publica ni despliega nada.
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep (security-audit y secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, fijado 2026-08-17
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, fijado 2026-08-17
+        with:
+          python-version: '3.12'
+
+      - name: Instalar semgrep
+        run: pip install semgrep==1.173.0
+
+      # Sin --error: informativo. semgrep imprime cada hallazgo con archivo y línea.
+      # --metrics=off: no manda telemetría a terceros.
+      - name: Escanear
+        run: |
+          semgrep --metrics=off --config p/security-audit --config p/secrets \
+            --severity WARNING --severity ERROR . | tee semgrep.txt
+          echo "### Semgrep" >> "$GITHUB_STEP_SUMMARY"
+          grep -E "Code Findings|Findings:" semgrep.txt >> "$GITHUB_STEP_SUMMARY" || echo "Sin resumen de hallazgos" >> "$GITHUB_STEP_SUMMARY"
+
+  gitleaks:
+    name: gitleaks (secretos en todo el historial)
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 (historial completo): sin esto gitleaks solo vería el commit
+      # del PR y no el historial, que es donde viven las credenciales viejas.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, fijado 2026-08-17
+        with:
+          fetch-depth: 0
+
+      # Binario directo, no la gitleaks-action: esa exige licencia para cuentas de
+      # organización. --redact evita que el log del job imprima el secreto.
+      - name: Instalar gitleaks
+        run: |
+          curl -sSL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+
+      - name: Escanear historial
+        run: |
+          gitleaks detect --source . --log-opts="--all" --redact --exit-code 0 \
+            --report-format json --report-path gitleaks.json || true
+          n=$(python3 -c "import json;print(len(json.load(open('gitleaks.json'))))" 2>/dev/null || echo "?")
+          echo "### gitleaks" >> "$GITHUB_STEP_SUMMARY"
+          echo "Hallazgos en el historial: $n (los valores van redactados)" >> "$GITHUB_STEP_SUMMARY"
+
+  dependencias:
+    name: Dependencias (pip-audit y npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, fijado 2026-08-17
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, fijado 2026-08-17
+        with:
+          python-version: '3.12'
+
+      # El backend no tiene lockfile con hashes: se audita requirements.txt.
+      - name: pip-audit (backend/requirements.txt)
+        run: |
+          pip install --quiet pip-audit==2.9.0
+          pip-audit -r backend/requirements.txt --desc || true
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, fijado 2026-08-17
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm audit (frontend)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high || true
