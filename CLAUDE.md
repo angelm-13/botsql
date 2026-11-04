@@ -6,6 +6,21 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-11-04 — "Material recibido, iniciar" es del encargado de la obra
+
+Pedido de Adser (via Alan). **Sin commitear.** Compras llega hasta "Material en camino"
+(`authorized -> waiting_material`, capacidad `project_supply`, Gerente de respaldo). "Material
+recibido, iniciar" (`waiting_material -> in_progress`) lo marca el encargado de la obra:
+con maquila el Jefe de taller asignado (`id_supervisor` + `project_execution`), sin maquila el
+supervisor que la lidera (`leader`); Gerente (`project_authorization`) y admin de respaldo.
+Regla en `_encargado_de_la_obra` (`project_management_service.py`) y su espejo
+`encargadoDeLaObra` en `ProjectManagementPage.jsx`. Aviso nuevo "Material en camino" al
+encargado cuando Compras da su paso. Un proyecto con maquila sin Jefe asignado solo lo arranca
+Gerente (que debe asignarlo). Tambien aplica a la salida de una pausa a medio trabajo
+(`in_progress -> waiting_material -> in_progress`): antes solo Compras/Gerente podian
+reanudar. Verificado: 231 pruebas de proyectos/flujo de compras en verde y `vite build`; sin
+probar en navegador (probar en sistema-test con Compras, un Jefe de taller y un supervisor).
+
 ## Bitacora 2026-10-27 — bloque de vales e inventario de initAngm (rama `traer/initangm-bloque-vales`)
 
 Local, **sin pushear ni promover**. Cherry-pick de `6f4b523`, `85d234cb`, `8711b1e5`, `d4ab2546` y
