@@ -148,7 +148,8 @@ export default function HorasExtra({ t, describirError, empleados }) {
                 <option value="compensate">{t("overtime.settlement_compensate")}</option>
               </select>
             </label>
-            <label className="field">{t("overtime.notes")}{(form.origin === "manual" || form.settlement === "compensate") && " *"}
+            {/* El * lo pone el estilo de los campos obligatorios (app.css) cuando el comentario es required. */}
+            <label className="field">{t("overtime.notes")}
               <input maxLength={300} required={form.origin === "manual" || form.settlement === "compensate"} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
             </label>
           </div>

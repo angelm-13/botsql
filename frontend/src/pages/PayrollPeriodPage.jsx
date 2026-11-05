@@ -552,15 +552,15 @@ export default function PayrollPeriodPage() {
           )}
           {canSeeField("period_start") && (
           <label className="field">
-            <span>{t("fields.payroll_period.period_start")} *</span>
-            <input name="period_start" type="date" value={formData.period_start ?? ""} onChange={handleChange} placeholder={t("fields.payroll_period.period_start")} aria-invalid={Boolean(fieldErrors["period_start"])} {...inputPropsForField("period_start", validationRules["period_start"], "date")} />
+            <span>{t("fields.payroll_period.period_start")}</span>
+            <input name="period_start" type="date" required value={formData.period_start ?? ""} onChange={handleChange} placeholder={t("fields.payroll_period.period_start")} aria-invalid={Boolean(fieldErrors["period_start"])} {...inputPropsForField("period_start", validationRules["period_start"], "date")} />
             {fieldErrors["period_start"] && <span className="field-error">{formatFieldError("period_start")}</span>}
           </label>
           )}
           {canSeeField("period_end") && (
           <label className="field">
-            <span>{t("fields.payroll_period.period_end")} *</span>
-            <input name="period_end" type="date" value={formData.period_end ?? ""} onChange={handleChange} placeholder={t("fields.payroll_period.period_end")} aria-invalid={Boolean(fieldErrors["period_end"])} {...inputPropsForField("period_end", validationRules["period_end"], "date")} />
+            <span>{t("fields.payroll_period.period_end")}</span>
+            <input name="period_end" type="date" required value={formData.period_end ?? ""} onChange={handleChange} placeholder={t("fields.payroll_period.period_end")} aria-invalid={Boolean(fieldErrors["period_end"])} {...inputPropsForField("period_end", validationRules["period_end"], "date")} />
             {fieldErrors["period_end"] && <span className="field-error">{formatFieldError("period_end")}</span>}
           </label>
           )}
