@@ -23,6 +23,8 @@
 # Archivo de namespaces permitidos (uno por linea, lo mantiene quien administra el servidor):
 #   /home/alanp/promover.permitidos
 set -euo pipefail
+# Respaldos, copias previas y bitacora quedan solo para este usuario.
+umask 077
 
 K8S=/home/alanp/tyakxa_tny/k8s
 PERMITIDOS=/home/alanp/promover.permitidos
@@ -160,6 +162,11 @@ $solo"
     fi
     mkdir -p "$(dirname "$actual")"
     cp -a "$nuevo" "$actual"
+    # La copia del servidor trae carpetas de solo lectura (dr-x------): sin permiso de
+    # escritura no se pueden borrar sus archivos y `rm -rf` falla, y con `set -e` el script
+    # se cortaria a mitad de la sincronizacion. Se les da escritura antes de borrar.
+    if [ -d "$actual.viejo" ]; then chmod -R u+w "$actual.viejo"; fi
+    chmod -R u+w "$dest" 2>/dev/null || true
     rm -rf "$actual.viejo"
   done
   echo "sincronizado. copia previa en $dest"
