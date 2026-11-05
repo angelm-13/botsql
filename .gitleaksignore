@@ -1,0 +1,9 @@
+# Falsos positivos revisados a mano (2026-11-04). Una linea por huella; el
+# motivo va arriba de cada una. Para agregar otra, justificala aqui: un escaneo
+# que se ignora sin motivo deja de servir.
+
+# Constante SECRETO de una prueba de seguridad, no una credencial real.
+2ec767b694f1e7d72c5eb5c021dc7c623da609eb:backend/tests/test_security/test_bootstrap_admin_password.py:generic-api-key:19
+
+# Atributo Certificado (certificado PUBLICO) de un CFDI generado; no es un token.
+86f25e4bb7d3f6b7b84321376dea71ea982ce050:uploads/cfdi_xml/invoice_19.xml:square-access-token:1

@@ -53,6 +53,11 @@ ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
         'purchase_order_purchased',
         'purchase_order_received',
         'purchase_order_partially_received',
+        -- Renta de maquinaria (2026-11-04): vence pronto, vencida, prorroga pedida y decidida.
+        'purchase_rental_due',
+        'purchase_rental_overdue',
+        'purchase_rental_extension_requested',
+        'purchase_rental_extension_decided',
         -- Solicitudes de vacaciones y permisos (RH, 2026-10-22): por autorizar y ya revisada.
         'leave_requested',
         'leave_reviewed',

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import os
-import xml.etree.ElementTree as ET
+# defusedxml: este modulo LEE XML ajeno (CFDI subido o devuelto por el PAC); el parser
+# estandar es vulnerable a entidades y DTD maliciosos. La guarda tiene_dtd() sigue
+# como primera barrera.
+from defusedxml import DefusedXmlException
+from defusedxml import ElementTree as ET
 from decimal import Decimal, InvalidOperation
 
 
@@ -127,7 +131,7 @@ def parse_cfdi(xml_bytes, max_bytes=None):
 
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError as exc:
+    except (ET.ParseError, DefusedXmlException) as exc:
         raise ValueError("El archivo no contiene XML valido") from exc
 
     if _local_name(root.tag) != "Comprobante":

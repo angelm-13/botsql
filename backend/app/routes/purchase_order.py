@@ -16,10 +16,11 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from app.services import purchase_budget_service as presupuestos
 from app.services.document_service import SecureDocumentStorage
 from app.services.purchase_order_service import (
-    add_voucher, authorize_order, cancel_order, create_order, get_order, get_policy,
-    list_orders, notificar_orden, purchase_order, receive_order, reject_order,
-    remove_voucher, submit_order, supplier_options, update_order, update_policy,
-    voucher_content,
+    add_voucher, authorize_order, cancel_order, create_order, decide_rental_extension,
+    get_order, get_policy, list_orders, list_rentals, notificar_orden, notificar_renta,
+    purchase_order, receive_order, reject_order, remove_voucher, rental_arrived,
+    rental_returned, request_rental_extension, submit_order, supplier_options,
+    update_order, update_policy, voucher_content,
 )
 from app.utils.auth import require_entity_permission, token_required
 
@@ -128,9 +129,55 @@ def recibir(user_data, id_order):
     cuerpo.setdefault("idempotency_key", request.headers.get("Idempotency-Key"))
     ficha = receive_order(id_order, cuerpo, user_data)
     if not ficha.get("replayed"):
-        notificar_orden("recibida" if ficha.get("order_status") == "received"
+        notificar_orden("recibida" if ficha.get("order_status") in ("received", "closed")
                         else "recibida_en_parte", ficha, user_data["id_user"])
     return jsonify(ficha)
+
+
+# --- renta de maquinaria -------------------------------------------------------------
+# Llegada y devolucion las marca quien lleva la obra (lider o Jefe de taller asignado),
+# que casi nunca ve las ordenes de compra: por eso solo piden sesion y el servicio
+# decide (encargado de la obra o capacidad `purchase_receive`).
+
+@bp_purchase_order.route("/purchase-order-lines/<id_line>/rental/arrive", methods=["POST"])
+@token_required
+def renta_llego(user_data, id_line):
+    ficha = rental_arrived(id_line, _cuerpo(), user_data)
+    # Llego algo de la orden: el mismo aviso que una recepcion (y "material completo").
+    notificar_orden("recibida" if ficha.get("order_status") in ("received", "closed")
+                    else "recibida_en_parte", ficha, user_data["id_user"])
+    return jsonify(ficha)
+
+
+@bp_purchase_order.route("/purchase-order-lines/<id_line>/rental/return", methods=["POST"])
+@token_required
+def renta_devuelta(user_data, id_line):
+    return jsonify(rental_returned(id_line, _cuerpo(), user_data))
+
+
+@bp_purchase_order.route("/purchase-order-lines/<id_line>/rental/extend", methods=["POST"])
+@token_required
+def renta_prorroga(user_data, id_line):
+    ficha = request_rental_extension(id_line, _cuerpo(), user_data)
+    notificar_renta("prorroga_pedida", ficha, user_data["id_user"])
+    return jsonify(ficha)
+
+
+@bp_purchase_order.route("/purchase-order-lines/<id_line>/rental/extension", methods=["POST"])
+@token_required
+@require_entity_permission(ENTITY, "update")
+def renta_decidir_prorroga(user_data, id_line):
+    """Pide ademas `purchase_authorize`: la comprueba el servicio."""
+    ficha = decide_rental_extension(id_line, _cuerpo(), user_data)
+    notificar_renta("prorroga_decidida", ficha, user_data["id_user"])
+    return jsonify(ficha)
+
+
+@bp_purchase_order.route("/purchase-rentals", methods=["GET"])
+@token_required
+@require_entity_permission(ENTITY, "read")
+def rentas(user_data):
+    return jsonify(list_rentals(user_data, estado=request.args.get("status", "active")))
 
 
 @bp_purchase_order.route("/purchase-orders/<id_order>/cancel", methods=["POST"])

@@ -48,7 +48,7 @@ from app.models import (
     PurchaseEvent, PurchaseOrder, PurchaseOrderLine, PurchasePolicy,
     PurchaseVoucher, User,
 )
-from app.models.purchase_order import PAYMENT_METHODS, VOUCHER_KINDS
+from app.models.purchase_order import PAYMENT_METHODS, RENTAL_RATE_UNITS, VOUCHER_KINDS
 from app.models.session import transaction_context
 from app.services.cfdi_xml import parse_cfdi
 from app.services.document_service import SecureDocumentStorage
@@ -56,11 +56,11 @@ from app.services import purchase_budget_service as presupuesto_de_compras
 from app.services.proyect_material_need_service import (
     PROYECTOS_QUE_YA_NO_COMPRAN, _actor, _cantidad, _datos_de_materiales,
     _descripcion_valida, _entero_positivo, _fecha_o_nada, _texto, _unidad,
-    needs_on_orders,
+    needs_on_orders, periodo_de_renta,
 )
 from app.utils.errors import AppError
 from app.utils.item_class import normalize_item_class
-from app.utils.tiempo import a_iso_utc
+from app.utils.tiempo import a_iso_utc, hoy_negocio
 
 AUTHORIZE_CAPABILITY = "purchase_authorize"
 RECEIVE_CAPABILITY = "purchase_receive"
@@ -334,8 +334,42 @@ def _total_de_renglones(renglones) -> Decimal | None:
     return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+SUPPLIER_NAME_MAX = 200
+
+
+def _proveedor_de_la_orden(db, payload: dict) -> tuple[int | None, str]:
+    """El proveedor que trae la orden: `(id_customer_supplier o None, nombre)`.
+
+    Se escribe a mano (`supplier_name`): dar de alta a cada proveedor antes de comprar
+    le resultaba engorroso a Compras. Si el nombre coincide (sin importar mayusculas
+    ni espacios) con un proveedor dado de alta, la orden queda ligada a el y se sigue
+    comparando el RFC de su factura. Un `id_customer_supplier` explicito tambien se
+    acepta, y entonces debe ser un proveedor dado de alta."""
+    if str(payload.get("id_customer_supplier") or "").strip() != "":
+        proveedor = _proveedor(db, payload.get("id_customer_supplier"))
+        return proveedor.id_customer_supplier, proveedor.name
+    nombre = " ".join(str(_texto(payload.get("supplier_name"), "supplier_name",
+                                 SUPPLIER_NAME_MAX, obligatorio=True)).split())
+    if len(nombre) < 2:
+        raise AppError("errors.invalid_field", 400, {"field": "supplier_name"})
+    ligado = db.execute(
+        select(CustomerSupplier.id_customer_supplier, CustomerSupplier.name).where(
+            CustomerSupplier.deletion_date.is_(None),
+            CustomerSupplier.type == "supplier",
+            func.lower(func.trim(CustomerSupplier.name)) == nombre.lower(),
+        ).order_by(CustomerSupplier.id_customer_supplier).limit(1)
+    ).first()
+    if ligado is not None:
+        return int(ligado[0]), ligado[1]
+    return None, nombre
+
+
+def _nombre_del_proveedor(orden: PurchaseOrder, proveedor) -> str | None:
+    return orden.supplier_name or (proveedor.name if proveedor else None)
+
+
 def _proveedor(db, id_proveedor) -> CustomerSupplier:
-    """Un proveedor DADO DE ALTA. Compras no puede pagarle a quien nadie registro."""
+    """Un proveedor DADO DE ALTA (cuando la orden se liga a uno por su id)."""
     proveedor = db.scalars(
         select(CustomerSupplier).where(
             CustomerSupplier.id_customer_supplier == _entero_positivo(
@@ -392,6 +426,19 @@ def _renglon_de_necesidad(db, dato: dict, tomadas: dict, excepto_orden) -> dict:
             "id_proyect_material_need": id_necesidad,
             "id_purchase_order": en_orden[0], "order_folio": en_orden[1]})
 
+    if necesidad.need_kind == "rental":
+        return {
+            "id_proyect_material_need": id_necesidad,
+            "id_proyect": necesidad.id_proyect,
+            "id_material": None,
+            "item_class": None,
+            "description": necesidad.description,
+            "unit": necesidad.unit,
+            "quantity": (_cantidad(dato.get("quantity")) if str(dato.get("quantity") or "").strip()
+                         else int(necesidad.quantity)),
+            **_datos_de_renta(dato, (necesidad.rental_start, necesidad.rental_end)),
+        }
+
     cantidad = (_cantidad(dato.get("quantity")) if str(dato.get("quantity") or "").strip()
                 else int(necesidad.quantity))
     # No se compra mas de lo que el proyecto pidio: lo de mas es un renglon aparte,
@@ -427,8 +474,58 @@ def _clase_del_renglon(db, dato: dict, id_material) -> str | None:
     return clase
 
 
+def periodos_de_renta(inicio: date, fin: date, unidad: str) -> int:
+    """Cuantos dias, semanas o meses cobra el proveedor por ese periodo.
+
+    Se cuenta el dia de inicio y el de fin (del 1 al 3 son 3 dias). Semana y mes se
+    redondean hacia arriba: 9 dias son 2 semanas. El mes es de 30 dias.
+    """
+    dias = (fin - inicio).days + 1
+    largo = {"day": 1, "week": 7, "month": 30}[unidad]
+    return max(1, -(-dias // largo))
+
+
+def _datos_de_renta(dato: dict, por_omision=(None, None)) -> dict:
+    """Los campos de un renglon de renta.
+
+    `unit_cost` queda como el costo de UNA unidad por todo el periodo (tarifa x
+    periodos), para que el total de la orden, el presupuesto y la autorizacion sigan
+    la misma regla que una compra. Sin tarifa, el costo queda vacio y la orden no se
+    puede enviar (igual que un renglon sin costo).
+    """
+    inicio, fin = periodo_de_renta(dato.get("rental_start") or por_omision[0],
+                                   dato.get("rental_end") or por_omision[1])
+    unidad = str(dato.get("rental_rate_unit") or "day").strip().lower()
+    if unidad not in RENTAL_RATE_UNITS:
+        raise AppError("errors.invalid_field", 400, {
+            "field": "rental_rate_unit", "allowed": list(RENTAL_RATE_UNITS)})
+    tarifa = _decimal(dato.get("rental_rate"), "rental_rate", maximo=MAX_UNIT_COST,
+                      cuantos="0.0001", obligatorio=False)
+    costo = None
+    if tarifa is not None:
+        costo = (tarifa * periodos_de_renta(inicio, fin, unidad)).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    return {"line_kind": "rental", "rental_start": inicio, "rental_end": fin,
+            "rental_rate": tarifa, "rental_rate_unit": unidad, "unit_cost": costo}
+
+
 def _renglon_libre(db, dato: dict) -> dict:
     """Algo que Compras agrega por su cuenta, sin que lo pida un proyecto."""
+    if str(dato.get("line_kind") or "purchase").strip().lower() == "rental":
+        id_proyecto = None
+        if str(dato.get("id_proyect") or "").strip() != "":
+            id_proyecto = _entero_positivo(dato.get("id_proyect"), "id_proyect")
+            if db.get(Proyect, id_proyecto) is None:
+                raise AppError("errors.resource_not_found", 404)
+        return {
+            "id_proyect_material_need": None, "id_proyect": id_proyecto,
+            "id_material": None, "item_class": None,
+            "description": _descripcion_valida(_texto(
+                dato.get("description"), "description", 200, obligatorio=True)),
+            "unit": _unidad(dato.get("unit"), renta=True),
+            "quantity": _cantidad(dato.get("quantity")),
+            **_datos_de_renta(dato),
+        }
     hay_material = str(dato.get("id_material") or "").strip() != ""
     id_material = _entero_positivo(dato.get("id_material"), "id_material") if hay_material else None
     unidad = None
@@ -561,7 +658,11 @@ def _acciones(db, orden: PurchaseOrder, renglones, comprobantes, user_data: dict
         # Recibir lo comprado es del almacen, que solo consulta las ordenes: lo
         # decide la capacidad `purchase_receive`, no el permiso de escribir. Quien
         # puede recibir lo manda el Gestor: no hay regla por persona.
-        "receive": estado in RECEIVABLE_STATES and _puede_recibir(db, user_data),
+        # Las rentas no se reciben aqui (llegan a la obra): sin compras pendientes no
+        # hay nada que recibir.
+        "receive": estado in RECEIVABLE_STATES and _puede_recibir(db, user_data)
+        and any(r.line_kind != "rental" and int(r.quantity_received) < int(r.quantity)
+                for r in renglones),
         # Cuales comprobantes se pueden quitar ahora (y solo antes de comprar).
         "removable_vouchers": [
             v.id_purchase_voucher for v in comprobantes
@@ -573,7 +674,8 @@ def _ficha(db, orden: PurchaseOrder, user_data: dict, *, detalle: bool = True) -
     actor = _actor(user_data)
     renglones = _renglones(db, orden.id_purchase_order)
     comprobantes = _comprobantes(db, orden.id_purchase_order)
-    proveedor = db.get(CustomerSupplier, orden.id_customer_supplier)
+    proveedor = (db.get(CustomerSupplier, orden.id_customer_supplier)
+                 if orden.id_customer_supplier else None)
     ficha = orden.serialize()
 
     ids_proyecto = {int(r.id_proyect) for r in renglones if r.id_proyect}
@@ -593,12 +695,15 @@ def _ficha(db, orden: PurchaseOrder, user_data: dict, *, detalle: bool = True) -
         fila["line_total"] = (float((Decimal(r.quantity) * Decimal(r.unit_cost))
                                     .quantize(Decimal("0.01")))
                               if r.unit_cost is not None else None)
+        fila["rental"] = (_ficha_de_renta(db, r, orden, user_data, actor)
+                          if r.line_kind == "rental" else None)
         lineas.append(fila)
     ficha.update({
         "supplier": {
             "id_customer_supplier": orden.id_customer_supplier,
-            "name": proveedor.name if proveedor else None,
+            "name": _nombre_del_proveedor(orden, proveedor),
             "tax_id": proveedor.tax_id if proveedor else None,
+            "registered": proveedor is not None,
         },
         "lines": lineas,
         "lines_total": (float(_total_de_renglones(renglones))
@@ -635,10 +740,11 @@ def list_orders(user_data: dict, *, status=None, id_supplier=None, q=None,
     limite = max(1, min(int(limit or 100), 200))
     desde = max(0, int(offset or 0))
     with transaction_context() as db:
+        nombre_proveedor = func.coalesce(PurchaseOrder.supplier_name, CustomerSupplier.name)
         consulta = (
-            select(PurchaseOrder, CustomerSupplier.name)
-            .join(CustomerSupplier,
-                  CustomerSupplier.id_customer_supplier == PurchaseOrder.id_customer_supplier)
+            select(PurchaseOrder, nombre_proveedor)
+            .outerjoin(CustomerSupplier,
+                       CustomerSupplier.id_customer_supplier == PurchaseOrder.id_customer_supplier)
             .where(PurchaseOrder.deletion_date.is_(None))
         )
         if status:
@@ -655,7 +761,7 @@ def list_orders(user_data: dict, *, status=None, id_supplier=None, q=None,
             patron = "%" + texto.lower() + "%"
             consulta = consulta.where(or_(
                 func.lower(PurchaseOrder.folio).like(patron),
-                func.lower(CustomerSupplier.name).like(patron),
+                func.lower(func.coalesce(nombre_proveedor, "")).like(patron),
                 func.lower(func.coalesce(PurchaseOrder.description, "")).like(patron),
                 func.lower(func.coalesce(PurchaseOrder.purchase_folio, "")).like(patron),
             ))
@@ -738,13 +844,13 @@ def create_order(payload: dict, user_data: dict) -> dict:
     esperada = _fecha_o_nada(payload.get("expected_date"), "expected_date")
     moneda = _moneda(payload.get("currency"))
     with transaction_context() as db:
-        proveedor = _proveedor(db, payload.get("id_customer_supplier"))
+        id_proveedor, nombre_proveedor = _proveedor_de_la_orden(db, payload)
         renglones = _preparar_renglones(db, payload.get("lines") or [])
         # El folio se conoce hasta tener id: se asigna tras el primer flush, con un
         # marcador unico mientras tanto.
         orden = PurchaseOrder(
             folio="OC-NUEVA-" + uuid.uuid4().hex[:12],
-            id_customer_supplier=proveedor.id_customer_supplier,
+            id_customer_supplier=id_proveedor, supplier_name=nombre_proveedor,
             order_status="draft", description=descripcion, expected_date=esperada,
             currency=moneda, created_by=actor)
         db.add(orden)
@@ -753,7 +859,7 @@ def create_order(payload: dict, user_data: dict) -> dict:
         _guardar_renglones(db, orden, renglones, actor)
         orden.quoted_total = _total_de_renglones(renglones) if renglones else None
         _evento(db, orden, "created", actor, a="draft", detalle={
-            "supplier": proveedor.name, "lines": len(renglones)})
+            "supplier": nombre_proveedor, "lines": len(renglones)})
         db.flush()
         return _ficha(db, orden, user_data)
 
@@ -782,11 +888,12 @@ def update_order(id_order, payload: dict, user_data: dict) -> dict:
             if nueva != orden.currency:
                 cambios["currency"] = [orden.currency, nueva]
                 orden.currency = nueva
-        if "id_customer_supplier" in payload:
-            proveedor = _proveedor(db, payload.get("id_customer_supplier"))
-            if proveedor.id_customer_supplier != orden.id_customer_supplier:
-                cambios["supplier"] = [orden.id_customer_supplier, proveedor.id_customer_supplier]
-                orden.id_customer_supplier = proveedor.id_customer_supplier
+        if "supplier_name" in payload or "id_customer_supplier" in payload:
+            id_proveedor, nombre = _proveedor_de_la_orden(db, payload)
+            if (id_proveedor, nombre) != (orden.id_customer_supplier, orden.supplier_name):
+                cambios["supplier"] = [orden.supplier_name, nombre]
+                orden.id_customer_supplier = id_proveedor
+                orden.supplier_name = nombre
         if "lines" in payload:
             antes = _total_de_renglones(_renglones(db, orden.id_purchase_order))
             renglones = _preparar_renglones(
@@ -818,7 +925,10 @@ def submit_order(id_order, user_data: dict) -> dict:
         if total is None or total <= 0:
             # Autorizar sin saber cuanto cuesta es firmar en blanco.
             raise AppError("errors.order_without_costs", 409)
-        _proveedor(db, orden.id_customer_supplier)
+        if orden.id_customer_supplier:
+            _proveedor(db, orden.id_customer_supplier)
+        elif not (orden.supplier_name or "").strip():
+            raise AppError("errors.invalid_field", 400, {"field": "supplier_name"})
 
         politica = _politica(db)
         requiere = total > politica.authorize_above
@@ -936,14 +1046,20 @@ def _inspeccionar_archivo(storage: SecureDocumentStorage, raw: bytes, nombre: st
     return extension, mime, None
 
 
-def _duplicado(db, *, sha256: str, id_proveedor: int, folio: str | None,
-               uuid_cfdi: str | None, tipo: str):
-    """Otro comprobante vivo que ya justifica una compra con ese mismo papel, o None."""
+def _duplicado(db, *, sha256: str, id_proveedor: int | None, nombre_proveedor: str | None,
+               folio: str | None, uuid_cfdi: str | None, tipo: str):
+    """Otro comprobante vivo que ya justifica una compra con ese mismo papel, o None.
+    El folio se repite entre proveedores: se compara dentro del mismo proveedor (por
+    su alta, o por el nombre escrito si la orden no esta ligada a uno)."""
     llaves = [("file", PurchaseVoucher.sha256 == sha256)]
     if uuid_cfdi:
         llaves.append(("cfdi", PurchaseVoucher.cfdi_uuid == uuid_cfdi))
-    if folio and tipo in EVIDENCE_KINDS:
-        llaves.append(("folio", (PurchaseVoucher.id_customer_supplier == id_proveedor)
+    if folio and tipo in EVIDENCE_KINDS and (id_proveedor or nombre_proveedor):
+        mismo_proveedor = (
+            PurchaseVoucher.id_customer_supplier == id_proveedor if id_proveedor
+            else (PurchaseVoucher.id_customer_supplier.is_(None)
+                  & (func.lower(PurchaseOrder.supplier_name) == nombre_proveedor.lower())))
+        llaves.append(("folio", mismo_proveedor
                        & (func.upper(PurchaseVoucher.folio) == folio.upper())
                        & PurchaseVoucher.kind.in_(EVIDENCE_KINDS)))
     for clave, condicion in llaves:
@@ -986,7 +1102,9 @@ def add_voucher(id_order, campos: dict, raw: bytes, nombre: str, user_data: dict
             # Un comprobante por orden: la compra tiene UNA factura o UN ticket. Si el
             # que se subio esta mal, se quita (queda en la bitacora) y se sube el bueno.
             raise AppError("errors.voucher_one_per_order", 409)
-        proveedor = db.get(CustomerSupplier, orden.id_customer_supplier)
+        # Sin proveedor dado de alta no hay RFC contra el cual comparar la factura.
+        proveedor = (db.get(CustomerSupplier, orden.id_customer_supplier)
+                     if orden.id_customer_supplier else None)
 
         folio = _texto(campos.get("folio"), "folio", FOLIO_MAX)
         monto = _decimal(campos.get("amount"), "amount", obligatorio=False)
@@ -1029,7 +1147,7 @@ def add_voucher(id_order, campos: dict, raw: bytes, nombre: str, user_data: dict
                 raise AppError("errors.invalid_field", 400, {"field": "issue_date"})
 
         previo = _duplicado(db, sha256=huella, id_proveedor=orden.id_customer_supplier,
-                            folio=folio, uuid_cfdi=uuid_cfdi, tipo=tipo)
+                            nombre_proveedor=orden.supplier_name, folio=folio, uuid_cfdi=uuid_cfdi, tipo=tipo)
         if previo is not None:
             clave, folio_orden, id_orden_previa = previo
             raise AppError("errors.voucher_duplicate", 409, {
@@ -1235,7 +1353,7 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
         orden = _orden(db, id_order, for_update=True)
         if llave and db.scalar(select(PurchaseEvent.id_purchase_event).where(
                 PurchaseEvent.id_purchase_order == orden.id_purchase_order,
-                PurchaseEvent.event_type.in_(("received", "partially_received")),
+                PurchaseEvent.event_type.in_(("received", "partially_received", "closed")),
                 PurchaseEvent.detail.like('%"key": "' + llave + '"%')).limit(1)):
             ficha = _ficha(db, orden, user_data)
             ficha["replayed"] = True
@@ -1259,6 +1377,11 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
             renglon = renglones.get(id_renglon)
             if renglon is None:
                 raise AppError("errors.resource_not_found", 404)
+            if renglon.line_kind == "rental":
+                # La maquinaria rentada no llega al almacen: llega a la obra, y eso lo
+                # marca quien la lleva ("Llego a obra").
+                raise AppError("errors.order_line_is_rental", 409,
+                               {"id_purchase_order_line": id_renglon})
             cantidad = _cantidad(dato.get("quantity"))
             if int(renglon.quantity_received) + cantidad > int(renglon.quantity):
                 # Recibir de mas es una discrepancia con la factura, no una recepcion:
@@ -1273,9 +1396,8 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
             renglon.quantity_received = int(renglon.quantity_received) + cantidad
             _clasificar_material_al_recibir(db, renglon)
 
-        completa = all(int(r.quantity_received) >= int(r.quantity) for r in renglones.values())
-        nuevo = "received" if completa else "partially_received"
-        _cambiar_estado(db, orden, nuevo, "received" if completa else "partially_received",
+        nuevo = _estado_por_lo_recibido(renglones.values())
+        _cambiar_estado(db, orden, nuevo, nuevo,
                         actor, nota=nota, detalle={"key": llave or None, "lines": [
                             {"id_purchase_order_line": r.id_purchase_order_line,
                              "description": r.description, "received_now": c,
@@ -1283,6 +1405,358 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
                              "ordered": int(r.quantity)} for r, c in llegado]})
         db.flush()
         return _ficha(db, orden, user_data)
+
+
+def _estado_por_lo_recibido(renglones) -> str:
+    """`received` si todo llego (compra al almacen, renta a la obra); si no, en parte.
+
+    `closed` si ademas hay rentas y todas ya se devolvieron: no queda nada abierto.
+    """
+    renglones = list(renglones)
+    if not all(int(r.quantity_received) >= int(r.quantity) for r in renglones):
+        return "partially_received"
+    rentas = [r for r in renglones if r.line_kind == "rental"]
+    if rentas and all(r.rental_returned_date is not None for r in rentas):
+        return "closed"
+    return "received"
+
+
+# --- renta de maquinaria ----------------------------------------------------------
+#
+# El renglon de renta se compra como cualquier otro (cotizacion, autorizacion,
+# comprobante). Despues, en vez de entrar al almacen:
+#
+#     comprada -> llego a obra -> (prorroga pedida -> aprobada/rechazada) -> devuelta
+#
+# * "Llego a obra" y "Devuelta" los marca quien lleva la obra (lider o Jefe de taller
+#   asignado del proyecto del renglon) o quien puede recibir compras
+#   (`purchase_receive`, del Gestor). La maquinaria llega a la obra, no al almacen.
+# * La prorroga la pide quien la marca o quien arma ordenes; la decide quien autoriza
+#   compras (`purchase_authorize`), y no la suya. El costo extra va en la factura final.
+# * Cuando todo lo de la orden llego y todas sus rentas se devolvieron, la orden se
+#   cierra (`closed`). Un proyecto no se completa con maquinaria sin devolver.
+
+RENTAL_RECEIVABLE_STATES = RECEIVABLE_STATES + ("received",)
+# Con cuantos dias de anticipacion se avisa que una renta vence.
+RENTAL_DUE_SOON_DAYS = 2
+
+
+def _lleva_la_obra(db, id_proyect, actor: int) -> bool:
+    """Si el actor es el lider o el Jefe de taller asignado del proyecto."""
+    if not id_proyect:
+        return False
+    fila = db.execute(select(Proyect.leader, Proyect.id_supervisor)
+                      .where(Proyect.id_proyect == int(id_proyect))).first()
+    return bool(fila) and actor in {int(u) for u in fila if u}
+
+
+def _puede_marcar_renta(db, renglon, user_data: dict, actor: int) -> bool:
+    return _lleva_la_obra(db, renglon.id_proyect, actor) or _puede_recibir(db, user_data)
+
+
+def _dias_restantes(renglon) -> int | None:
+    if renglon.rental_end is None or renglon.rental_returned_date is not None:
+        return None
+    return (renglon.rental_end - hoy_negocio()).days
+
+
+def _ficha_de_renta(db, renglon, orden, user_data: dict, actor: int) -> dict:
+    """Como va la renta y que puede hacer ESTE actor con ella (ayuda para la pantalla)."""
+    estado = orden.order_status
+    llego = renglon.rental_arrived_date is not None
+    devuelta = renglon.rental_returned_date is not None
+    marca = _puede_marcar_renta(db, renglon, user_data, actor)
+    dias = _dias_restantes(renglon) if llego else None
+    if devuelta:
+        etapa = "returned"
+    elif llego:
+        etapa = "overdue" if dias is not None and dias < 0 else "on_site"
+    elif estado in RECEIVABLE_STATES:
+        etapa = "waiting_arrival"
+    elif estado == "cancelled":
+        etapa = "cancelled"
+    else:
+        etapa = "ordering"
+    return {
+        "stage": etapa,
+        "rental_start": renglon.rental_start.isoformat() if renglon.rental_start else None,
+        "rental_end": renglon.rental_end.isoformat() if renglon.rental_end else None,
+        "rate": float(renglon.rental_rate) if renglon.rental_rate is not None else None,
+        "rate_unit": renglon.rental_rate_unit,
+        "periods": (periodos_de_renta(renglon.rental_start, renglon.rental_end,
+                                      renglon.rental_rate_unit or "day")
+                    if renglon.rental_start and renglon.rental_end else None),
+        "arrived_date": renglon.rental_arrived_date.isoformat() if llego else None,
+        "returned_date": renglon.rental_returned_date.isoformat() if devuelta else None,
+        "return_note": renglon.rental_return_note,
+        "days_left": dias,
+        "extension": ({
+            "requested_end": renglon.rental_extension_end.isoformat(),
+            "note": renglon.rental_extension_note,
+            "requested_by": renglon.rental_extension_by,
+        } if renglon.rental_extension_end else None),
+        "id_purchase_order_line": renglon.id_purchase_order_line,
+        "id_purchase_order": orden.id_purchase_order,
+        "order_folio": orden.folio,
+        "order_status": estado,
+        "actions": {
+            "arrive": marca and not llego and estado in RECEIVABLE_STATES,
+            "return": marca and llego and not devuelta,
+            "extend": (llego and not devuelta and renglon.rental_extension_end is None
+                       and (marca or _puede_escribir_ordenes(db, user_data))),
+            "decide_extension": (renglon.rental_extension_end is not None and not devuelta
+                                 and _puede_autorizar(db, user_data)
+                                 and renglon.rental_extension_by != actor),
+        },
+    }
+
+
+def _renglon_de_renta(db, id_line):
+    """(renglon de renta, su orden), bloqueados. 404 si no existe; 409 si no es renta."""
+    renglon = db.scalars(
+        select(PurchaseOrderLine).where(
+            PurchaseOrderLine.id_purchase_order_line == _entero_positivo(id_line, "id"),
+            PurchaseOrderLine.deletion_date.is_(None),
+        ).with_for_update()
+    ).first()
+    if renglon is None:
+        raise AppError("errors.resource_not_found", 404)
+    if renglon.line_kind != "rental":
+        raise AppError("errors.order_line_not_rental", 409,
+                       {"id_purchase_order_line": renglon.id_purchase_order_line})
+    return renglon, _orden(db, renglon.id_purchase_order, for_update=True)
+
+
+def _exigir_marcar_renta(db, renglon, user_data: dict, actor: int) -> None:
+    if not _puede_marcar_renta(db, renglon, user_data, actor):
+        raise AppError("errors.permission_denied", 403, {
+            "capability": RECEIVE_CAPABILITY, "rule": "project_in_charge"})
+
+
+def _fecha_de_marca(valor, campo: str, *, no_antes_de: date) -> date:
+    """La fecha de llegada o de devolucion: hoy por omision, nunca futura ni previa."""
+    fecha = _fecha_o_nada(valor, campo) or hoy_negocio()
+    if fecha > hoy_negocio() + DATE_TOLERANCE or fecha < no_antes_de:
+        raise AppError("errors.invalid_field", 400, {
+            "field": campo, "min": no_antes_de.isoformat()})
+    return fecha
+
+
+def _ficha_tras_renta(db, orden, renglon, user_data: dict) -> dict:
+    ficha = _ficha(db, orden, user_data)
+    ficha["id_purchase_order_line"] = renglon.id_purchase_order_line
+    return ficha
+
+
+def rental_arrived(id_line, payload: dict, user_data: dict) -> dict:
+    """"Llego a obra": desde aqui corre la renta. Cuenta como recibido el renglon."""
+    actor = _actor(user_data)
+    nota = _nota(payload.get("note"))
+    with transaction_context() as db:
+        renglon, orden = _renglon_de_renta(db, id_line)
+        _exigir_marcar_renta(db, renglon, user_data, actor)
+        if renglon.rental_arrived_date is not None:
+            raise AppError("errors.rental_already_arrived", 409, {
+                "arrived_date": renglon.rental_arrived_date.isoformat()})
+        if orden.order_status not in RECEIVABLE_STATES:
+            # Antes de comprarla no hay renta que corra: primero el comprobante.
+            raise AppError("errors.order_not_receivable", 409,
+                           {"order_status": orden.order_status})
+        fecha = _fecha_de_marca(payload.get("arrived_date"), "arrived_date",
+                                no_antes_de=orden.creation_date.date() - DATE_TOLERANCE)
+        renglon.rental_arrived_date = fecha
+        renglon.rental_arrived_by = actor
+        renglon.quantity_received = int(renglon.quantity)
+        nuevo = _estado_por_lo_recibido(_renglones(db, orden.id_purchase_order))
+        _cambiar_estado(db, orden, nuevo, "rental_arrived", actor, nota=nota, detalle={
+            "id_purchase_order_line": renglon.id_purchase_order_line,
+            "description": renglon.description, "arrived_date": fecha,
+            "rental_end": renglon.rental_end})
+        db.flush()
+        return _ficha_tras_renta(db, orden, renglon, user_data)
+
+
+def rental_returned(id_line, payload: dict, user_data: dict) -> dict:
+    """"Devuelta al proveedor". Si ya no queda nada abierto en la orden, se cierra."""
+    actor = _actor(user_data)
+    nota = _nota(payload.get("note"))
+    with transaction_context() as db:
+        renglon, orden = _renglon_de_renta(db, id_line)
+        _exigir_marcar_renta(db, renglon, user_data, actor)
+        if renglon.rental_arrived_date is None:
+            raise AppError("errors.rental_not_arrived", 409)
+        if renglon.rental_returned_date is not None:
+            raise AppError("errors.rental_already_returned", 409, {
+                "returned_date": renglon.rental_returned_date.isoformat()})
+        fecha = _fecha_de_marca(payload.get("returned_date"), "returned_date",
+                                no_antes_de=renglon.rental_arrived_date)
+        renglon.rental_returned_date = fecha
+        renglon.rental_returned_by = actor
+        renglon.rental_return_note = nota
+        # Una prorroga sin decidir ya no tiene caso: la maquina se fue.
+        renglon.rental_extension_end = None
+        renglon.rental_extension_note = None
+        renglon.rental_extension_by = None
+        detalle = {"id_purchase_order_line": renglon.id_purchase_order_line,
+                   "description": renglon.description, "returned_date": fecha,
+                   "rental_end": renglon.rental_end,
+                   "days_late": max(0, (fecha - renglon.rental_end).days)}
+        if _estado_por_lo_recibido(_renglones(db, orden.id_purchase_order)) == "closed":
+            _cambiar_estado(db, orden, "closed", "rental_returned", actor, nota=nota,
+                            detalle=detalle)
+        else:
+            _evento(db, orden, "rental_returned", actor, nota=nota, detalle=detalle)
+        db.flush()
+        return _ficha_tras_renta(db, orden, renglon, user_data)
+
+
+def request_rental_extension(id_line, payload: dict, user_data: dict) -> dict:
+    """Pide mas tiempo: queda pendiente hasta que quien autoriza compras la decida."""
+    actor = _actor(user_data)
+    nota = _nota(payload.get("note"), obligatoria=True)
+    with transaction_context() as db:
+        renglon, orden = _renglon_de_renta(db, id_line)
+        if not (_puede_marcar_renta(db, renglon, user_data, actor)
+                or _puede_escribir_ordenes(db, user_data)):
+            raise AppError("errors.permission_denied", 403, {"rule": "project_in_charge"})
+        if renglon.rental_arrived_date is None:
+            raise AppError("errors.rental_not_arrived", 409)
+        if renglon.rental_returned_date is not None:
+            raise AppError("errors.rental_already_returned", 409)
+        if renglon.rental_extension_end is not None:
+            raise AppError("errors.rental_extension_pending", 409, {
+                "requested_end": renglon.rental_extension_end.isoformat()})
+        nueva = _fecha_o_nada(payload.get("new_end"), "new_end")
+        if nueva is None or nueva <= renglon.rental_end:
+            raise AppError("errors.invalid_field", 400, {
+                "field": "new_end", "min": (renglon.rental_end + timedelta(days=1)).isoformat()})
+        periodo_de_renta(renglon.rental_start, nueva)
+        renglon.rental_extension_end = nueva
+        renglon.rental_extension_note = nota
+        renglon.rental_extension_by = actor
+        _evento(db, orden, "rental_extension_requested", actor, nota=nota, detalle={
+            "id_purchase_order_line": renglon.id_purchase_order_line,
+            "description": renglon.description, "rental_end": renglon.rental_end,
+            "requested_end": nueva})
+        db.flush()
+        return _ficha_tras_renta(db, orden, renglon, user_data)
+
+
+def decide_rental_extension(id_line, payload: dict, user_data: dict) -> dict:
+    """Aprueba (recorre la fecha de fin) o rechaza la prorroga. Rechazar pide motivo."""
+    actor = _actor(user_data)
+    aprobar = str(payload.get("approve")).strip().lower() in ("1", "true", "si", "yes")
+    nota = _nota(payload.get("note"), obligatoria=not aprobar)
+    with transaction_context() as db:
+        _exigir_autorizar(db, user_data)
+        renglon, orden = _renglon_de_renta(db, id_line)
+        if renglon.rental_extension_end is None:
+            raise AppError("errors.rental_no_extension_pending", 409)
+        if renglon.rental_extension_by is not None and int(renglon.rental_extension_by) == actor:
+            raise AppError("errors.purchase_same_person", 403, {"action": "extend"})
+        detalle = {"id_purchase_order_line": renglon.id_purchase_order_line,
+                   "description": renglon.description, "rental_end": renglon.rental_end,
+                   "requested_end": renglon.rental_extension_end, "approved": aprobar,
+                   "requested_by": renglon.rental_extension_by}
+        if aprobar:
+            renglon.rental_end = renglon.rental_extension_end
+            # Con fecha nueva, el aviso de vencimiento vuelve a tocar cuando se acerque.
+            renglon.rental_reminder_date = None
+        renglon.rental_extension_end = None
+        renglon.rental_extension_note = None
+        renglon.rental_extension_by = None
+        _evento(db, orden, "rental_extension_approved" if aprobar else "rental_extension_rejected",
+                actor, nota=nota, detalle=detalle)
+        db.flush()
+        ficha = _ficha_tras_renta(db, orden, renglon, user_data)
+        ficha["extension_decision"] = detalle
+        return ficha
+
+
+def _fila_de_renta(db, renglon, orden, proveedor, proyecto, user_data, actor) -> dict:
+    return {
+        **_ficha_de_renta(db, renglon, orden, user_data, actor),
+        "description": renglon.description,
+        "quantity": int(renglon.quantity),
+        "supplier_name": proveedor,
+        "project": ({"id_proyect": proyecto[0], "folio": proyecto[1], "title": proyecto[2]}
+                    if proyecto and proyecto[0] else None),
+        "id_proyect_material_need": renglon.id_proyect_material_need,
+    }
+
+
+def _consulta_de_rentas():
+    return (
+        select(PurchaseOrderLine, PurchaseOrder,
+               func.coalesce(PurchaseOrder.supplier_name, CustomerSupplier.name),
+               Proyect.id_proyect, Proyect.folio, Proyect.title)
+        .join(PurchaseOrder, PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order)
+        .outerjoin(CustomerSupplier,
+                   CustomerSupplier.id_customer_supplier == PurchaseOrder.id_customer_supplier)
+        .outerjoin(Proyect, Proyect.id_proyect == PurchaseOrderLine.id_proyect)
+        .where(PurchaseOrderLine.line_kind == "rental",
+               PurchaseOrderLine.deletion_date.is_(None),
+               PurchaseOrder.deletion_date.is_(None))
+    )
+
+
+def list_rentals(user_data: dict, *, estado: str | None = "active") -> dict:
+    """Las rentas de maquinaria. `active`: compradas y sin devolver (en camino o en
+    obra); `all`: tambien las devueltas. Lo vencido y lo que vence primero, arriba."""
+    actor = _actor(user_data)
+    with transaction_context() as db:
+        consulta = _consulta_de_rentas().where(
+            PurchaseOrder.order_status.notin_(("cancelled",)))
+        if (estado or "active") == "active":
+            consulta = consulta.where(
+                PurchaseOrderLine.rental_returned_date.is_(None),
+                PurchaseOrder.order_status.in_(RENTAL_RECEIVABLE_STATES))
+        filas = db.execute(consulta.order_by(PurchaseOrderLine.rental_end)).all()
+        items = [_fila_de_renta(db, r, o, prov, (pid, pfolio, ptitle), user_data, actor)
+                 for r, o, prov, pid, pfolio, ptitle in filas]
+        hoy = hoy_negocio()
+        return {
+            "items": items,
+            "total": len(items),
+            "on_site": sum(1 for i in items if i["stage"] in ("on_site", "overdue")),
+            "overdue": sum(1 for i in items if i["stage"] == "overdue"),
+            "due_soon": sum(1 for i in items if i["stage"] == "on_site"
+                            and i["days_left"] is not None
+                            and i["days_left"] <= RENTAL_DUE_SOON_DAYS),
+            "pending_extensions": sum(1 for i in items if i["extension"]),
+            "today": hoy.isoformat(),
+        }
+
+
+def rentas_de_necesidades(db, ids_necesidad, user_data: dict) -> dict:
+    """La renta (ficha y acciones) que cubre cada necesidad de renta, para la lista
+    del proyecto. Solo la de una orden no cancelada."""
+    ids = {int(i) for i in ids_necesidad if i}
+    if not ids:
+        return {}
+    actor = _actor(user_data)
+    filas = db.execute(_consulta_de_rentas().where(
+        PurchaseOrderLine.id_proyect_material_need.in_(ids),
+        PurchaseOrder.order_status != "cancelled")).all()
+    return {int(r.id_proyect_material_need):
+            _fila_de_renta(db, r, o, prov, (pid, pfolio, ptitle), user_data, actor)
+            for r, o, prov, pid, pfolio, ptitle in filas}
+
+
+def rentas_sin_devolver(db, id_proyect) -> list[dict]:
+    """Maquinaria rentada que llego a la obra y no se ha devuelto. El proyecto no se
+    completa con ella: se quedaria pagando renta de una obra cerrada."""
+    filas = db.execute(
+        select(PurchaseOrderLine.description, PurchaseOrder.folio)
+        .join(PurchaseOrder, PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order)
+        .where(PurchaseOrderLine.id_proyect == int(id_proyect),
+               PurchaseOrderLine.line_kind == "rental",
+               PurchaseOrderLine.deletion_date.is_(None),
+               PurchaseOrderLine.rental_arrived_date.isnot(None),
+               PurchaseOrderLine.rental_returned_date.is_(None),
+               PurchaseOrder.deletion_date.is_(None),
+               PurchaseOrder.order_status != "cancelled")).all()
+    return [{"description": d, "order_folio": f} for d, f in filas]
 
 
 # --- avisos ---------------------------------------------------------------------
@@ -1374,6 +1848,123 @@ def notificar_orden(evento: str, ficha: dict, actor_id: int) -> None:
         pass
     if evento in ("recibida", "recibida_en_parte"):
         _avisar_material_completo_de(ficha, actor_id)
+
+
+def notificar_renta(evento: str, ficha: dict, actor_id: int) -> None:
+    """Avisos de la prorroga de una renta: pedida (a quien autoriza) y decidida (a
+    quien la pidio y a quien lleva la obra). Mismo criterio que `notificar_orden`:
+    despues de la transaccion y sin revertir nada si falla."""
+    from app.services.notification_service import create_notification
+
+    try:
+        folio = ficha.get("folio") or "Orden"
+        renglon = next((l for l in ficha.get("lines") or []
+                        if l.get("id_purchase_order_line") == ficha.get("id_purchase_order_line")),
+                       {})
+        que = renglon.get("description") or "maquinaria"
+        with transaction_context() as db:
+            if evento == "prorroga_pedida":
+                tipo = "purchase_rental_extension_requested"
+                destinatarios = _usuarios_con_capacidad(db, AUTHORIZE_CAPABILITY)
+                pedida = ((renglon.get("rental") or {}).get("extension") or {})
+                titulo = "Prorroga de renta por decidir (%s)" % folio
+                mensaje = "Piden extender la renta de %s hasta el %s: %s" % (
+                    que, pedida.get("requested_end"), pedida.get("note") or "")
+            elif evento == "prorroga_decidida":
+                tipo = "purchase_rental_extension_decided"
+                decision = ficha.get("extension_decision") or {}
+                destinatarios = ({decision.get("requested_by"), ficha.get("created_by")}
+                                 | _de_los_proyectos(db, {renglon.get("id_proyect")} - {None}))
+                aprobada = decision.get("approved")
+                titulo = "Prorroga %s (%s)" % ("aprobada" if aprobada else "rechazada", folio)
+                mensaje = ("La renta de %s ahora termina el %s." % (que, decision.get("requested_end"))
+                           if aprobada else
+                           "La renta de %s sigue terminando el %s; hay que devolverla." % (
+                               que, decision.get("rental_end")))
+            else:
+                return
+        for destino in {int(d) for d in destinatarios if d} - {int(actor_id)}:
+            create_notification(
+                id_user_recipient=destino, id_user_sender=actor_id, notification_type=tipo,
+                title=titulo, message=mensaje[:500],
+                metadata={"id_purchase_order": ficha.get("id_purchase_order"),
+                          "id_purchase_order_line": ficha.get("id_purchase_order_line")},
+                target_entity="purchase_order", target_id=ficha.get("id_purchase_order"),
+                created_by=actor_id)
+    except Exception:
+        pass
+
+
+def avisar_rentas_por_vencer() -> int:
+    """Avisa a quien lleva la obra y a quien armo la orden que una renta vence pronto
+    (a `RENTAL_DUE_SOON_DAYS` dias o menos) o ya vencio sin devolverse.
+
+    Un aviso por etapa: uno cuando entra a "vence pronto" y otro cuando vence. La marca
+    `rental_reminder_date` evita repetirlos en cada corrida; aprobar una prorroga la
+    limpia para que el ciclo vuelva a empezar con la fecha nueva.
+    """
+    from app.services.notification_service import create_notification
+
+    hoy = hoy_negocio()
+    with transaction_context() as db:
+        filas = db.execute(
+            select(PurchaseOrderLine, PurchaseOrder.folio, PurchaseOrder.created_by,
+                   PurchaseOrder.id_purchase_order)
+            .join(PurchaseOrder,
+                  PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order)
+            .where(PurchaseOrderLine.line_kind == "rental",
+                   PurchaseOrderLine.deletion_date.is_(None),
+                   PurchaseOrderLine.rental_arrived_date.isnot(None),
+                   PurchaseOrderLine.rental_returned_date.is_(None),
+                   PurchaseOrderLine.rental_end <= hoy + timedelta(days=RENTAL_DUE_SOON_DAYS),
+                   PurchaseOrder.deletion_date.is_(None),
+                   PurchaseOrder.order_status != "cancelled")).all()
+        pendientes = []
+        for renglon, folio, autor, id_orden in filas:
+            vencida = renglon.rental_end < hoy
+            marca = renglon.rental_reminder_date
+            # Ya se aviso de esta etapa: "vence pronto" se aviso si hay marca; "vencida",
+            # si la marca es posterior al fin.
+            if (vencida and marca is not None and marca > renglon.rental_end) or (
+                    not vencida and marca is not None):
+                continue
+            pendientes.append({
+                "id_line": renglon.id_purchase_order_line, "folio": folio, "autor": int(autor),
+                "id_orden": int(id_orden), "que": renglon.description, "vencida": vencida,
+                "fin": renglon.rental_end,
+                "destinos": {int(autor)} | _de_los_proyectos(
+                    db, {renglon.id_proyect} if renglon.id_proyect else set()),
+            })
+
+    avisados = 0
+    for item in pendientes:
+        if item["vencida"]:
+            tipo = "purchase_rental_overdue"
+            titulo = "Renta vencida (%s)" % item["folio"]
+            mensaje = ("La renta de %s vencio el %s y no se ha devuelto: devolverla o pedir "
+                       "prorroga." % (item["que"], item["fin"].isoformat()))
+        else:
+            tipo = "purchase_rental_due"
+            titulo = "Renta por vencer (%s)" % item["folio"]
+            mensaje = ("La renta de %s vence el %s: devolverla a tiempo o pedir prorroga."
+                       % (item["que"], item["fin"].isoformat()))
+        try:
+            for destino in item["destinos"]:
+                create_notification(
+                    id_user_recipient=destino, notification_type=tipo, title=titulo,
+                    message=mensaje,
+                    metadata={"id_purchase_order": item["id_orden"],
+                              "id_purchase_order_line": item["id_line"]},
+                    target_entity="purchase_order", target_id=item["id_orden"],
+                    created_by=item["autor"])
+        except Exception:
+            continue
+        with transaction_context() as db:
+            renglon = db.get(PurchaseOrderLine, item["id_line"])
+            if renglon is not None:
+                renglon.rental_reminder_date = hoy
+        avisados += 1
+    return avisados
 
 
 def _avisar_material_completo_de(ficha: dict, actor_id: int) -> None:

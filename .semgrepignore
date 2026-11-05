@@ -1,0 +1,23 @@
+# Un .semgrepignore propio REEMPLAZA las exclusiones por defecto de Semgrep, asi
+# que se repiten aqui las que ya aplicaban (si no, las pruebas empiezan a salir
+# como hallazgos).
+:include .gitignore
+
+# Por defecto de Semgrep
+tests/
+test/
+*_test.py
+test_*.py
+node_modules/
+vendor/
+dist/
+build/
+*.min.js
+*.min.css
+.git/
+
+# Pruebas del frontend: construyen cadenas con <script> a proposito para probar
+# que se escapan. Marcarlas como hallazgo es ruido.
+*.test.mjs
+*.test.js
+*.test.jsx

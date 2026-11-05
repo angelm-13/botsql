@@ -1,0 +1,27 @@
+# Zonas sensibles de la plataforma de entrega: un cambio aqui pide la revision de un
+# Aprobador. Ver docs/propuestas/2026-11-05_roles_de_la_plataforma.md.
+#
+# IMPORTANTE:
+#   - Este archivo SOLO pide la revision. Para que GitHub la EXIJA hay que activar, en un
+#     ruleset de rama sobre initAlan, "Require review from Code Owners".
+#   - Cada dueno debe tener acceso de escritura al repositorio, y su usuario debe estar bien
+#     escrito: un usuario inexistente se ignora y la zona queda sin revisor.
+#   - Aprobadores: AlanPerez2414 y tanyaimt (este ultimo inferido del historial de git; confirmar).
+#
+# La ultima regla que coincide gana. Todas las zonas llevan los mismos dueños.
+
+# Migraciones: se reaplican completas en cada arranque, sin tabla de control. Es lo que mas
+# veces ha tumbado ambientes.
+/database/migrations/        @AlanPerez2414 @tanyaimt
+
+# Resiembra de roles y permisos (una resiembra a mano puede revivir roles retirados).
+/backend/scripts/seed_module_permissions.py   @AlanPerez2414 @tanyaimt
+
+# Manifiestos de Kubernetes, incluidos los overlays por cliente (aqui vive el tag que se promueve).
+/k8s/                        @AlanPerez2414 @tanyaimt
+
+# Workflows y este mismo archivo: quien cambia el CI o CODEOWNERS cambia las reglas.
+/.github/                    @AlanPerez2414 @tanyaimt
+
+# Imagenes de contenedor.
+/infra/docker/               @AlanPerez2414 @tanyaimt

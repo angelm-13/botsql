@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import canonicalEs from "./locales/es.json";
 import canonicalEn from "./locales/en.json";
 import canonicalPt from "./locales/pt.json";
@@ -54,12 +54,16 @@ export function useI18n() {
   }, []);
 
   const catalog = catalogs[lang] || catalogs.es;
-  const t = (key, fallback = key) => {
+  // `t` es la MISMA funcion mientras no cambie el idioma. Antes se creaba una nueva en
+  // cada render, y un componente que la usaba como dependencia de un efecto de carga
+  // (p. ej. Presupuestos por proyecto en Ordenes de compra) recargaba sin parar: cada
+  // respuesta provocaba un render, el render una `t` nueva, y la `t` otra carga.
+  const t = useCallback((key, fallback = key) => {
     const value = key.split(".").reduce((acc, part) => acc?.[part], catalog);
     if (value) return value;
     const baseValue = key.split(".").reduce((acc, part) => acc?.[part], catalogs.es);
     return baseValue || fallback;
-  };
+  }, [catalog]);
   const setLanguage = (nextLang) => {
     const safeLang = catalogs[nextLang] ? nextLang : "es";
     localStorage.setItem("language", safeLang);

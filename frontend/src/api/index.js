@@ -731,6 +731,12 @@ export const rejectPurchaseOrder = (id, note) => request(`/purchase-orders/${id}
 export const cancelPurchaseOrder = (id, note) => request(`/purchase-orders/${id}/cancel`, { method: "POST", body: { note } });
 export const buyPurchaseOrder = (id, payload) => request(`/purchase-orders/${id}/purchase`, { method: "POST", body: payload });
 export const receivePurchaseOrder = (id, payload) => request(`/purchase-orders/${id}/receive`, { method: "POST", body: payload });
+// Renta de maquinaria: llego a obra, devuelta, prorroga (pedir y decidir) y rentas activas.
+export const rentalArrive = (idLine, payload = {}) => request(`/purchase-order-lines/${idLine}/rental/arrive`, { method: "POST", body: payload });
+export const rentalReturn = (idLine, payload = {}) => request(`/purchase-order-lines/${idLine}/rental/return`, { method: "POST", body: payload });
+export const rentalExtend = (idLine, payload) => request(`/purchase-order-lines/${idLine}/rental/extend`, { method: "POST", body: payload });
+export const rentalDecideExtension = (idLine, payload) => request(`/purchase-order-lines/${idLine}/rental/extension`, { method: "POST", body: payload });
+export const getPurchaseRentals = (params = {}) => request("/purchase-rentals", { params });
 export const uploadPurchaseVoucher = (id, file, campos = {}) => {
   const formData = new FormData();
   Object.entries(campos).forEach(([clave, valor]) => {

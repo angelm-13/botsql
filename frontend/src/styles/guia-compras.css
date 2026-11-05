@@ -1,0 +1,120 @@
+/* Guia de Compras: explicacion al entrar, barra de pasos, "Que sigue" y aviso flotante. */
+
+/* Los colores de los pasos: uno por paso, el mismo en la guia, la barra y "Que sigue". */
+.tono-azul   { --tono-fondo: #e6f1fb; --tono-texto: #0c447c; --tono-suave: #185fa5; --tono-borde: #b5d4f4; }
+.tono-ambar  { --tono-fondo: #faeeda; --tono-texto: #633806; --tono-suave: #854f0b; --tono-borde: #fac775; }
+.tono-morado { --tono-fondo: #eeedfe; --tono-texto: #3c3489; --tono-suave: #534ab7; --tono-borde: #cecbf6; }
+.tono-agua   { --tono-fondo: #e1f5ee; --tono-texto: #085041; --tono-suave: #0f6e56; --tono-borde: #9fe1cb; }
+.tono-verde  { --tono-fondo: #eaf3de; --tono-texto: #27500a; --tono-suave: #3b6d11; --tono-borde: #c0dd97; }
+
+.guia-modulo {
+  position: relative;
+  margin: 0 0 16px;
+  padding: 14px 44px 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+  color: #173b52;
+}
+.guia-titulo { display: block; font-size: 15px; margin-bottom: 10px; }
+.guia-cerrar {
+  position: absolute; top: 8px; right: 8px; width: 30px; height: 30px;
+  display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: transparent; color: #64748b; cursor: pointer;
+}
+.guia-cerrar:hover { background: #f1f5f9; color: #173b52; }
+.guia-pasos {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px;
+}
+.guia-paso {
+  display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 12px;
+  background: var(--tono-fondo); color: var(--tono-texto); font-size: 13px; line-height: 1.35;
+}
+.guia-paso svg { margin-bottom: 2px; }
+.guia-paso span { color: var(--tono-suave); font-size: 12.5px; }
+.guia-puntos { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.guia-puntos li { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; line-height: 1.45; color: #334155; }
+.guia-puntos svg, .guia-porque svg { flex: none; margin-top: 2px; color: #ba7517; }
+.guia-reabrir {
+  display: inline-flex; align-items: center; gap: 5px; margin: 0 0 12px;
+  border: 0; background: transparent; color: #1b7a60; font-size: 13px; font-weight: 700;
+  cursor: pointer; padding: 2px 0;
+}
+
+/* Una linea de "por que" junto a un campo */
+.guia-porque {
+  display: flex; gap: 6px; align-items: flex-start; margin: 4px 0 8px;
+  font-size: 13px; line-height: 1.4; color: #475569;
+}
+
+/* Barra de pasos de la orden */
+.oc-pasos-envoltura { margin: 10px 0 14px; }
+.oc-pasos {
+  display: flex; gap: 4px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap;
+}
+.oc-paso {
+  flex: 1 1 0; min-width: 72px; display: flex; flex-direction: column; align-items: center;
+  gap: 4px; position: relative; font-size: 12px; color: #64748b; text-align: center;
+}
+.oc-paso::before {
+  content: ""; position: absolute; top: 15px; left: calc(-50% + 18px); right: calc(50% + 18px);
+  height: 2px; background: #e2e8f0;
+}
+.oc-paso:first-child::before { display: none; }
+.oc-paso-punto {
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: #f8fafc; border: 2px solid #e2e8f0; color: #94a3b8; z-index: 1;
+}
+.oc-paso-hecho { color: #14532d; }
+.oc-paso-hecho .oc-paso-punto { background: #1b7a60; border-color: #1b7a60; color: #fff; }
+.oc-paso-hecho::before, .oc-paso-actual::before, .oc-paso-desvio::before { background: #1b7a60; }
+.oc-paso-actual { color: var(--tono-texto); font-weight: 800; }
+.oc-paso-actual .oc-paso-punto {
+  background: var(--tono-fondo); border-color: var(--tono-suave); color: var(--tono-texto);
+  box-shadow: 0 0 0 4px var(--tono-fondo);
+}
+.oc-paso-aqui {
+  font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px;
+  background: var(--tono-fondo); color: var(--tono-texto);
+}
+.oc-pasos-envoltura > .guia-porque { justify-content: center; margin-top: 8px; }
+.oc-motivo > .guia-porque, .oc-subir > .guia-porque { flex-basis: 100%; grid-column: 1 / -1; margin: 0; }
+.oc-paso-desvio { color: #7f1d1d; font-weight: 800; }
+.oc-paso-desvio .oc-paso-punto { background: #fee2e2; border-color: #dc2626; color: #7f1d1d; }
+.oc-pasos-cancelada { opacity: .55; }
+.oc-pasos-nota { display: block; margin-top: 6px; color: #7f1d1d; font-size: 12.5px; text-align: center; }
+
+/* Que sigue */
+.oc-que-sigue {
+  display: flex; gap: 10px; align-items: flex-start; margin: 0 0 14px; padding: 12px 14px;
+  border-radius: 14px; border: 1px solid #dbeafe; background: #eff6ff; color: #1e3a8a;
+}
+.oc-que-sigue p { margin: 2px 0 0; font-size: 14px; line-height: 1.45; }
+.oc-que-sigue-titulo { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.oc-que-sigue-extra { font-size: 13px !important; opacity: .85; }
+.oc-que-sigue-icono {
+  flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  background: #fff; border: 1px solid currentColor;
+}
+.oc-que-sigue-accion { border-color: #a7dcc8; background: #ecfdf5; color: #14532d; }
+.oc-que-sigue-alerta { border-color: #fde68a; background: #fffbeb; color: #78350f; }
+.oc-que-sigue-ok { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.oc-que-sigue-neutro { border-color: #e2e8f0; background: #f8fafc; color: #334155; }
+
+/* Aviso flotante tras una accion */
+.aviso-flotante {
+  position: fixed; right: 20px; bottom: 20px; z-index: 60; max-width: min(420px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px;
+  background: #173b52; color: #fff; font-size: 14px; box-shadow: 0 18px 40px rgba(15, 23, 42, .25);
+  animation: aviso-entra .2s ease-out;
+}
+.aviso-flotante button { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 2px; opacity: .8; }
+@media (max-width: 640px) { .aviso-flotante { left: 16px; right: 16px; bottom: 16px; } }
+@keyframes aviso-entra { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Lo que falta para enviar la orden (editor) */
+.oc-faltan { color: #78350f; font-weight: 600; }
+
+/* Indicacion junto a la seleccion de Por comprar */
+.por-comprar-pista { font-size: 13px; color: #475569; }

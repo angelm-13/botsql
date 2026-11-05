@@ -64,9 +64,10 @@ const ROLE_TARGETS = {
     draft: ["submitted", "denied", "blocked"],
     submitted: ["authorized", "denied", "blocked"],
     blocked: ["authorized", "denied", "blocked"],
-    // La espera de material es obligatoria y la abre quien confirma el
-    // material, no el taller: Gerente de respaldo y, desde 2026-10-16, quien
-    // tenga `project_supply` (Compras; ver `puedeDarMaterial` en actionTargets).
+    // La espera de material es obligatoria y la abre quien consigue el
+    // material (Compras con `project_supply`, ver `puedeDarMaterial`); la cierra
+    // el encargado de la obra (ver `encargadoDeLaObra`). Gerente, de respaldo,
+    // puede dar los dos pasos.
     authorized: ["waiting_material"],
     waiting_material: ["in_progress"],
     // Completar lo recolectado es del responsable o de Gerencia.
@@ -120,9 +121,10 @@ const EMPTY_FORM = {
 
 const PROJECT_PRIORITIES = ["baja", "media", "alta"];
 
-// Los dos pasos del material, por estatus de partida. Quien los da (Compras)
-// los ve como un boton en la fila, con el texto de la accion y no el del
-// estatus; el resto de los cambios siguen en el desplegable.
+// Los dos pasos del material, por estatus de partida, como boton en la fila (con
+// el texto de la accion y no el del estatus); el resto de los cambios siguen en
+// el desplegable. "Material en camino" lo da Compras; "Material recibido,
+// iniciar", el encargado de la obra (2026-11-04).
 const PASO_DE_MATERIAL = { authorized: "waiting_material", waiting_material: "in_progress" };
 
 // Cuanto material falta de un proyecto con control (la lista lo trae solo de los
@@ -294,10 +296,18 @@ export default function ProjectManagementPage() {
   const mode = privileged ? "unrestricted" : hasRead(permissions, "project_authorization") ? "manager" : hasRead(permissions, "project_execution") ? "workshop" : "supervisor";
   // Las capacidades suman: quien tiene autorizar Y ejecutar en el Gestor es "manager" para la
   // pantalla, pero tambien puede ejecutar (tomar el proyecto). El servidor decide igual.
-  // Los dos pasos de material (a "en espera" y de ahi a "en proceso"): quien
-  // tiene `project_supply` (Compras) o, de respaldo, quien autoriza -- igual
-  // que `_puede_dar_el_material` en el servidor.
+  // "Material en camino" (a "en espera"): quien tiene `project_supply` (Compras)
+  // o, de respaldo, quien autoriza -- igual que `_puede_dar_el_material` en el servidor.
   const puedeDarMaterial = privileged || hasRead(permissions, "project_supply") || hasRead(permissions, "project_authorization");
+  // "Material recibido, iniciar" (de "en espera" a "en proceso"): quien tiene esta
+  // obra en la mano -el Jefe de taller asignado si lleva maquila, el supervisor que
+  // la lidera si no- o, de respaldo, quien autoriza. Igual que `_encargado_de_la_obra`.
+  const encargadoDeLaObra = (project) => (project.requires_maquila
+    ? Number(project.id_supervisor) === Number(actor.id_user) && hasRead(permissions, "project_execution")
+    : Number(project.leader) === Number(actor.id_user));
+  const puedeIniciar = (project) => privileged || hasRead(permissions, "project_authorization") || encargadoDeLaObra(project);
+  const puedeDarElPaso = (project) => (project.proyect_status === "authorized" ? puedeDarMaterial
+    : project.proyect_status === "waiting_material" ? puedeIniciar(project) : false);
   const statusCodes = useMemo(() => orderedStatuses(catalog?.proyect?.statuses, STATUS_ORDER), [catalog]);
   const needsReason = (target) => (catalog?.proyect?.reason_required || []).includes(target);
   const taskNeedsReason = (target) => (catalog?.task?.reason_required || []).includes(target);
@@ -531,11 +541,11 @@ export default function ProjectManagementPage() {
     if (leadsIt && project.proyect_status === "collected" && !resultado.includes("completed")) {
       resultado = [...resultado, "completed"];
     }
-    // Los pasos de material los da quien tiene `project_supply` aunque su rol
-    // no sea "manager" (Compras cae en el modo "supervisor", sin acciones por
-    // papel). Lo mismo con o sin maquila: los dos pasan por Compras.
+    // Los pasos de material no van por papel (Compras cae en el modo
+    // "supervisor", sin acciones por papel): "en camino" es de Compras y
+    // "recibido, iniciar" del encargado de ESTA obra, sea Jefe de taller o supervisor.
     const pasoDeMaterial = PASO_DE_MATERIAL[project.proyect_status];
-    if (puedeDarMaterial && pasoDeMaterial && desdeElServidor.includes(pasoDeMaterial)
+    if (pasoDeMaterial && puedeDarElPaso(project) && desdeElServidor.includes(pasoDeMaterial)
         && !resultado.includes(pasoDeMaterial)) {
       resultado = [...resultado, pasoDeMaterial];
     }
@@ -634,7 +644,7 @@ export default function ProjectManagementPage() {
     const todos = actionTargets(project);
     // El paso del material sale como boton a la vista ("Material en camino" /
     // "Material recibido, iniciar"); el desplegable queda con lo demas.
-    const pasoDeMaterial = puedeDarMaterial && todos.includes(PASO_DE_MATERIAL[project.proyect_status])
+    const pasoDeMaterial = puedeDarElPaso(project) && todos.includes(PASO_DE_MATERIAL[project.proyect_status])
       ? PASO_DE_MATERIAL[project.proyect_status] : null;
     const targets = todos.filter((target) => target !== pasoDeMaterial);
     return <div className="project-actions">
