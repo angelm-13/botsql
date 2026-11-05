@@ -4140,7 +4140,7 @@
     "to": "Bis",
     "show": "Anzeigen",
     "download": "Excel herunterladen",
-    "hint": "Bis zu 31 Tage. Manuelle Stempelungen sind die Korrekturen mit dem Grund der Vorgesetzten. Die Grenzen ändern Sie in den Abrechnungseinstellungen.",
+    "hint": "Bis zu 31 Tage. Manuelle Stempelungen sind die Korrekturen mit dem Grund der Vorgesetzten. Die Grenzen ändern Sie unter Amtliche Werte, Reiter «Berechnungsoptionen».",
     "range_error": "Bitte höchstens 31 Tage wählen, Enddatum nach dem Startdatum.",
     "with_alerts": "{n} von {total} Mitarbeitern mit Warnungen in diesem Zeitraum.",
     "employee": "Mitarbeiter",

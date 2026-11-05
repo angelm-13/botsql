@@ -5675,7 +5675,7 @@
     "to": "Hasta",
     "show": "Ver",
     "download": "Descargar Excel",
-    "hint": "Hasta 31 días. Las checadas a mano son las correcciones de checadas, con el motivo que escribió el supervisor. Los límites de las alertas se cambian en Ajustes de nómina.",
+    "hint": "Hasta 31 días. Las checadas a mano son las correcciones de checadas, con el motivo que escribió el supervisor. Los límites de las alertas se cambian en Cifras oficiales, pestaña «Opciones de cálculo».",
     "range_error": "Elige un rango de 31 días o menos, con la fecha final después de la inicial.",
     "with_alerts": "{n} de {total} empleados con alertas en este periodo.",
     "employee": "Empleado",

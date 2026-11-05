@@ -4146,7 +4146,7 @@
     "to": "Até",
     "show": "Ver",
     "download": "Baixar Excel",
-    "hint": "Até 31 dias. Os registros manuais são as correções de ponto, com o motivo escrito pelo supervisor. Os limites dos alertas mudam em Ajustes da folha.",
+    "hint": "Até 31 dias. Os registros manuais são as correções de ponto, com o motivo escrito pelo supervisor. Os limites dos alertas mudam em Valores oficiais, aba «Opções de cálculo».",
     "range_error": "Escolha um intervalo de 31 dias ou menos, com a data final depois da inicial.",
     "with_alerts": "{n} de {total} funcionários com alertas neste período.",
     "employee": "Funcionário",

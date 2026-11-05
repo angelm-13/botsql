@@ -5560,7 +5560,7 @@
     "to": "To",
     "show": "Show",
     "download": "Download Excel",
-    "hint": "Up to 31 days. Manual check-ins are the check-in corrections, with the reason the supervisor wrote. Alert limits are changed in Payroll settings.",
+    "hint": "Up to 31 days. Manual check-ins are the check-in corrections, with the reason the supervisor wrote. Alert limits are changed in Official figures, «Calculation options» tab.",
     "range_error": "Choose a range of 31 days or less, with the end date after the start date.",
     "with_alerts": "{n} of {total} employees with alerts in this period.",
     "employee": "Employee",
