@@ -7,7 +7,7 @@ import {
   confirmMaterialNeedBuy, getMaterialNeedsToBuy, getMyPermissions, linkMaterialNeed,
   returnMaterialNeed,
 } from "../api";
-import { conDatos, estadoDeOrden } from "../utils/ordenDeCompra";
+import { PASOS_DE_POR_COMPRAR, conDatos, estadoDeOrden } from "../utils/ordenDeCompra";
 import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
 import "../styles/renta-maquinaria.css";
@@ -344,7 +344,8 @@ export default function PorComprarPage() {
         </button>
       </PageHeader>
 
-      <GuiaDelModulo id="por-comprar" titulo={t("guide.buy.title", "Cómo funciona Por comprar")}
+      <GuiaDelModulo id="por-comprar" titulo={t("guide.buy.title", "Así llega el material a la obra")}
+                     pasos={PASOS_DE_POR_COMPRAR} prefijo="guide.buy.step"
                      puntos={puntosDeGuia.filter(Boolean)} />
 
       <div className="por-comprar-barra">

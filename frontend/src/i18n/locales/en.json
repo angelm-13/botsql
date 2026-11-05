@@ -4786,7 +4786,15 @@
       "purchased": "Receive",
       "received": "Received",
       "rejected_note": "Rejected: sent back to be corrected.",
-      "cancelled_note": "Cancelled: the process stopped."
+      "cancelled_note": "Cancelled: the process stopped.",
+      "you_are_here": "you are here"
+    },
+    "step_why": {
+      "draft": "Write down what is bought, from whom and how much it costs.",
+      "pending_authorization": "Management checks the spend fits the budget.",
+      "authorized": "The invoice or receipt proves what was paid.",
+      "purchased": "What arrived is counted against what was ordered.",
+      "received": "The material is ready for the job."
     },
     "next": {
       "title": "What's next",
@@ -4839,6 +4847,12 @@
     "voucher_hint_invoice": "Upload the invoice (the XML fills in number, amount and date) or the purchase receipt.",
     "voucher_hint_quote": "Before it is authorized, only the supplier's quote can be uploaded.",
     "voucher_hint_payment": "The purchase voucher is already here; you can add the proof of payment.",
+    "voucher_why_invoice": "It proves what was paid: it is compared against what was authorized and lets accounting close the expense.",
+    "voucher_why_quote": "With the quote, whoever authorizes sees the supplier's real price before approving.",
+    "voucher_why_payment": "The proof of payment confirms the supplier has been paid.",
+    "why_authorize_over": "It records why spending over budget was accepted.",
+    "why_reject": "Whoever built the order reads the reason to know what to fix.",
+    "why_cancel": "It stays in the log so everyone knows why it stopped.",
     "empty_all": "There are no purchase orders yet.",
     "empty_all_buyer": "Start in To buy: pick what projects ask for and build the order, or use \"New order\".",
     "empty_all_reader": "Purchasing builds the orders from what projects ask for.",
@@ -5267,9 +5281,21 @@
   },
   "guide": {
     "how_it_works": "How does it work?",
-    "got_it": "Got it",
+    "close": "Close guide",
     "buy": {
-      "title": "How \"To buy\" works",
+      "title": "How material reaches the job",
+      "step": {
+        "request": "The job asks",
+        "review": "Review",
+        "order": "Build the order",
+        "follow": "Follow in Orders"
+      },
+      "step_why": {
+        "request": "The supervisor writes down in the project what is missing.",
+        "review": "Check whether the warehouse already has it, so it is not bought twice.",
+        "order": "Group what is bought from the same supplier.",
+        "follow": "There it is authorized, bought and received."
+      },
       "source": "Here you see what projects ask for (the supervisor enters it in the project). \"In stock\" is what the warehouse has and \"Missing\" is what must be bought.",
       "review": "Free-text requests show as \"To review\": decide whether the warehouse already has it, whether it must be bought, or send it back to the supervisor if it is unclear.",
       "order": "Tick what you are going to buy and press \"Make purchase order\". Items already in an order show its number.",
@@ -5278,8 +5304,7 @@
       "rental": "Items marked \"Rental\" are machinery the job needs to rent, with its period. They go into an order the same way; there you enter the rate per day, week or month."
     },
     "orders": {
-      "title": "How purchase orders work",
-      "flow": "Every order goes through: build it → authorize it → buy it (with invoice or receipt) → receive it at the warehouse.",
+      "title": "How a purchase order moves forward",
       "buyer": "You build the order: pick what to buy from To buy, or use \"New order\". Then send it for authorization, upload the invoice and record the purchase.",
       "authorizer": "You authorize: open the orders \"To authorize\", check amount and budget, and authorize or reject them with a reason.",
       "receiver": "You receive: when the material arrives, open the orders \"To receive\" and record how much arrived for each line.",

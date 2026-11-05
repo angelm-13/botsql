@@ -1,7 +1,30 @@
 import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { ArrowRight, Check, HelpCircle, Info, X } from "lucide-react";
+import {
+  AlertTriangle, ArrowRight, Check, CheckCircle2, ClipboardList, Clock, HelpCircle, Lightbulb,
+  ListChecks, PackageCheck, Receipt, Search, ShoppingCart, Truck, UserCheck, X,
+} from "lucide-react";
 import { PASOS_DE_ORDEN, conDatos, pasoDeOrden, queSigue } from "../utils/ordenDeCompra";
+
+// El dibujo de cada paso. El color y el porque viven en utils/ordenDeCompra.js.
+const ICONO_DEL_PASO = {
+  draft: ClipboardList, pending_authorization: UserCheck, authorized: Receipt,
+  purchased: Truck, received: PackageCheck,
+  request: ClipboardList, review: Search, order: ShoppingCart, follow: ListChecks,
+};
+const ICONO_DEL_TONO = { accion: ArrowRight, alerta: AlertTriangle, ok: CheckCircle2, neutro: Clock, info: ArrowRight };
+
+/** Una linea corta de "por que" junto a un campo: el foco y el texto, sin estorbar. */
+export function PorQue({ children }) {
+  return (
+    <p className="guia-porque">
+      <Lightbulb size={15} aria-hidden="true" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+PorQue.propTypes = { children: PropTypes.node.isRequired };
 import { useI18n } from "../i18n";
 import "../styles/guia-compras.css";
 
@@ -21,8 +44,11 @@ function guiaOculta(id) {
   try { return localStorage.getItem(llaveDeGuia(id)) === "1"; } catch { return false; }
 }
 
-/** La explicacion corta al entrar a la pantalla. "Ya entendí" la esconde para ese usuario. */
-export function GuiaDelModulo({ id, titulo, puntos }) {
+/**
+ * La explicacion corta al entrar a la pantalla: los pasos dibujados (icono, color y por
+ * que) y debajo lo que le toca a quien mira. La X la esconde para ese usuario.
+ */
+export function GuiaDelModulo({ id, titulo, pasos = [], prefijo = "order.step", puntos }) {
   const { t } = useI18n();
   const [oculta, setOculta] = useState(() => guiaOculta(id));
   const cambiar = (valor) => {
@@ -39,18 +65,35 @@ export function GuiaDelModulo({ id, titulo, puntos }) {
       </button>
     );
   }
+  const conTexto = puntos.filter(Boolean);
   return (
     <aside className="guia-modulo" aria-label={titulo}>
-      <Info size={18} className="guia-icono" />
-      <div>
-        <strong>{titulo}</strong>
-        <ol>
-          {puntos.filter(Boolean).map((p) => <li key={p}>{p}</li>)}
-        </ol>
-      </div>
-      <button type="button" className="guia-cerrar" onClick={() => cambiar(true)}>
-        <X size={14} /> {t("guide.got_it", "Ya entendí")}
+      <button type="button" className="guia-cerrar" onClick={() => cambiar(true)}
+              aria-label={t("guide.close", "Cerrar guía")} title={t("guide.close", "Cerrar guía")}>
+        <X size={16} />
       </button>
+      <strong className="guia-titulo">{titulo}</strong>
+      {pasos.length > 0 && (
+        <ol className="guia-pasos">
+          {pasos.map((p, i) => {
+            const Icono = ICONO_DEL_PASO[p.clave] || ArrowRight;
+            return (
+              <li key={p.clave} className={`guia-paso tono-${p.tono}`}>
+                <Icono size={24} aria-hidden="true" />
+                <b>{i + 1}. {t(`${prefijo}.${p.clave}`, p.etiqueta)}</b>
+                <span>{t(`${prefijo}_why.${p.clave}`, p.porque)}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {conTexto.length > 0 && (
+        <ul className="guia-puntos">
+          {conTexto.map((p) => (
+            <li key={p}><Lightbulb size={15} aria-hidden="true" /><span>{p}</span></li>
+          ))}
+        </ul>
+      )}
     </aside>
   );
 }
@@ -58,13 +101,18 @@ export function GuiaDelModulo({ id, titulo, puntos }) {
 GuiaDelModulo.propTypes = {
   id: PropTypes.string.isRequired,
   titulo: PropTypes.string.isRequired,
-  puntos: PropTypes.arrayOf(PropTypes.string).isRequired,
+  pasos: PropTypes.arrayOf(PropTypes.shape({
+    clave: PropTypes.string, etiqueta: PropTypes.string, tono: PropTypes.string, porque: PropTypes.string,
+  })),
+  prefijo: PropTypes.string,
+  puntos: PropTypes.arrayOf(PropTypes.oneOfType([PropTypes.string, PropTypes.bool])).isRequired,
 };
 
 /** La barra de pasos de una orden: lo hecho, el paso actual y lo que falta. */
 export function PasosDeOrden({ estado = "draft" }) {
   const { t } = useI18n();
   const paso = pasoDeOrden(estado);
+  const actualDelPaso = paso.terminada ? null : PASOS_DE_ORDEN[paso.indice];
   return (
     <div className="oc-pasos-envoltura">
       <ol className={`oc-pasos${paso.desvio === "cancelled" ? " oc-pasos-cancelada" : ""}`}>
@@ -72,14 +120,19 @@ export function PasosDeOrden({ estado = "draft" }) {
           const hecho = paso.terminada ? i <= paso.indice : i < paso.indice;
           const actual = !paso.terminada && i === paso.indice;
           const clase = hecho ? "hecho" : actual ? (paso.desvio ? "desvio" : "actual") : "pendiente";
+          const Icono = ICONO_DEL_PASO[p.clave] || ArrowRight;
           return (
-            <li key={p.clave} className={`oc-paso oc-paso-${clase}`} aria-current={actual ? "step" : undefined}>
-              <span className="oc-paso-punto">{hecho ? <Check size={12} /> : i + 1}</span>
+            <li key={p.clave} className={`oc-paso oc-paso-${clase} tono-${p.tono}`} aria-current={actual ? "step" : undefined}>
+              <span className="oc-paso-punto">{hecho ? <Check size={14} /> : <Icono size={15} aria-hidden="true" />}</span>
               <span className="oc-paso-nombre">{t(`order.step.${p.clave}`, p.etiqueta)}</span>
+              {actual && !paso.desvio && <span className="oc-paso-aqui">{t("order.step.you_are_here", "aquí va")}</span>}
             </li>
           );
         })}
       </ol>
+      {actualDelPaso && !paso.desvio && (
+        <PorQue>{t(`order.step_why.${actualDelPaso.clave}`, actualDelPaso.porque)}</PorQue>
+      )}
       {paso.desvio === "rejected" && (
         <small className="oc-pasos-nota">{t("order.step.rejected_note", "Rechazada: regresó a corregirse.")}</small>
       )}
@@ -97,9 +150,10 @@ export function QueSigue({ orden }) {
   const { t } = useI18n();
   const { principal, extra } = queSigue(orden);
   const decir = (f) => conDatos(t(f.clave, f.texto), f.datos);
+  const Icono = ICONO_DEL_TONO[principal.tono] || ArrowRight;
   return (
     <div className={`oc-que-sigue oc-que-sigue-${principal.tono}`} role="status">
-      <ArrowRight size={16} className="oc-que-sigue-icono" />
+      <span className="oc-que-sigue-icono"><Icono size={18} aria-hidden="true" /></span>
       <div>
         <span className="oc-que-sigue-titulo">{t("order.next.title", "Qué sigue")}</span>
         <p>{decir(principal)}</p>

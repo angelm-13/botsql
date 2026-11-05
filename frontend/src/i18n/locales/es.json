@@ -4901,7 +4901,15 @@
       "purchased": "Recibir",
       "received": "Recibida",
       "rejected_note": "Rechazada: regresó a corregirse.",
-      "cancelled_note": "Cancelada: el proceso se detuvo."
+      "cancelled_note": "Cancelada: el proceso se detuvo.",
+      "you_are_here": "aquí va"
+    },
+    "step_why": {
+      "draft": "Se anota qué se compra, a quién y cuánto cuesta.",
+      "pending_authorization": "Gerencia revisa que el gasto quepa en el presupuesto.",
+      "authorized": "La factura o el ticket es la prueba de lo que se pagó.",
+      "purchased": "Se cuenta lo que llegó contra lo que se pidió.",
+      "received": "El material ya está listo para la obra."
     },
     "next": {
       "title": "Qué sigue",
@@ -4954,6 +4962,12 @@
     "voucher_hint_invoice": "Sube la factura (el XML llena folio, monto y fecha solo) o el ticket de la compra.",
     "voucher_hint_quote": "Antes de autorizarla solo se sube la cotización del proveedor.",
     "voucher_hint_payment": "El comprobante de compra ya está; aquí puedes agregar el comprobante de pago.",
+    "voucher_why_invoice": "Es la prueba de lo que se pagó: con ella se compara contra lo autorizado y contabilidad puede cerrar el gasto.",
+    "voucher_why_quote": "Con la cotización, quien autoriza ve el precio real del proveedor antes de aprobar.",
+    "voucher_why_payment": "El comprobante de pago confirma que al proveedor ya se le pagó.",
+    "why_authorize_over": "Queda escrito por qué se aceptó gastar más de lo presupuestado.",
+    "why_reject": "Quien armó la orden lee el motivo para saber qué corregir.",
+    "why_cancel": "Queda en la bitácora para que todos sepan por qué se detuvo.",
     "empty_all": "Todavía no hay órdenes de compra.",
     "empty_all_buyer": "Empieza en Por comprar: elige lo que piden los proyectos y arma la orden, o usa \"Nueva orden\".",
     "empty_all_reader": "Las órdenes las arma Compras con lo que piden los proyectos.",
@@ -5382,9 +5396,21 @@
   },
   "guide": {
     "how_it_works": "¿Cómo funciona?",
-    "got_it": "Ya entendí",
+    "close": "Cerrar guía",
     "buy": {
-      "title": "Cómo funciona Por comprar",
+      "title": "Así llega el material a la obra",
+      "step": {
+        "request": "La obra pide",
+        "review": "Revisar",
+        "order": "Armar la orden",
+        "follow": "Seguir en Órdenes"
+      },
+      "step_why": {
+        "request": "El supervisor anota en su proyecto lo que le hace falta.",
+        "review": "Se ve si ya hay en el almacén, para no comprar dos veces.",
+        "order": "Se junta lo que se compra a un mismo proveedor.",
+        "follow": "Ahí se autoriza, se compra y se recibe."
+      },
       "source": "Aquí llega lo que piden los proyectos (lo captura el supervisor en su proyecto). \"Hay\" es lo que tiene el almacén y \"Falta\" lo que hay que comprar.",
       "review": "Lo pedido con texto libre sale \"Por revisar\": decide si ya está en el almacén, si sí hay que comprarlo, o devuélvelo al supervisor si no se entiende.",
       "order": "Marca las casillas de lo que vas a comprar y presiona \"Armar orden de compra\". Lo que ya está en una orden muestra su folio.",
@@ -5393,8 +5419,7 @@
       "rental": "Lo marcado \"Renta\" es maquinaria que la obra necesita rentar, con su periodo. Se mete en una orden igual; ahí pones la tarifa por día, semana o mes."
     },
     "orders": {
-      "title": "Cómo funcionan las órdenes de compra",
-      "flow": "Cada orden pasa por: armarla → autorizarla → comprarla (con factura o ticket) → recibirla en el almacén.",
+      "title": "Así avanza una orden de compra",
       "buyer": "Tú armas la orden: desde Por comprar elige lo que vas a comprar, o usa \"Nueva orden\". Luego la envías a autorización, subes la factura y registras la compra.",
       "authorizer": "Tú autorizas: abre las órdenes \"Por autorizar\", revisa monto y presupuesto, y autorízalas o recházalas con un motivo.",
       "receiver": "Tú recibes: cuando llegue el material, abre las órdenes \"Por recibir\" y anota cuánto llegó de cada renglón.",
