@@ -55,7 +55,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.models import EmployeeSchedule, Overtime, User, WorkSchedule, WorkScheduleDay
+from app.models import EmployeeSchedule, EntityPermission, Overtime, User, WorkSchedule, WorkScheduleDay
 from app.models.overtime import (AUTORIZADA, COMPENSAR, CONFIRMADA, DESCANSO, DETECTADA, HORA_EXTRA, MANUAL, PAGAR,
                                  PENDIENTE_RH, RECHAZADA)
 from app.models.session import transaction_context
@@ -272,7 +272,79 @@ def registrar(user_data: dict, payload: dict) -> dict:
                             notes=notas or None, created_by=user_data.get("id_user"))
         db.add(registro)
         db.flush()
-        return registro.serialize()
+        resultado = registro.serialize()
+        rh = _de_rh(db) if not es_rh else []
+        empleado = db.get(User, id_user)
+        nombre = (empleado.full_name if empleado else None) or f"#{id_user}"
+    # Horas extra pedidas antes (respuestas de RH, 2026-11-04): a RH le llega para
+    # aceptarlas o rechazarlas antes de que se trabajen, con su costo estimado.
+    if rh:
+        costo = costo_estimado([resultado["id_overtime"]]).get(resultado["id_overtime"], Decimal(0))
+        que = "Descanso trabajado" if tipo == DESCANSO else f"{minutos // 60}:{minutos % 60:02d} h extra"
+        for destinatario in rh:
+            _avisar_rh(destinatario, f"Horas extra por autorizar: {nombre}",
+                       f"{que} el {dia:%d/%m/%Y}. Costo estimado: ${costo:,.2f}.", user_data.get("id_user"),
+                       resultado["id_overtime"])
+    return resultado
+
+
+def _de_rh(db) -> list[int]:
+    """Quienes confirman horas extra: editan checadas en el Gestor (attendance_record)."""
+    roles = (select(EntityPermission.id_permission).where(EntityPermission.entity_name == "attendance_record")
+             .where(EntityPermission.scope_update != 0).where(EntityPermission.deletion_date.is_(None)))
+    return list(db.scalars(select(User.id_user).where(User.id_permission.in_(roles)).where(User.deletion_date.is_(None))))
+
+
+def _avisar_rh(destinatario, titulo, mensaje, actor, id_overtime) -> None:
+    from app.services.notification_service import create_notification
+    if not destinatario or destinatario == actor:
+        return
+    try:
+        create_notification(id_user_recipient=destinatario, notification_type="overtime_requested", title=titulo[:200],
+                            message=mensaje, id_user_sender=actor, created_by=actor,
+                            target_entity="overtime", target_id=id_overtime)
+    except Exception:
+        pass   # el aviso es "best effort": nunca revierte el registro
+
+
+def costo_estimado(ids_overtime) -> dict:
+    """{id_overtime: costo estimado} de horas extra a pagar, con las reglas del calculo:
+    hora = diario / `overtime_day_hours` (o la tarifa de quien gana por hora); las primeras
+    9 h de la semana dobles y las demas triples, contando en orden lo registrado esa semana
+    (sin lo rechazado); un descanso trabajado = el doble del dia. Es una estimacion: lo que
+    se paga sale de lo checado al calcular la nomina. Tiempo libre y rechazadas = 0."""
+    from app.services import salary_service as salarios
+    ids_overtime = [int(i) for i in ids_overtime or []]
+    if not ids_overtime:
+        return {}
+    with transaction_context() as db:
+        pedidos = list(db.scalars(select(Overtime).where(Overtime.id_overtime.in_(ids_overtime))))
+        if not pedidos:
+            return {}
+        usuarios = {r.id_user for r in pedidos}
+        desde = _semana(min(r.work_date for r in pedidos))
+        hasta = _semana(max(r.work_date for r in pedidos)) + timedelta(days=6)
+        semana = [r for r in _registros(db, list(usuarios), desde, hasta)
+                  if r.settlement == PAGAR and r.approval_status != RECHAZADA]
+        politica = _politica(db, hasta)
+        empleados = {u.id_user: u for u in db.scalars(select(User).where(User.id_user.in_(list(usuarios))))}
+        sueldos = salarios.sueldos_vigentes(db, list(usuarios), hasta)
+        resultado = {}
+        acumulado = defaultdict(int)
+        for r in sorted(semana, key=lambda r: (r.work_date, r.id_overtime)):
+            sueldo = sueldos.get(r.id_user)
+            diario = (salarios.diario_equivalente(sueldo, [], politica[JORNADA]) if sueldo
+                      else Decimal(str(empleados[r.id_user].base_salary or 0)))
+            if r.kind == DESCANSO:
+                resultado[r.id_overtime] = ley.dinero(diario * 2)
+                continue
+            hora = salarios.precio_de_hora(sueldo) or diario / politica[JORNADA]
+            clave = (r.id_user, _semana(r.work_date))
+            dobles = max(min(r.minutes, LIMITE_DOBLES - acumulado[clave]), 0)
+            acumulado[clave] += r.minutes
+            resultado[r.id_overtime] = ley.dinero(hora * (2 * dobles + 3 * (r.minutes - dobles)) / 60)
+        return {i: resultado.get(i, Decimal(0)) for i in ids_overtime
+                if any(p.id_overtime == i for p in pedidos)}
 
 
 def confirmar(user_data: dict, id_overtime, confirmar_: bool, notas=None) -> dict:
@@ -341,5 +413,12 @@ def del_rango(user_data: dict, desde, hasta) -> dict:
         descansos_sin_autorizar = [{"id_user": u, "full_name": empleados[u], "work_date": d.isoformat(), "holiday": festivo}
                                    for (u, d), festivo in sorted(descansos.items(), key=lambda x: (x[0][1], empleados[x[0][0]]))
                                    if (u, d) not in descansos_registrados]
-        return {"overtime": filas, "unauthorized": sin_autorizar, "unauthorized_rest_days": descansos_sin_autorizar,
-                "tolerance_minutes": politica[TOLERANCIA]}
+    costos = costo_estimado([f["id_overtime"] for f in filas])
+    for f in filas:
+        pagable = f["settlement"] == PAGAR and f["approval_status"] != RECHAZADA
+        f["estimated_cost"] = float(costos.get(f["id_overtime"], 0)) if pagable else 0.0
+    return {"overtime": filas, "unauthorized": sin_autorizar, "unauthorized_rest_days": descansos_sin_autorizar,
+            "tolerance_minutes": politica[TOLERANCIA],
+            "pending_hr": sum(1 for f in filas if f["approval_status"] == PENDIENTE_RH),
+            "pending_hr_cost": float(sum((Decimal(str(f["estimated_cost"])) for f in filas
+                                          if f["approval_status"] == PENDIENTE_RH), Decimal(0)))}

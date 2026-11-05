@@ -2903,7 +2903,8 @@
     "payroll_simulator_not_in_period": "Ese periodo no calcula a este empleado (no es de su grupo o ya está cerrado).",
     "employee_leave_waiting_boss": "Primero la tiene que aprobar su jefe directo.",
     "overtime_not_pending": "Ese registro ya no está pendiente de RH.",
-    "payroll_sheet_concept_calculated": "Ese concepto lo calcula el sistema; no se escribe a mano."
+    "payroll_sheet_concept_calculated": "Ese concepto lo calcula el sistema; no se escribe a mano.",
+    "payroll_benefit_disabled": "Esa prestación no está activa en esta empresa. Actívala en Cifras oficiales, pestaña «Opciones de cálculo»."
   },
   "logistics": {
     "module": "Logística",
@@ -5310,7 +5311,12 @@
       "report_alert_manual": "Reporte de asistencia: alerta con estas checadas a mano o más (0 = sin alerta)",
       "report_alert_supervisor_manual": "Reporte de asistencia: alerta al supervisor que captura a mano estas veces o más (0 = sin alerta)",
       "overtime_hours_from_schedule": "Hora extra: dividir entre las horas de su horario en lugar de las de arriba",
-      "report_summary_frequency": "Resumen de asistencia para RH en la campana"
+      "report_summary_frequency": "Resumen de asistencia para RH en la campana",
+      "benefit_infonavit": "Prestación: crédito Infonavit (descuento en la hoja de nómina)",
+      "benefit_fonacot": "Prestación: crédito Fonacot (descuento en la hoja de nómina)",
+      "benefit_savings_fund": "Prestación: caja de ahorro (descuento en la hoja de nómina)",
+      "benefit_loan": "Prestación: préstamo de la empresa (descuento en la hoja de nómina)",
+      "benefit_alimony": "Pensión alimenticia (descuento en la hoja de nómina)"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",
@@ -5578,7 +5584,9 @@
     "reject_hr": "Rechazar (RH)",
     "reject_note": "¿Por qué se rechaza? (opcional)",
     "confirmed_done": "Horas extra confirmadas: se pagan en la nómina.",
-    "rejected_done": "Horas extra rechazadas: no se pagan."
+    "rejected_done": "Horas extra rechazadas: no se pagan.",
+    "estimated_cost": "Costo estimado",
+    "pending_summary": "Pendientes de RH: {n} · costo estimado {costo}. Revísalas antes de que se trabajen."
   },
   "salaries": {
     "title": "Cómo gana cada empleado",

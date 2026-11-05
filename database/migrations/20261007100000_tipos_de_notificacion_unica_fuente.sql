@@ -70,6 +70,8 @@ ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
         -- Alertas y resumen del reporte de asistencia para RH (2026-11-04).
         'attendance_alert',
         'attendance_summary',
+        -- Horas extra que pide un supervisor y espera la aprobacion de RH (2026-11-05).
+        'overtime_requested',
         'custom'
     )
 );

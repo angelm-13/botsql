@@ -192,3 +192,34 @@ class TestJefeYLuegoRh(_ConHorasExtra):
         self.assertEqual(403, r.status_code)
         r = self.client.post(f"/overtime/{hecho['id_overtime']}/review", headers=self.h(RH, 961), json={"approve": True})
         self.assertEqual((200, "approved"), (r.status_code, self.json(r)["approval_status"]))
+
+
+class TestPedidasAntesConCosto(_ConHorasExtra):
+    """Horas extra pedidas antes (respuestas de RH, 2026-11-04): a RH le llega el aviso
+    con el costo estimado, y la lista dice cuanto queda por autorizar."""
+
+    def test_costo_estimado_dobles_triples_y_descanso(self):
+        from app.services.overtime_service import costo_estimado
+        a = self.autoriza(5, 9 * 60, confirma_rh=False)            # lunes: 9 h, todas dobles
+        b = self.autoriza(6, 120, confirma_rh=False)               # martes: pasan de 9 h -> triples
+        c = self.autoriza(7, 60, confirma_rh=False, kind="rest_day")
+        costos = costo_estimado([a["id_overtime"], b["id_overtime"], c["id_overtime"]])
+        # Ana: 500 diarios / 8 = 62.50 la hora.
+        self.assertEqual((1125.0, 375.0, 1000.0), tuple(float(costos[x["id_overtime"]]) for x in (a, b, c)))
+        datos = del_rango(RRHH, "2026-10-01", "2026-10-15")
+        self.assertEqual((3, 2500.0), (datos["pending_hr"], datos["pending_hr_cost"]))
+        rechazada = confirmar(RRHH, b["id_overtime"], False)
+        fila = next(f for f in del_rango(RRHH, "2026-10-01", "2026-10-15")["overtime"]
+                    if f["id_overtime"] == rechazada["id_overtime"])
+        self.assertEqual(0.0, fila["estimated_cost"])
+
+    def test_a_rh_le_llega_el_aviso_y_lo_de_rh_no_avisa(self):
+        from app.models import Notification
+        hecho = self.autoriza(6, 60, confirma_rh=False)
+        self.autoriza(7, 60, quien=RRHH)
+        with transaction_context() as db:
+            avisos = [(n.id_user_recipient, n.target_entity, n.target_id, n.title, n.message)
+                      for n in db.query(Notification).filter(Notification.notification_type == "overtime_requested")]
+        self.assertEqual([(RH, "overtime", hecho["id_overtime"], "Horas extra por autorizar: Ana")],
+                         [a[:4] for a in avisos])
+        self.assertIn("Costo estimado: $125.00", avisos[0][4])

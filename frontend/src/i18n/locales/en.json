@@ -2859,7 +2859,8 @@
     "payroll_simulator_not_in_period": "That period does not calculate this employee (other group or already closed).",
     "employee_leave_waiting_boss": "Their direct manager has to approve it first.",
     "overtime_not_pending": "That record is no longer pending HR.",
-    "payroll_sheet_concept_calculated": "That concept is calculated by the system; it cannot be typed."
+    "payroll_sheet_concept_calculated": "That concept is calculated by the system; it cannot be typed.",
+    "payroll_benefit_disabled": "That benefit is not enabled for this company. Enable it in Official figures, «Calculation options» tab."
   },
   "logistics": {
     "module": "Logistics",
@@ -5195,7 +5196,12 @@
       "report_alert_manual": "Attendance report: alert at this many manual check-ins or more (0 = no alert)",
       "report_alert_supervisor_manual": "Attendance report: alert on supervisors who enter this many manual check-ins or more (0 = no alert)",
       "overtime_hours_from_schedule": "Overtime: divide by the hours of their schedule instead",
-      "report_summary_frequency": "Attendance summary for HR in the bell"
+      "report_summary_frequency": "Attendance summary for HR in the bell",
+      "benefit_infonavit": "Benefit: Infonavit loan (deduction in the payroll sheet)",
+      "benefit_fonacot": "Benefit: Fonacot loan (deduction in the payroll sheet)",
+      "benefit_savings_fund": "Benefit: savings fund (deduction in the payroll sheet)",
+      "benefit_loan": "Benefit: company loan (deduction in the payroll sheet)",
+      "benefit_alimony": "Alimony (deduction in the payroll sheet)"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -5463,7 +5469,9 @@
     "reject_hr": "Reject (HR)",
     "reject_note": "Why is it rejected? (optional)",
     "confirmed_done": "Overtime confirmed: it is paid in payroll.",
-    "rejected_done": "Overtime rejected: it is not paid."
+    "rejected_done": "Overtime rejected: it is not paid.",
+    "estimated_cost": "Estimated cost",
+    "pending_summary": "Pending HR: {n} · estimated cost {costo}. Review them before they are worked."
   },
   "salaries": {
     "title": "How each employee is paid",

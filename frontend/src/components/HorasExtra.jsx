@@ -21,6 +21,8 @@ function fechaLocal(d) {
 
 const horas = (minutos) => `${Math.floor(minutos / 60)}:${String(minutos % 60).padStart(2, "0")} h`;
 const TONO = { verified: "status-approved", partial: "status-partially_approved", not_worked: "status-rejected", manual: "status-sent" };
+// Costo estimado en pesos mexicanos (formato de Mexico).
+const dinero = (v) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(Number(v || 0));
 // Jefe y luego RH: solo lo que RH confirma se paga.
 const TONO_RH = { pending_hr: "status-sent", approved: "status-approved", rejected: "status-rejected" };
 
@@ -190,8 +192,14 @@ export default function HorasExtra({ t, describirError, empleados }) {
           </section>
           <section className="table-card kronos-table-card">
             <div className="kronos-table-heading"><div><p className="eyebrow">{t("overtime.eyebrow")}</p><h3>{t("overtime.registered_title")}</h3></div></div>
+            {/* Lo que espera a RH y cuanto costaria, para decidir antes de que se trabaje. */}
+            {datos.pending_hr > 0 && (
+              <p className="field-error" style={{ margin: "0 16px 12px" }}>
+                {t("overtime.pending_summary").replace("{n}", datos.pending_hr).replace("{costo}", dinero(datos.pending_hr_cost))}
+              </p>
+            )}
             <table>
-              <thead><tr><th>{t("overtime.employee")}</th><th>{t("overtime.date")}</th><th>{t("overtime.authorized")}</th><th>{t("overtime.checked")}</th><th>{t("overtime.payable")}</th><th>{t("overtime.status")}</th><th>{t("overtime.notes")}</th><th>{t("common.actions")}</th></tr></thead>
+              <thead><tr><th>{t("overtime.employee")}</th><th>{t("overtime.date")}</th><th>{t("overtime.authorized")}</th><th>{t("overtime.checked")}</th><th>{t("overtime.payable")}</th><th>{t("overtime.status")}</th><th>{t("overtime.estimated_cost")}</th><th>{t("overtime.notes")}</th><th>{t("common.actions")}</th></tr></thead>
               <tbody>{datos.overtime.length ? datos.overtime.map((r) => (
                 <tr key={r.id_overtime}>
                   <td><strong>{r.full_name}</strong></td><td>{r.work_date}</td>
@@ -199,6 +207,7 @@ export default function HorasExtra({ t, describirError, empleados }) {
                   <td>{r.origin === "manual" ? "—" : r.kind === "rest_day" ? (r.status === "verified" ? t("overtime.came") : "—") : horas(r.checked_minutes)}</td>
                   <td>{r.settlement === "compensate" ? <small>{t("overtime.settlement_compensate")}</small> : r.kind === "rest_day" ? (r.payable_minutes ? t("overtime.double_day") : "—") : horas(r.payable_minutes)}</td>
                   <td><span className={`quotation-status-badge ${TONO[r.status] || ""}`}>{t(`overtime.status_${r.status}`)}</span>{r.id_payroll_period && <><br /><small className="muted">{t("overtime.paid_in")} #{r.id_payroll_period}</small></>}<br /><span className={`quotation-status-badge ${TONO_RH[r.approval_status] || ""}`}>{t(`overtime.approval_${r.approval_status}`)}</span></td>
+                  <td>{r.estimated_cost ? dinero(r.estimated_cost) : "—"}</td>
                   <td><small>{r.notes || "—"}</small></td>
                   <td className="row-actions">
                     {esRh && r.approval_status === "pending_hr" && <button type="button" title={t("overtime.confirm_hr")} onClick={() => revisarRh(r, true)}><Check size={15} /></button>}
@@ -206,7 +215,7 @@ export default function HorasExtra({ t, describirError, empleados }) {
                     {!r.id_payroll_period && <button type="button" title={t("common.delete")} onClick={() => quitar(r)}><Trash2 size={15} /></button>}
                   </td>
                 </tr>
-              )) : <tr><td colSpan="8" className="kronos-empty">{t("overtime.no_registered")}</td></tr>}</tbody>
+              )) : <tr><td colSpan="9" className="kronos-empty">{t("overtime.no_registered")}</td></tr>}</tbody>
             </table>
           </section>
         </>

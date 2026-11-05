@@ -14,6 +14,8 @@ const RUTAS = {
   employee_leave: () => "/my_leaves",
   // Alertas y resumen de asistencia para RH: abren el reporte.
   attendance_report: () => "/attendance_report",
+  // Horas extra que pide un supervisor: RH las revisa en Asistencias.
+  overtime: () => "/kronos",
 };
 
 const enteroPositivo = (valor) => {

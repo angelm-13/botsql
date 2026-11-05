@@ -2612,7 +2612,8 @@
     "payroll_simulator_not_in_period": "Dieser Zeitraum berechnet diese Person nicht (andere Gruppe oder bereits geschlossen).",
     "employee_leave_waiting_boss": "Zuerst muss die direkte Führungskraft zustimmen.",
     "overtime_not_pending": "Dieser Eintrag wartet nicht mehr auf das Personal.",
-    "payroll_sheet_concept_calculated": "Dieses Konzept berechnet das System; es wird nicht eingegeben."
+    "payroll_sheet_concept_calculated": "Dieses Konzept berechnet das System; es wird nicht eingegeben.",
+    "payroll_benefit_disabled": "Diese Leistung ist für dieses Unternehmen nicht aktiv. Aktivieren unter Amtliche Werte, Reiter «Berechnungsoptionen»."
   },
   "logistics": {
     "module": "Logistik",
@@ -3705,7 +3706,12 @@
       "report_alert_manual": "Anwesenheitsbericht: Warnung ab so vielen manuellen Stempelungen (0 = keine)",
       "report_alert_supervisor_manual": "Anwesenheitsbericht: Warnung für Vorgesetzte mit so vielen manuellen Stempelungen (0 = keine)",
       "overtime_hours_from_schedule": "Überstunden: durch die Stunden des Arbeitsplans teilen",
-      "report_summary_frequency": "Anwesenheitsübersicht für das Personal in der Glocke"
+      "report_summary_frequency": "Anwesenheitsübersicht für das Personal in der Glocke",
+      "benefit_infonavit": "Leistung: Infonavit-Kredit (Abzug in der Tabelle)",
+      "benefit_fonacot": "Leistung: Fonacot-Kredit (Abzug in der Tabelle)",
+      "benefit_savings_fund": "Leistung: Sparkasse (Abzug in der Tabelle)",
+      "benefit_loan": "Leistung: Firmendarlehen (Abzug in der Tabelle)",
+      "benefit_alimony": "Unterhalt (Abzug in der Tabelle)"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -3973,7 +3979,9 @@
     "reject_hr": "Ablehnen (Personal)",
     "reject_note": "Warum abgelehnt? (optional)",
     "confirmed_done": "Überstunden bestätigt: werden abgerechnet.",
-    "rejected_done": "Überstunden abgelehnt: werden nicht bezahlt."
+    "rejected_done": "Überstunden abgelehnt: werden nicht bezahlt.",
+    "estimated_cost": "Geschätzte Kosten",
+    "pending_summary": "Wartet auf Personal: {n} · geschätzte Kosten {costo}. Vor der Arbeit prüfen."
   },
   "salaries": {
     "title": "Wie jede Person bezahlt wird",

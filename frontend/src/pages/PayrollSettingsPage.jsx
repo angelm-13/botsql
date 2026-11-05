@@ -43,6 +43,10 @@ const PARAMETROS = [
   ["report_alert_manual", "count", "options"], ["report_alert_supervisor_manual", "count", "options"],
   // Resumen de asistencia a RH: 0 no, 1 semanal, 2 quincenal (services/reporte_de_asistencia.py).
   ["report_summary_frequency", "choice", "options"],
+  // Prestaciones que la empresa ofrece (services/prestaciones.py): solo las activas salen en la hoja.
+  ["benefit_infonavit", "option", "options"], ["benefit_fonacot", "option", "options"],
+  ["benefit_savings_fund", "option", "options"], ["benefit_loan", "option", "options"],
+  ["benefit_alimony", "option", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -74,6 +78,7 @@ const POLITICA_POR_OMISION = {
   attendance_warning_entry_minutes: 15, attendance_warning_supervisor_minutes: 30, attendance_warning_exit_minutes: 30,
   report_alert_late: 3, report_alert_absences: 2, report_alert_manual: 2, report_alert_supervisor_manual: 5,
   report_summary_frequency: 2,
+  benefit_infonavit: 0, benefit_fonacot: 0, benefit_savings_fund: 0, benefit_loan: 0, benefit_alimony: 0,
 };
 const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];
 const PERIODICIDADES = [1, 7, 10, 15, 30];

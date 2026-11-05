@@ -63,6 +63,7 @@ from app.services.attendance_correction_service import POLITICA_DE_CHECADAS
 from app.services.avisos_de_checada import POLITICA_DE_AVISOS
 from app.services.overtime_service import POLITICA_DE_HORAS_EXTRA
 from app.services.reporte_de_asistencia import POLITICA_DEL_REPORTE
+from app.services.prestaciones import POLITICA_DE_PRESTACIONES
 from app.services.politica_de_vacaciones import POLITICA as POLITICA_DE_VACACIONES
 from app.models.session import transaction_context
 from app.utils.errors import AppError
@@ -132,7 +133,7 @@ TABLA_DE_VACACIONES = {
 # los minutos de los avisos de checada (services/avisos_de_checada.py).
 # clave -> (valor por omision, valores permitidos); los valida payroll_parameter_service.
 POLITICAS = {**POLITICA_DE_VACACIONES, **POLITICA_DE_CHECADAS, **POLITICA_DE_AVISOS, **POLITICA_DE_HORAS_EXTRA,
-             **POLITICA_DEL_REPORTE}
+             **POLITICA_DEL_REPORTE, **POLITICA_DE_PRESTACIONES}
 PARAMETROS_OPCIONALES = OPCIONES + tuple(TABLA_DE_VACACIONES) + tuple(POLITICAS)
 
 

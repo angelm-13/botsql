@@ -161,3 +161,37 @@ class TestRutas(_ConHoja):
                              json={"changes": [{"id_user": ANA, "id_payroll_concept": self.bono, "amount": 10}]})
         self.assertEqual(403, r.status_code)
         self.assertEqual([], self.vivos(self.bono))
+
+
+class TestPrestaciones(_ConHoja):
+    """Prestaciones que la empresa activa (respuestas de RH, 2026-11-04)."""
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            infonavit = PayrollConcept(payroll_code="PR_INFONAVIT", payroll_concept_description="Crédito Infonavit",
+                                       type="deduction", is_taxable=False, is_imss=False, created_by=1)
+            db.add(infonavit)
+            db.flush()
+            self.infonavit = infonavit.id_payroll_concept
+
+    def activar(self):
+        from datetime import date
+        from app.models import PayrollParameter
+        with transaction_context() as db:
+            db.add(PayrollParameter(parameter_key="benefit_infonavit", value=1, valid_from=date(2026, 1, 1),
+                                    created_by=1))
+
+    def test_apagada_no_se_ofrece_ni_se_escribe(self):
+        self.assertNotIn("PR_INFONAVIT", {c["code"] for c in hoja(5)["available"]})
+        with self.assertRaises(AppError) as error:
+            guardar(5, [{"id_user": ANA, "id_payroll_concept": self.infonavit, "amount": 300}], user_id=1)
+        self.assertEqual("errors.payroll_benefit_disabled", error.exception.message_key)
+
+    def test_activa_se_ofrece_y_descuenta_sin_tocar_el_isr(self):
+        self.activar()
+        self.assertIn("PR_INFONAVIT", {c["code"] for c in hoja(5)["available"]})
+        antes = self.fila(hoja(5))
+        despues = self.fila(guardar(5, [{"id_user": ANA, "id_payroll_concept": self.infonavit, "amount": 300}], user_id=1))
+        self.assertEqual(round(antes["total_deductions"] + 300, 2), despues["total_deductions"])
+        self.assertEqual(round(antes["net_pay"] - 300, 2), despues["net_pay"])

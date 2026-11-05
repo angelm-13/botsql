@@ -26,6 +26,7 @@ from app.services.payroll_movement_service import PayrollMovementService
 from app.utils.errors import AppError
 from app.utils.tiempo import ahora_utc
 from app.utils.xlsx_simple import libro
+from app.services.prestaciones import PRESTACIONES, activas as prestaciones_activas
 
 TIPOS = ("earning", "deduction")
 SIEMPRE = ("SUELDO", "ISR", "IMSS")
@@ -69,6 +70,7 @@ def hoja_en(db, periodo) -> dict:
             en_uso[c.id_payroll_concept] = c
             fila = montos[m.id_payroll_detail]
             fila[c.id_payroll_concept] = fila.get(c.id_payroll_concept, Decimal(0)) + Decimal(str(m.amount or 0))
+    activas_hoy = prestaciones_activas(db, periodo.period_end)
     catalogo = db.scalars(select(PayrollConcept).where(PayrollConcept.deletion_date.is_(None))
                           .where(PayrollConcept.type.in_(TIPOS))).all()
     # Sueldo, ISR e IMSS siempre se ven, aunque en este periodo salgan en cero.
@@ -95,8 +97,10 @@ def hoja_en(db, periodo) -> dict:
         "period_start": periodo.period_start.isoformat() if periodo.period_start else "",
         "period_end": periodo.period_end.isoformat() if periodo.period_end else "",
         "columns": [_columna(c) for c in columnas],
+        # Las prestaciones (Infonavit, Fonacot...) solo se ofrecen si la empresa las activo.
         "available": [_columna(c) for c in sorted(catalogo, key=_orden)
-                      if _editable(c) and c.id_payroll_concept not in en_uso],
+                      if _editable(c) and c.id_payroll_concept not in en_uso
+                      and ((c.payroll_code or "") not in PRESTACIONES or c.payroll_code in activas_hoy)],
         "rows": renglones,
         "totals": totales,
     }
@@ -137,6 +141,8 @@ def _aplicar(db, periodo, cambios, user_id: int) -> None:
             raise AppError("errors.resource_not_found", 404)
         if not _editable(concepto):
             raise AppError("errors.payroll_sheet_concept_calculated", 409, {"code": concepto.payroll_code or ""})
+        if (concepto.payroll_code or "") in PRESTACIONES and concepto.payroll_code not in prestaciones_activas(db, periodo.period_end) and monto > 0:
+            raise AppError("errors.payroll_benefit_disabled", 409, {"code": concepto.payroll_code})
         detalle = db.scalars(select(PayrollDetail).where(PayrollDetail.id_payroll_period == periodo.id_payroll_period)
                              .where(PayrollDetail.id_user == id_user)
                              .where(PayrollDetail.deletion_date.is_(None))).first()

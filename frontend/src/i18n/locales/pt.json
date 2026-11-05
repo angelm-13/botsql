@@ -2614,7 +2614,8 @@
     "payroll_simulator_not_in_period": "Esse período não calcula este funcionário (outro grupo ou já fechado).",
     "employee_leave_waiting_boss": "Primeiro o chefe direto precisa aprovar.",
     "overtime_not_pending": "Esse registro não está mais pendente do RH.",
-    "payroll_sheet_concept_calculated": "Esse conceito é calculado pelo sistema; não se escreve à mão."
+    "payroll_sheet_concept_calculated": "Esse conceito é calculado pelo sistema; não se escreve à mão.",
+    "payroll_benefit_disabled": "Esse benefício não está ativo nesta empresa. Ative em Valores oficiais, aba «Opções de cálculo»."
   },
   "logistics": {
     "module": "Logística",
@@ -3711,7 +3712,12 @@
       "report_alert_manual": "Relatório de presença: alerta com estes registros manuais ou mais (0 = sem alerta)",
       "report_alert_supervisor_manual": "Relatório de presença: alerta ao supervisor que registra à mão estas vezes ou mais (0 = sem alerta)",
       "overtime_hours_from_schedule": "Hora extra: dividir pelas horas do seu horário em vez das de cima",
-      "report_summary_frequency": "Resumo de presença para o RH no sino"
+      "report_summary_frequency": "Resumo de presença para o RH no sino",
+      "benefit_infonavit": "Benefício: crédito Infonavit (desconto na planilha)",
+      "benefit_fonacot": "Benefício: crédito Fonacot (desconto na planilha)",
+      "benefit_savings_fund": "Benefício: caixa de poupança (desconto na planilha)",
+      "benefit_loan": "Benefício: empréstimo da empresa (desconto na planilha)",
+      "benefit_alimony": "Pensão alimentícia (desconto na planilha)"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -3979,7 +3985,9 @@
     "reject_hr": "Rejeitar (RH)",
     "reject_note": "Por que é rejeitada? (opcional)",
     "confirmed_done": "Horas extras confirmadas: são pagas na folha.",
-    "rejected_done": "Horas extras rejeitadas: não são pagas."
+    "rejected_done": "Horas extras rejeitadas: não são pagas.",
+    "estimated_cost": "Custo estimado",
+    "pending_summary": "Pendentes do RH: {n} · custo estimado {costo}. Revise antes de serem trabalhadas."
   },
   "salaries": {
     "title": "Como cada funcionário recebe",

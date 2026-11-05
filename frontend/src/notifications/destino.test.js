@@ -52,3 +52,7 @@ test("idAAbrir lee el parametro de la URL y rechaza lo que no es un id", () => {
 test("las alertas y el resumen de asistencia abren el reporte para RH", () => {
   assert.equal(destinoDeNotificacion({ target_entity: "attendance_report", target_id: 71 }), "/attendance_report");
 });
+
+test("las horas extra por autorizar abren Asistencias", () => {
+  assert.equal(destinoDeNotificacion({ target_entity: "overtime", target_id: 4 }), "/kronos");
+});
