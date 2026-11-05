@@ -3,6 +3,7 @@ import PropTypes from "prop-types";
 import { CalendarClock, Check, Truck, Undo2, X } from "lucide-react";
 import { rentalArrive, rentalDecideExtension, rentalExtend, rentalReturn } from "../api";
 import { etapaDeRenta } from "../utils/rentaDeMaquinaria";
+import { PorQue } from "./GuiaDeCompras.jsx";
 import { useI18n } from "../i18n";
 import "../styles/renta-maquinaria.css";
 
@@ -146,9 +147,9 @@ export default function RentaDeMaquinaria({ renta, onCambio, compacta = false })
             <span>{t("rental.extension_reason", "¿Por qué se necesita más tiempo?")}</span>
             <input type="text" maxLength={300} value={nota} onChange={(e) => setNota(e.target.value)} />
           </label>
-          <p className="muted">
+          <PorQue>
             {t("rental.extend_hint", "La decide quien autoriza compras. El costo extra va en la factura final.")}
-          </p>
+          </PorQue>
           <div className="renta-acciones">
             <button type="button" className="button primary"
                     disabled={ocupado || !nuevaFecha || nota.trim().length < 5}

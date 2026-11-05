@@ -91,12 +91,31 @@ export function excedeLoAutorizado(autorizado, real, porcentaje) {
  * Cada frase lleva su clave de traduccion (`clave`), el texto en espanol por omision
  * (`texto`) y los numeros que se le insertan (`datos`, con `{nombre}` en el texto).
  */
+// Cada paso lleva su color (`tono`, el mismo en la guia, la barra y "Que sigue") y una
+// linea de POR QUE existe, para quien no esta acostumbrado a un sistema.
 export const PASOS_DE_ORDEN = [
-  { clave: "draft", etiqueta: "Armar" },
-  { clave: "pending_authorization", etiqueta: "Autorizar" },
-  { clave: "authorized", etiqueta: "Comprar" },
-  { clave: "purchased", etiqueta: "Recibir" },
-  { clave: "received", etiqueta: "Recibida" },
+  { clave: "draft", etiqueta: "Armar", tono: "azul",
+    porque: "Se anota qué se compra, a quién y cuánto cuesta." },
+  { clave: "pending_authorization", etiqueta: "Autorizar", tono: "ambar",
+    porque: "Gerencia revisa que el gasto quepa en el presupuesto." },
+  { clave: "authorized", etiqueta: "Comprar", tono: "morado",
+    porque: "La factura o el ticket es la prueba de lo que se pagó." },
+  { clave: "purchased", etiqueta: "Recibir", tono: "agua",
+    porque: "Se cuenta lo que llegó contra lo que se pidió." },
+  { clave: "received", etiqueta: "Recibida", tono: "verde",
+    porque: "El material ya está listo para la obra." },
+];
+
+/** Los pasos de Por comprar, antes de que exista una orden. */
+export const PASOS_DE_POR_COMPRAR = [
+  { clave: "request", etiqueta: "La obra pide", tono: "azul",
+    porque: "El supervisor anota en su proyecto lo que le hace falta." },
+  { clave: "review", etiqueta: "Revisar", tono: "ambar",
+    porque: "Se ve si ya hay en el almacén, para no comprar dos veces." },
+  { clave: "order", etiqueta: "Armar la orden", tono: "morado",
+    porque: "Se junta lo que se compra a un mismo proveedor." },
+  { clave: "follow", etiqueta: "Seguir en Órdenes", tono: "verde",
+    porque: "Ahí se autoriza, se compra y se recibe." },
 ];
 
 const INDICE_DEL_PASO = {

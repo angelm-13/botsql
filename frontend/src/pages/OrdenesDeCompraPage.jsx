@@ -11,7 +11,7 @@ import { AvisoFlotante, GuiaDelModulo } from "../components/GuiaDeCompras.jsx";
 import {
   getMyPermissions, getPurchaseOrder, getPurchaseOrders, getPurchasePolicy,
 } from "../api";
-import { avisoTrasAccion, dinero, estadoDeOrden } from "../utils/ordenDeCompra";
+import { PASOS_DE_ORDEN, avisoTrasAccion, dinero, estadoDeOrden } from "../utils/ordenDeCompra";
 import { idAAbrir } from "../notifications/destino";
 import { useI18n } from "../i18n";
 import "../styles/ordenes-de-compra.css";
@@ -179,7 +179,6 @@ export default function OrdenesDeCompraPage() {
   const tieneCapacidad = (entidad) => esPrivilegiado(actor) || permisos.some((p) => p.entity_name === entidad
     && ["scope_read", "scope_update", "scope_create"].some((c) => Number(p[c] || 0) !== 0));
   const puntosDeGuia = [
-    t("guide.orders.flow", "Cada orden pasa por: armarla → autorizarla → comprarla (con factura o ticket) → recibirla en el almacén."),
     puede("purchase_order", "scope_create")
       && t("guide.orders.buyer", "Tú armas la orden: desde Por comprar elige lo que vas a comprar, o usa \"Nueva orden\". Luego la envías a autorización, subes la factura y registras la compra."),
     tieneCapacidad("purchase_authorize")
@@ -216,7 +215,8 @@ export default function OrdenesDeCompraPage() {
         )}
       </PageHeader>
 
-      <GuiaDelModulo id="ordenes-de-compra" titulo={t("guide.orders.title", "Cómo funcionan las órdenes de compra")}
+      <GuiaDelModulo id="ordenes-de-compra" titulo={t("guide.orders.title", "Así avanza una orden de compra")}
+                     pasos={PASOS_DE_ORDEN} prefijo="order.step"
                      puntos={puntosDeGuia.filter(Boolean)} />
       <AvisoFlotante aviso={avisoFlotante} onCerrar={cerrarAviso} />
 

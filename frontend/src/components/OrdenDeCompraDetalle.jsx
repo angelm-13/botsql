@@ -11,7 +11,7 @@ import {
   COMPROBANTES_DE_COMPRA, METODOS_DE_PAGO, TIPOS_DE_COMPROBANTE, agruparPorProyecto, dinero,
   esXml, estadoDeOrden, excedeLoAutorizado, requiereReferencia,
 } from "../utils/ordenDeCompra";
-import { PasosDeOrden, QueSigue } from "./GuiaDeCompras.jsx";
+import { PasosDeOrden, PorQue, QueSigue } from "./GuiaDeCompras.jsx";
 import RentaDeMaquinaria from "./RentaDeMaquinaria.jsx";
 import { useI18n } from "../i18n";
 import "../styles/ordenes-de-compra.css";
@@ -124,6 +124,17 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
     : ["draft", "pending_authorization", "rejected"].includes(orden.order_status)
       ? t("order.voucher_hint_quote", "Antes de autorizarla solo se sube la cotización del proveedor.")
       : t("order.voucher_hint_payment", "El comprobante de compra ya está; aquí puedes agregar el comprobante de pago.");
+  // Por que se pide ese papel, dicho para quien no esta acostumbrado al sistema.
+  const porqueDelComprobante = tiposPermitidos.some((k) => COMPROBANTES_DE_COMPRA.includes(k))
+    ? t("order.voucher_why_invoice", "Es la prueba de lo que se pagó: con ella se compara contra lo autorizado y contabilidad puede cerrar el gasto.")
+    : ["draft", "pending_authorization", "rejected"].includes(orden.order_status)
+      ? t("order.voucher_why_quote", "Con la cotización, quien autoriza ve el precio real del proveedor antes de aprobar.")
+      : t("order.voucher_why_payment", "El comprobante de pago confirma que al proveedor ya se le pagó.");
+  const porqueDelMotivo = {
+    autorizar: t("order.why_authorize_over", "Queda escrito por qué se aceptó gastar más de lo presupuestado."),
+    rechazar: t("order.why_reject", "Quien armó la orden lee el motivo para saber qué corregir."),
+    cancelar: t("order.why_cancel", "Queda en la bitácora para que todos sepan por qué se detuvo."),
+  };
   const pasaDeLoAutorizado = factura && orden.authorized_total
     && excedeLoAutorizado(orden.authorized_total, factura.amount, politica?.overrun_percent);
   const volvioPorExceso = orden.order_status === "pending_authorization"
@@ -442,6 +453,7 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
       {acciones.attach_voucher && tiposPermitidos.length > 0 && (
         <div className="oc-subir">
           <p className="muted oc-ayuda-xml">{pistaDeComprobante}</p>
+          <PorQue>{porqueDelComprobante}</PorQue>
           <label>
             <span>{t("order.voucher_kind", "Tipo")}</span>
             <select value={tipoElegido} onChange={(e) => setComprobante({ ...comprobante, kind: e.target.value })}>
@@ -601,6 +613,9 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
 
       {["autorizar", "rechazar", "cancelar"].includes(motivo.accion) && (
         <div className="oc-motivo">
+          {(motivo.accion !== "autorizar" || orden.exceeds_budget) && (
+            <PorQue>{porqueDelMotivo[motivo.accion]}</PorQue>
+          )}
           <label>
             <span>
               {motivo.accion === "autorizar"

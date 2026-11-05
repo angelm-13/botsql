@@ -2,10 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   agruparPorProyecto, avisoTrasAccion, avanceDeRecepcion, conDatos, esXml, excedeLoAutorizado,
-  estadoDeOrden, pasoDeOrden, queSigue, requiereReferencia, totalDeRenglones,
+  estadoDeOrden, PASOS_DE_ORDEN, PASOS_DE_POR_COMPRAR, pasoDeOrden, queSigue, requiereReferencia,
+  totalDeRenglones,
 } from "./ordenDeCompra.js";
 
 const sigue = (orden) => queSigue(orden).principal.clave.replace("order.next.", "");
+
+test("cada paso de la guia trae su color y su porque", () => {
+  const tonos = ["azul", "ambar", "morado", "agua", "verde"];
+  for (const p of [...PASOS_DE_ORDEN, ...PASOS_DE_POR_COMPRAR]) {
+    assert.ok(tonos.includes(p.tono), `${p.clave} sin tono conocido`);
+    assert.ok(p.porque && p.porque.length > 10, `${p.clave} sin porque`);
+  }
+});
 
 test("la barra de pasos ubica cada estado y marca los desvios", () => {
   assert.deepEqual(pasoDeOrden("draft"), { indice: 0, desvio: null, terminada: false });
