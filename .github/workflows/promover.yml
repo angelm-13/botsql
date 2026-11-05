@@ -1,0 +1,202 @@
+# Promocion de una version a UN cliente, disparada por un PR fusionado a `main`.
+#
+# Flujo (ver docs/propuestas/2026-11-05_roles_de_la_plataforma.md):
+#   1. Un Desplegador abre un PR a `main` que cambia el newTag de UN overlay
+#      (k8s/overlays/<cliente>/kustomization.yaml).
+#   2. Un Aprobador lo revisa (CODEOWNERS cubre k8s/) y lo fusiona.
+#   3. Este workflow corre sobre `main`, en el environment `clientes`.
+#
+# QUIEN PUEDE DESPLEGAR: solo un cambio que ya paso revision y llego a `main`. La llave SSH vive
+# como secreto del environment `clientes`, que DEBE estar restringido a la rama `main`
+# (Settings > Environments > clientes > Deployment branches). Sin esa restriccion, cualquier
+# workflow en cualquier rama podria usarla. Tampoco hay `workflow_dispatch` a proposito:
+# no hay forma de lanzarlo sin pasar por un PR.
+#
+# CONFIGURACION QUE DEBE EXISTIR (la hace una persona, no este archivo):
+#   environment `clientes` (solo rama main) con
+#     secretos:   PROMOVER_SSH_KEY, PROMOVER_SSH_HOST, PROMOVER_SSH_USER
+#     variables:  PROMOVER_KNOWN_HOSTS  (salida de `ssh-keyscan -t ed25519 <host>`, verificada)
+#   en master1: /home/alanp/promover.sh (infra/scripts/promover.sh), la llave con `command=` y
+#   el archivo /home/alanp/promover.permitidos con los namespaces permitidos.
+#
+# REVERTIR: abrir otro PR con el tag anterior. NO cubre migraciones destructivas: esas se
+# marcan en el PR y llevan su documento en docs/despliegues/.
+name: promover
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'k8s/overlays/*/kustomization.yaml'
+
+# Una promocion a la vez; las demas esperan (no se cancelan).
+concurrency:
+  group: promover
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  detectar:
+    name: Detectar la promocion
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      namespace: ${{ steps.d.outputs.namespace }}
+      tag: ${{ steps.d.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, fijado 2026-08-17
+        with:
+          fetch-depth: 0
+
+      - name: Que cambio y que version es
+        id: d
+        env:
+          ANTES: ${{ github.event.before }}
+          DESPUES: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$ANTES" = "0000000000000000000000000000000000000000" ]; then
+            echo "::error::No hay commit previo contra el cual comparar (rama nueva)."; exit 1
+          fi
+          cambios="$(git diff --name-only "$ANTES" "$DESPUES" -- 'k8s/overlays/*/kustomization.yaml' | grep -v '^k8s/overlays/_template/' || true)"
+          n="$(printf '%s\n' "$cambios" | grep -c . || true)"
+          if [ "$n" != "1" ]; then
+            echo "::error::Una promocion es UN cliente. Overlays cambiados: $n"
+            printf '%s\n' "$cambios"; exit 1
+          fi
+          overlay="$cambios"
+          ns="$(basename "$(dirname "$overlay")")"
+          [[ "$ns" =~ ^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$ ]] || { echo "::error::Nombre de overlay invalido: $ns"; exit 1; }
+
+          tag() { yq "(.images[] | select(.name == \"$1\")).newTag" "$overlay"; }
+          db="$(tag DB_INIT_IMAGE_PLACEHOLDER)"
+          be="$(tag BACKEND_IMAGE_PLACEHOLDER)"
+          wk="$(tag WORKER_IMAGE_PLACEHOLDER)"
+          fe="$(tag FRONTEND_IMAGE_PLACEHOLDER)"
+          [[ "$be" =~ ^[0-9a-f]{7,40}$ ]] || { echo "::error::Tag de backend invalido: '$be'"; exit 1; }
+          if [ "$db" != "$be" ] || [ "$wk" != "$be" ]; then
+            echo "::error::db-init ($db), backend ($be) y worker ($wk) deben llevar el mismo tag."; exit 1
+          fi
+          if [ "$fe" != "${be}-${ns}" ]; then
+            echo "::error::El frontend debe ser ${be}-${ns} y es '$fe'."; exit 1
+          fi
+
+          # La version tiene que venir de initAlan, es decir, haber pasado por el flujo normal.
+          git fetch --quiet origin initAlan
+          git cat-file -e "${be}^{commit}" 2>/dev/null || { echo "::error::El commit $be no existe en el repositorio."; exit 1; }
+          git merge-base --is-ancestor "$be" origin/initAlan \
+            || { echo "::error::El commit $be no esta en initAlan."; exit 1; }
+
+          echo "namespace=$ns" >> "$GITHUB_OUTPUT"
+          echo "tag=$be" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Promocion detectada"
+            echo "- Cliente (namespace): \`$ns\`"
+            echo "- Version: \`$be\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  desplegar:
+    name: Respaldar, sincronizar, aplicar y verificar
+    needs: detectar
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Aqui viven los secretos de la llave. El environment debe limitarse a la rama main.
+    environment: clientes
+    env:
+      NS: ${{ needs.detectar.outputs.namespace }}
+      TAG: ${{ needs.detectar.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, fijado 2026-08-17
+
+      # Las imagenes tienen que existir YA: un tag inexistente dejaria al cliente en ImagePullBackOff.
+      - name: Comprobar que las imagenes existen en ghcr
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          for img in "tyakxa-tny-db-init:${TAG}" "tyakxa-tny-backend:${TAG}" "tyakxa-tny-worker:${TAG}" "tyakxa-tny-frontend:${TAG}-${NS}"; do
+            docker manifest inspect "ghcr.io/tyakxa/${img}" > /dev/null \
+              || { echo "::error::No existe ghcr.io/tyakxa/${img}"; exit 1; }
+            echo "existe: ghcr.io/tyakxa/${img}"
+          done
+
+      - name: Preparar SSH
+        env:
+          SSH_KEY: ${{ secrets.PROMOVER_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.PROMOVER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [ -n "$KNOWN_HOSTS" ] || { echo "::error::Falta la variable PROMOVER_KNOWN_HOSTS del environment."; exit 1; }
+          umask 077
+          mkdir -p ~/.ssh /tmp/promover
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/promover_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/promover_known_hosts
+
+      # Cada modo es una conexion distinta: el servidor valida "<modo> <namespace>" y nada mas.
+      - name: 1. Respaldo de la base
+        env:
+          SSH_HOST: ${{ secrets.PROMOVER_SSH_HOST }}
+          SSH_USER: ${{ secrets.PROMOVER_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -T -i ~/.ssh/promover_key -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/promover_known_hosts \
+            "$SSH_USER@$SSH_HOST" "respaldo $NS" 2>&1 | tee /tmp/promover/1-respaldo.log
+
+      - name: 2. Sincronizar k8s al servidor
+        env:
+          SSH_HOST: ${{ secrets.PROMOVER_SSH_HOST }}
+          SSH_USER: ${{ secrets.PROMOVER_SSH_USER }}
+        run: |
+          set -euo pipefail
+          tar czf - k8s/base k8s/components "k8s/overlays/${NS}" \
+            | ssh -T -i ~/.ssh/promover_key -o IdentitiesOnly=yes -o BatchMode=yes \
+                -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/promover_known_hosts \
+                "$SSH_USER@$SSH_HOST" "sincronizar $NS" 2>&1 | tee /tmp/promover/2-sincronizar.log
+
+      - name: 3. Aplicar y esperar el rollout
+        env:
+          SSH_HOST: ${{ secrets.PROMOVER_SSH_HOST }}
+          SSH_USER: ${{ secrets.PROMOVER_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -T -i ~/.ssh/promover_key -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/promover_known_hosts \
+            "$SSH_USER@$SSH_HOST" "aplicar $NS" 2>&1 | tee /tmp/promover/3-aplicar.log
+
+      - name: 4. Verificar
+        env:
+          SSH_HOST: ${{ secrets.PROMOVER_SSH_HOST }}
+          SSH_USER: ${{ secrets.PROMOVER_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -T -i ~/.ssh/promover_key -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/promover_known_hosts \
+            "$SSH_USER@$SSH_HOST" "verificar $NS" 2>&1 | tee /tmp/promover/4-verificar.log
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "### Promocion de \`$NS\` a \`$TAG\`"
+            echo "Resultado del job: **${{ job.status }}**"
+            echo
+            for f in /tmp/promover/*.log; do
+              [ -f "$f" ] || continue
+              echo "<details><summary>$(basename "$f")</summary>"
+              echo
+              echo '```'
+              tail -n 60 "$f"
+              echo '```'
+              echo "</details>"
+            done
+            echo
+            echo "Para revertir: abrir un PR a \`main\` con el tag anterior en el overlay de \`$NS\`."
+            echo "El respaldo previo de la base queda en el servidor (ver 1-respaldo.log) y la copia previa de k8s en /home/alanp/promover_k8s_previo."
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f ~/.ssh/promover_key
