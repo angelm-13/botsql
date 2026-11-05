@@ -25,6 +25,7 @@ from decimal import Decimal
 
 from sqlalchemy import case, func, select
 
+from app.models.base import Base
 from app.models.restaurant import RestaurantCashSession, RestaurantOrder, RestaurantOrderItem, RestaurantVisit
 from app.utils.tiempo import dia_local
 from app.services.restaurant_rules import (
@@ -331,6 +332,25 @@ def mesas_ocupadas_query(session, fecha_inicio, fecha_fin, filtros_dimension, ac
     """
     conteos = mesas_por_estado(session, actor_project)
     return [(cat, fecha_fin, conteos.get(cat, 0)) for cat in MESAS_CATEGORIAS]
+
+
+def proyectos_con_restaurante(session):
+    """Ids de los proyectos que tienen alguna fila en cualquier tabla `restaurant_*` con `id_proyect`.
+
+    Es la marca de "este proyecto es un restaurante": el job de snapshots solo calcula estos KPIs para ellos
+    (los demas proyectos quedan sin fila, no con filas en cero). Sale de los metadatos de los modelos, asi una
+    tabla `restaurant_*` nueva con `id_proyect` cuenta sin tocar esta funcion.
+    """
+
+    consultas = [
+        select(tabla.c.id_proyect)
+        for nombre, tabla in sorted(Base.metadata.tables.items())
+        if nombre.startswith("restaurant_") and "id_proyect" in tabla.c
+    ]
+    if not consultas:
+        return set()
+    union = consultas[0].union(*consultas[1:]) if len(consultas) > 1 else consultas[0]
+    return set(session.scalars(union).all())
 
 
 def definiciones():
