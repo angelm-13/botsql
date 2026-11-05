@@ -53,6 +53,27 @@ class TestPagoDeIncapacidad(_ConEquipo):
 
 
 class TestAvisosPorCorreo(_ConEquipo):
+    def setUp(self):
+        super().setUp()
+        self.empresa_con_correo(1)
+
+    def empresa_con_correo(self, valor):
+        with transaction_context() as db:
+            fila = db.query(PayrollParameter).filter(PayrollParameter.parameter_key == "notifications_email_enabled").first()
+            if fila is None:
+                db.add(PayrollParameter(parameter_key="notifications_email_enabled", value=valor,
+                                        valid_from=date(2026, 1, 1), created_by=1))
+            else:
+                fila.value = valor
+
+    def test_si_la_empresa_no_lo_prende_no_se_manda(self):
+        # Pedido de Alan (2026-11-05): apagado por omision y decide cada empresa.
+        self.empresa_con_correo(0)
+        self.correo(ANA, "ana@example.com")
+        resultado, envio = self.mandar(self.aviso())
+        self.assertEqual("jobs.notifications.company_off", resultado["message_key"])
+        envio.assert_not_called()
+
     def aviso(self, para=ANA):
         with transaction_context() as db:
             n = Notification(id_user_recipient=para, notification_type="custom", title="Solicitud aprobada",

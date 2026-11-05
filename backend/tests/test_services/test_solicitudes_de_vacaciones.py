@@ -39,7 +39,8 @@ class _ConEquipo(_ConPeriodoDePrueba):
             db.add(EntityPermission(id_permission=961, entity_name="employee_leave", scope_create=4,
                                     scope_read=4, scope_update=4, scope_delete=4, created_by=1))
             # "Mis vacaciones" la guarda la capacidad `my_leaves` del Gestor.
-            for permiso in (2, 961):
+            # Ana es del rol 1: sin "Mis vacaciones" no le llegan los avisos de RH (2026-11-05).
+            for permiso in (1, 2, 961):
                 db.add(EntityPermission(id_permission=permiso, entity_name="my_leaves", scope_create=4,
                                         scope_read=4, scope_update=4, scope_delete=0, created_by=1))
 

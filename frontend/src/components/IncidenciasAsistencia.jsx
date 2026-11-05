@@ -109,6 +109,7 @@ export default function IncidenciasAsistencia({ t, describirError }) {
         </div>
       </form>
       <p className="muted">{t("kronos.incidences.hint")}</p>
+      <p className="muted">{t("kronos.incidences.incomplete_hint")}</p>
       {error && <div className="alert error" role="alert">{error}</div>}
       {empleados && (
         <section className="table-card kronos-table-card">
@@ -120,7 +121,7 @@ export default function IncidenciasAsistencia({ t, describirError }) {
               <thead><tr>
                 <th>{t("kronos.incidences.employee")}</th><th>{t("kronos.incidences.workdays")}</th><th>{t("kronos.incidences.attended")}</th>
                 <th>{t("kronos.incidences.absences")}</th><th>{t("kronos.incidences.lates")}</th><th>{t("kronos.incidences.late_minutes")}</th>
-                <th>{t("kronos.incidences.incompletes")}</th><th>{t("kronos.incidences.vacation")}</th>
+                <th title={t("kronos.incidences.incomplete_hint")}>{t("kronos.incidences.incompletes")} ⓘ</th><th>{t("kronos.incidences.vacation")}</th>
                 <th>{t("kronos.incidences.leave")}</th><th>{t("kronos.incidences.disability")}</th><th>{t("kronos.incidences.paid_days")}</th>
               </tr></thead>
               <tbody>
@@ -164,7 +165,7 @@ export default function IncidenciasAsistencia({ t, describirError }) {
                                   </select>
                                 </label>
                                 <label className="field">{t("kronos.corrections.reason")}
-                                  <input required maxLength={300} value={correccion.reason} onChange={(ev) => setCorreccion((c) => ({ ...c, reason: ev.target.value }))} />
+                                  <input required minLength={5} maxLength={300} placeholder={t("kronos.corrections.reason_min")} value={correccion.reason} onChange={(ev) => setCorreccion((c) => ({ ...c, reason: ev.target.value }))} />
                                 </label>
                               </div>
                               <p className="muted">{t("kronos.corrections.hint")}</p>

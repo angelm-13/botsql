@@ -148,7 +148,7 @@ export default function HorasExtra({ t, describirError, empleados }) {
                 <option value="compensate">{t("overtime.settlement_compensate")}</option>
               </select>
             </label>
-            <label className="field">{t("overtime.notes")}
+            <label className="field">{t("overtime.notes")}{(form.origin === "manual" || form.settlement === "compensate") && " *"}
               <input maxLength={300} required={form.origin === "manual" || form.settlement === "compensate"} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
             </label>
           </div>
@@ -206,7 +206,11 @@ export default function HorasExtra({ t, describirError, empleados }) {
                   <td>{r.kind === "rest_day" ? t("overtime.kind_rest_day") : horas(r.minutes)}<br /><small className="muted">{t(`overtime.origin_${r.origin}`)}</small></td>
                   <td>{r.origin === "manual" ? "—" : r.kind === "rest_day" ? (r.status === "verified" ? t("overtime.came") : "—") : horas(r.checked_minutes)}</td>
                   <td>{r.settlement === "compensate" ? <small>{t("overtime.settlement_compensate")}</small> : r.kind === "rest_day" ? (r.payable_minutes ? t("overtime.double_day") : "—") : horas(r.payable_minutes)}</td>
-                  <td><span className={`quotation-status-badge ${TONO[r.status] || ""}`}>{t(`overtime.status_${r.status}`)}</span>{r.id_payroll_period && <><br /><small className="muted">{t("overtime.paid_in")} #{r.id_payroll_period}</small></>}<br /><span className={`quotation-status-badge ${TONO_RH[r.approval_status] || ""}`}>{t(`overtime.approval_${r.approval_status}`)}</span></td>
+                  <td>{/* Confirmada pero sin checada: un solo mensaje, no "No se quedo" en rojo junto a "Confirmada" en verde. */}
+                    {r.status === "not_worked" && r.approval_status === "approved"
+                      ? <span className="quotation-status-badge status-partially_approved">{t("overtime.approved_not_worked")}</span>
+                      : <><span className={`quotation-status-badge ${TONO[r.status] || ""}`}>{t(`overtime.status_${r.status}`)}</span><br /><span className={`quotation-status-badge ${TONO_RH[r.approval_status] || ""}`}>{t(`overtime.approval_${r.approval_status}`)}</span></>}
+                    {r.id_payroll_period && <><br /><small className="muted">{t("overtime.paid_in")} #{r.id_payroll_period}</small></>}</td>
                   <td>{r.estimated_cost ? dinero(r.estimated_cost) : "—"}</td>
                   <td><small>{r.notes || "—"}</small></td>
                   <td className="row-actions">

@@ -32,7 +32,7 @@ from sqlalchemy import func, select
 from app.models import AttendanceCorrection, EntityPermission, Notification, Overtime, User
 from app.models.session import transaction_context
 from app.utils.errors import AppError
-from app.utils.tiempo import ahora_negocio
+from app.utils.tiempo import ahora_negocio, utc_a_pared
 from app.utils.xlsx_simple import libro
 
 RETARDOS, FALTAS = "report_alert_late", "report_alert_absences"
@@ -141,11 +141,22 @@ def reporte(desde, hasta) -> dict:
             ({"id_user": u, "full_name": nombres.get(u) or f"#{u}", "manual_checks": n,
               "alert": bool(lim[SUPERVISOR_A_MANO]) and n >= lim[SUPERVISOR_A_MANO]}
              for u, n in por_supervisor.items()), key=lambda s: -s["manual_checks"])
-    # Primero quien tiene alertas altas, luego medias, luego el resto; dentro, por nombre.
-    peso = lambda f: (-sum(2 if a["level"] == ALTA else 1 for a in f["alerts"]), f["full_name"])  # noqa: E731
+    # Orden fijo por gravedad (revision del tester, 5-nov): mas faltas arriba, luego dias sin
+    # justificar, faltas junto a descanso y retardos; el orden ya no cambia con las alertas del rango.
+    peso = lambda f: (-f["absences"], -f["pending_justification"], -f["absences_next_to_rest"],  # noqa: E731
+                      -f["late"], f["full_name"])
     return {"start": desde.isoformat(), "end": hasta.isoformat(), "limits": lim,
             "employees": sorted(filas, key=peso), "supervisors": supervisores,
             "with_alerts": sum(1 for f in filas if f["alerts"])}
+
+
+# Las horas extra salen como en pantalla (2:00), no en minutos (120).
+EN_HORAS = ("overtime_minutes", "overtime_pending_minutes")
+
+
+def _h_mm(minutos) -> str:
+    minutos = int(minutos or 0)
+    return f"{minutos // 60}:{minutos % 60:02d}"
 
 
 def xlsx(desde, hasta, titulos: dict) -> tuple[bytes, str]:
@@ -154,7 +165,7 @@ def xlsx(desde, hasta, titulos: dict) -> tuple[bytes, str]:
                 "manual_checks", "overtime_minutes", "overtime_pending_minutes")
     tabla = [[titulos["employee"]] + [titulos[c] for c in columnas] + [titulos["alerts"]]]
     for f in datos["employees"]:
-        tabla.append([f["full_name"]] + [f[c] for c in columnas]
+        tabla.append([f["full_name"]] + [_h_mm(f[c]) if c in EN_HORAS else f[c] for c in columnas]
                      + [", ".join(titulos[f"alert_{a['code']}"] for a in f["alerts"])])
     if datos["supervisors"]:
         tabla += [[], [titulos["supervisor"], titulos["manual_checks"]]]
@@ -203,7 +214,7 @@ def bitacora(desde, hasta, id_supervisor=None) -> dict:
                 "previous_time": hora(f.previous_time), "new_time": hora(f.new_time), "added": f.previous_time is None,
                 "reason": f.reason, "kind": f.incident_kind, "is_exception": bool(f.is_exception),
                 "by": nombres.get(f.created_by) or f"#{f.created_by}", "id_by": f.created_by,
-                "created_at": f.creation_date.isoformat(timespec="minutes") if f.creation_date else None,
+                "created_at": utc_a_pared(f.creation_date).isoformat(timespec="minutes") if f.creation_date else None,  # se guarda en UTC; se muestra la hora local
             } for f in filas],
         }
 
@@ -216,6 +227,9 @@ def _quincena_de(dia: date) -> tuple[date, date]:
 
 def _de_rh(db) -> list[int]:
     """Quienes tienen el reporte de asistencia en el Gestor (por omision, RH/Administrador)."""
+    from app.modules.plan import entidad_habilitada
+    if not entidad_habilitada("attendance_report"):   # RH fuera del plan de la empresa: a nadie
+        return []
     roles = (select(EntityPermission.id_permission).where(EntityPermission.entity_name == "attendance_report")
              .where(EntityPermission.scope_read != 0).where(EntityPermission.deletion_date.is_(None)))
     return list(db.scalars(select(User.id_user).where(User.id_permission.in_(roles))

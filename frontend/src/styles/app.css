@@ -247,6 +247,8 @@ label:has(:is(input,select,textarea):required)::before,label:has(+ :is(input,sel
 .hoja-nomina table{min-width:760px}
 .hoja-nomina th.bloque{text-align:center;letter-spacing:.08em}
 .hoja-nomina th.bloque.ingresos,.hoja-nomina td.ingreso-total{background:#ecfdf5;color:#166534}
+.hoja-nomina .celda-guardada{display:block;color:#166534;font-weight:800;font-size:11px}
+.hoja-nomina .quitar-columna{border:0;background:transparent;color:#b91c1c;cursor:pointer;padding:0 0 0 4px;vertical-align:middle}
 .hoja-nomina th.bloque.egresos,.hoja-nomina td.egreso-total{background:#fef2f2;color:#991b1b}
 .hoja-nomina td.calculada{background:#f1f5f9;color:#475569}
 .hoja-nomina td.num,.hoja-nomina th.num{text-align:right}

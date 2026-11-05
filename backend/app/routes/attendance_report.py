@@ -12,12 +12,12 @@ bp_attendance_report = Blueprint('attendance_report', __name__, url_prefix='/att
 TITULOS = {
     "employee": "Empleado", "late": "Retardos", "late_minutes": "Minutos de retardo", "absences": "Faltas",
     "absences_next_to_rest": "Faltas junto a descanso", "pending_justification": "Sin justificar",
-    "leave_days": "Dias de permiso o vacaciones", "manual_checks": "Checadas a mano",
-    "overtime_minutes": "Horas extra confirmadas (min)", "overtime_pending_minutes": "Horas extra pendientes de RH (min)",
+    "leave_days": "Días de permiso o vacaciones", "manual_checks": "Checadas a mano",
+    "overtime_minutes": "Horas extra confirmadas (h:mm)", "overtime_pending_minutes": "Horas extra pendientes de RH (h:mm)",
     "alerts": "Alertas", "supervisor": "Supervisor",
     "alert_late": "Retardos repetidos", "alert_absences": "Faltas repetidas",
     "alert_absence_next_to_rest": "Falta junto a descanso o festivo", "alert_manual": "Muchas checadas a mano",
-    "alert_pending": "Dias sin justificar",
+    "alert_pending": "Días sin justificar",
 }
 
 

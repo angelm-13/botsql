@@ -382,7 +382,8 @@ def borrar(user_data: dict, id_overtime) -> dict:
 def del_rango(user_data: dict, desde, hasta) -> dict:
     """Horas extra registradas (con lo checado y su estado) y tiempo no autorizado del
     rango: de todos para RH, de su equipo para un supervisor."""
-    from app.services.attendance_correction_service import _es_rh
+    from app.services.attendance_correction_service import _es_rh, exigir_acceso_a_asistencias
+    exigir_acceso_a_asistencias(user_data)
     desde, hasta = _fecha(desde, "from"), _fecha(hasta, "to")
     if hasta < desde or (hasta - desde).days > 62:
         raise AppError("errors.invalid_field", 400, {"field": "to"})

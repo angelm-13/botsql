@@ -22,6 +22,8 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
+const CON_TEXTO = { display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" };
+const PELIGRO = { marginLeft: 12, background: "#fef2f2", color: "#b91c1c" };
 const ALL_FIELD_NAMES = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'includes_aguinaldo', 'id_payroll_group', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
 
 function hasBit(value, bit) {
@@ -186,6 +188,11 @@ export default function PayrollPeriodPage() {
   function canUseAction(bit) {
     if (isSuperUser) return true;
     return Number(modulePermission?.[SCOPE_FIELD_BY_BIT[bit]] || 0) !== 0;
+  }
+
+  function nombreDeEstado(id) {
+    const estado = statusOptions.find((s) => s.id_status === id);
+    return estado ? t(`user_status.${estado.status_description}`, estado.status_description) : formatTableValue(id);
   }
 
   function nombreDeGrupo(id) {
@@ -545,14 +552,14 @@ export default function PayrollPeriodPage() {
           )}
           {canSeeField("period_start") && (
           <label className="field">
-            <span>{t("fields.payroll_period.period_start")}</span>
+            <span>{t("fields.payroll_period.period_start")} *</span>
             <input name="period_start" type="date" value={formData.period_start ?? ""} onChange={handleChange} placeholder={t("fields.payroll_period.period_start")} aria-invalid={Boolean(fieldErrors["period_start"])} {...inputPropsForField("period_start", validationRules["period_start"], "date")} />
             {fieldErrors["period_start"] && <span className="field-error">{formatFieldError("period_start")}</span>}
           </label>
           )}
           {canSeeField("period_end") && (
           <label className="field">
-            <span>{t("fields.payroll_period.period_end")}</span>
+            <span>{t("fields.payroll_period.period_end")} *</span>
             <input name="period_end" type="date" value={formData.period_end ?? ""} onChange={handleChange} placeholder={t("fields.payroll_period.period_end")} aria-invalid={Boolean(fieldErrors["period_end"])} {...inputPropsForField("period_end", validationRules["period_end"], "date")} />
             {fieldErrors["period_end"] && <span className="field-error">{formatFieldError("period_end")}</span>}
           </label>
@@ -660,14 +667,14 @@ export default function PayrollPeriodPage() {
               {canSeeField("creation_date") && <th>{t("fields.payroll_period.creation_date")}</th>}
               {canSeeField("last_update_date") && <th>{t("fields.payroll_period.last_update_date")}</th>}
               {canSeeField("deletion_date") && <th>{t("fields.payroll_period.deletion_date")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_payroll_period}>{showRowActions && <td className="row-actions">{stateBadge(item.period_state)}{canUpdate && item.period_state !== "closed" && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && item.period_state !== "closed" && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && item.period_state !== "closed" && <button type="button" onClick={() => runCalculation(item)} title={t("payroll_calc.button")} aria-label={`${t("payroll_calc.button")} #${item.id_payroll_period}`}><Calculator size={15} /></button>}{item.period_state && item.period_state !== "open" && <button type="button" onClick={() => viewCalculation(item)} title={t("payroll_calc.view")} aria-label={`${t("payroll_calc.view")} #${item.id_payroll_period}`}><Eye size={15} /></button>}{canUpdate && item.period_state === "calculated" && <button type="button" onClick={() => closePeriod(item)} title={t("payroll_calc.close")} aria-label={`${t("payroll_calc.close")} #${item.id_payroll_period}`}><Lock size={15} /></button>}{canDelete && item.period_state === "closed" && <button type="button" onClick={() => reopenPeriod(item)} title={t("payroll_calc.reopen")} aria-label={`${t("payroll_calc.reopen")} #${item.id_payroll_period}`}><Unlock size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_payroll_period}>{showRowActions && <td className="row-actions" style={{ flexWrap: "wrap", minWidth: 300 }}>{stateBadge(item.period_state)}{canUpdate && item.period_state !== "closed" && <button type="button" style={CON_TEXTO} onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /> {t("common.edit")}</button>}{canUpdate && item.period_state !== "closed" && <button type="button" style={CON_TEXTO} onClick={() => runCalculation(item)} title={t("payroll_calc.button")} aria-label={`${t("payroll_calc.button")} #${item.id_payroll_period}`}><Calculator size={15} /> {t("payroll_calc.button")}</button>}{item.period_state && item.period_state !== "open" && <button type="button" style={CON_TEXTO} onClick={() => viewCalculation(item)} title={t("payroll_calc.view")} aria-label={`${t("payroll_calc.view")} #${item.id_payroll_period}`}><Eye size={15} /> {t("payroll_calc.view")}</button>}{canUpdate && item.period_state === "calculated" && <button type="button" style={CON_TEXTO} onClick={() => closePeriod(item)} title={t("payroll_calc.close")} aria-label={`${t("payroll_calc.close")} #${item.id_payroll_period}`}><Lock size={15} /> {t("payroll_calc.close")}</button>}{canDelete && item.period_state === "closed" && <button type="button" style={CON_TEXTO} onClick={() => reopenPeriod(item)} title={t("payroll_calc.reopen")} aria-label={`${t("payroll_calc.reopen")} #${item.id_payroll_period}`}><Unlock size={15} /> {t("payroll_calc.reopen")}</button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}{canDelete && item.period_state !== "closed" && <button type="button" style={{ ...CON_TEXTO, ...PELIGRO }} onClick={() => removeItem(item)} title={t("common.delete")} aria-label={`${t("common.delete")} #${item.id_payroll_period}`}><Trash2 size={15} /> {t("common.delete")}</button>}</td>}
               {canSeeField("id_payroll_period") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_period)}</pre></td>}
               {canSeeField("id_payroll_group") && <td>{nombreDeGrupo(item.id_payroll_group)}</td>}
               {canSeeField("period_start") && <td><pre className="cell-value">{formatTableValue(item.period_start)}</pre></td>}
               {canSeeField("period_end") && <td><pre className="cell-value">{formatTableValue(item.period_end)}</pre></td>}
               {canSeeField("payment_date") && <td><pre className="cell-value">{formatTableValue(item.payment_date)}</pre></td>}
-              {canSeeField("id_status") && <td><pre className="cell-value">{formatTableValue(item.id_status)}</pre></td>}
-              {canSeeField("created_by") && <td><pre className="cell-value">{formatTableValue(item.created_by)}</pre></td>}
+              {canSeeField("id_status") && <td>{nombreDeEstado(item.id_status)}</td>}
+              {canSeeField("created_by") && <td>{item.created_by_name || formatTableValue(item.created_by)}</td>}
               {canSeeField("creation_date") && <td><pre className="cell-value">{formatTableValue(item.creation_date)}</pre></td>}
               {canSeeField("last_update_date") && <td><pre className="cell-value">{formatTableValue(item.last_update_date)}</pre></td>}
               {canSeeField("deletion_date") && <td><pre className="cell-value">{formatTableValue(item.deletion_date)}</pre></td>}

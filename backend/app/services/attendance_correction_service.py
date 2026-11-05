@@ -41,6 +41,8 @@ TIPOS_DE_INCIDENTE = ("forgot", "device_failure", "field_work", "hourly_leave")
 POLITICA_DE_CHECADAS = {LIMITE: (0, range(0, 32))}
 
 
+MIN_MOTIVO = 5
+
 def limite(db, al_dia: date) -> int:
     from app.services.payroll_calculation_service import _vigentes
     return int(_vigentes(db, (LIMITE,), al_dia).get(LIMITE, POLITICA_DE_CHECADAS[LIMITE][0]))
@@ -51,8 +53,18 @@ def _es_rh(user_data: dict) -> bool:
     return _has_entity_permission(user_data, "attendance_record", "update")
 
 
+def exigir_acceso_a_asistencias(user_data: dict) -> None:
+    """Correcciones y horas extra pasan por el Gestor (pedido de Alan, 2026-11-05): sin
+    leer `attendance_record` (RH apagado para ese rol o esa empresa) no se usan, aunque
+    el actor sea jefe del empleado."""
+    from app.utils.auth import _has_entity_permission
+    if not _has_entity_permission(user_data, "attendance_record", "read"):
+        raise AppError("errors.permission_denied", 403, {"entity": "attendance_record", "action": "read"})
+
+
 def _exigir_que_pueda(db, user_data: dict, id_empleado: int) -> tuple[User, bool]:
     """(empleado, es_rh). Su supervisor o RH; nadie las suyas salvo RH."""
+    exigir_acceso_a_asistencias(user_data)
     empleado = db.get(User, id_empleado)
     if empleado is None or empleado.deletion_date is not None:
         raise AppError("errors.invalid_field", 400, {"field": "id_user"})
@@ -88,8 +100,9 @@ def corregir(user_data: dict, payload: dict) -> dict:
     from app.services.employee_leave_service import _exigir_fuera_de_periodo_cerrado
     payload = dict(payload or {})
     motivo = str(payload.get("reason") or "").strip()
-    if not motivo or len(motivo) > 300:
-        raise AppError("errors.invalid_field", 400, {"field": "reason"})
+    # Minimo 5 letras: en la revision del tester se guardo un motivo de una sola letra ("p").
+    if len(motivo) < MIN_MOTIVO or len(motivo) > 300:
+        raise AppError("errors.invalid_field", 400, {"field": "reason", "min": MIN_MOTIVO})
     nueva = _hora(payload.get("new_time"))
     tipo = payload.get("incident_kind") or None
     if tipo is not None and tipo not in TIPOS_DE_INCIDENTE:

@@ -1096,11 +1096,11 @@
       "creation_date": "Fecha de creación",
       "deletion_date": "Fecha de eliminación",
       "id_payroll_concept": "ID Concepto de nómina",
-      "is_imss": "Es IMSS",
-      "is_taxable": "Es Gravable",
+      "is_imss": "Integra IMSS",
+      "is_taxable": "Grava ISR",
       "last_update_date": "Fecha de última actualización",
-      "payroll_code": "Nómina Código",
-      "payroll_concept_description": "Nómina Concepto Descripción",
+      "payroll_code": "Código",
+      "payroll_concept_description": "Descripción",
       "type": "Tipo"
     },
     "payroll_detail": {
@@ -3840,7 +3840,8 @@
       "vacation": "Vacaciones",
       "leave": "Permisos",
       "disability": "Incapacidad",
-      "checked_during_leave": "Checó estando ausente"
+      "checked_during_leave": "Checó estando ausente",
+      "incomplete_hint": "«Incompletas»: días con una sola checada. No se pagan hasta que RH los justifique o los corrija, y bajan los días pagados."
     },
     "link": {
       "column": "Empleado del sistema",
@@ -3996,7 +3997,8 @@
       "kind_forgot": "Olvidó checar",
       "kind_device_failure": "Falló el checador",
       "kind_field_work": "Comisión o diligencia",
-      "kind_hourly_leave": "Permiso por horas"
+      "kind_hourly_leave": "Permiso por horas",
+      "reason_min": "Mínimo 5 letras"
     }
   },
   "invoice": {
@@ -5346,7 +5348,8 @@
       "benefit_loan": "Prestación: préstamo de la empresa (descuento en la hoja de nómina)",
       "benefit_alimony": "Pensión alimenticia (descuento en la hoja de nómina)",
       "disability_pay_waiting_days": "Incapacidad por enfermedad general: la empresa paga los 3 días de espera",
-      "disability_complement_pct": "Incapacidad por enfermedad general: la empresa complementa este % del sueldo desde el 4.º día"
+      "disability_complement_pct": "Incapacidad por enfermedad general: la empresa complementa este % del sueldo desde el 4.º día",
+      "notifications_email_enabled": "Mandar los avisos de la campana también por correo (todos los módulos)"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",
@@ -5484,7 +5487,7 @@
     "new_request": "Nueva solicitud",
     "send": "Enviar solicitud",
     "pending": "Pendientes",
-    "request_hint": "Queda pendiente hasta que tu jefe o RH la autorice. Los días pendientes se apartan de tu saldo. Las incapacidades las registra RH.",
+    "request_hint": "Queda pendiente hasta que la autorice tu jefe y después RH (aprobación final). Los días pendientes se apartan de tu saldo. Las incapacidades las registra RH.",
     "mine_title": "Mis solicitudes y ausencias",
     "status": "Estado",
     "review_note": "Nota de revisión",
@@ -5512,7 +5515,9 @@
     "step_hr": "RH",
     "boss_absent": "Su jefe está ausente: puede aprobar el jefe de su jefe.",
     "team_off": "También faltan {n} de {total} de su equipo",
-    "team_all_in": "Nadie más de su equipo falta esas fechas."
+    "team_all_in": "Nadie más de su equipo falta esas fechas.",
+    "confirm_approve": "¿Aprobar {tipo} de {nombre} del {desde} al {hasta}? Después pasa a RH para la aprobación final.",
+    "confirm_approve_final": "¿Dar la aprobación final a {tipo} de {nombre} del {desde} al {hasta}?"
   },
   "payroll_groups": {
     "eyebrow": "Recursos humanos",
@@ -5581,7 +5586,7 @@
     "settlement_pay": "Se paga",
     "settlement_compensate": "Tiempo libre (no se paga)",
     "notes": "Comentario",
-    "form_hint": "La captura de RH y el tiempo libre llevan comentario obligatorio. Las primeras 9 horas de la semana se pagan dobles y las demás triples.",
+    "form_hint": "El comentario es obligatorio (marcado con *) cuando entra como «Captura de RH (sin checadas)» o se liquida con tiempo libre. Las primeras 9 horas de la semana se pagan dobles y las demás triples.",
     "unauthorized_title": "Tiempo no autorizado",
     "unauthorized_hint": "Se quedaron después de su salida sin autorización. No se paga hasta que se apruebe. Tolerancia",
     "extra_time": "Tiempo de más",
@@ -5619,7 +5624,8 @@
     "confirmed_done": "Horas extra confirmadas: se pagan en la nómina.",
     "rejected_done": "Horas extra rechazadas: no se pagan.",
     "estimated_cost": "Costo estimado",
-    "pending_summary": "Pendientes de RH: {n} · costo estimado {costo}. Revísalas antes de que se trabajen."
+    "pending_summary": "Pendientes de RH: {n} · costo estimado {costo}. Revísalas antes de que se trabajen.",
+    "approved_not_worked": "Confirmada, pero se paga 0:00 h: no hay checada de salida ese día"
   },
   "salaries": {
     "title": "Cómo gana cada empleado",
@@ -5700,7 +5706,9 @@
     "schedule_hint": "Dice a qué hora entra y sale (retardos y faltas). No decide cuándo cobra.",
     "group_hint": "Dice cada cuándo cobra (semanal, quincenal…). No cambia su hora de entrada.",
     "base_salary_hint": "Solo se usa si el empleado no tiene sueldo vigente en «Nómina y asistencia», que es el que manda.",
-    "email_notifications_hint": "Si el usuario tiene correo, los avisos de la campana también le llegan ahí. El correo no es obligatorio."
+    "email_notifications_hint": "Si el usuario tiene correo, los avisos de la campana también le llegan ahí, siempre que la empresa lo prenda en Cifras oficiales › Opciones. El correo no es obligatorio.",
+    "from_hint": "Esta vigencia empieza en esta fecha: los periodos anteriores no la usarán. Para una quincena pasada, pon su primer día.",
+    "salary_hint": "Este es el sueldo que usa la nómina."
   },
   "payroll_simulator": {
     "eyebrow": "Recursos humanos",
@@ -5774,7 +5782,10 @@
     "applied": "Listo: la simulación quedó en la nómina.",
     "saved": "Guardado y recalculado.",
     "add_concept": "Agregar concepto",
-    "download": "Descargar Excel"
+    "download": "Descargar Excel",
+    "saved_short": "guardado",
+    "remove_column": "Quitar columna",
+    "no_more_concepts": "Ya están todos los conceptos en la hoja."
   },
   "attendance_report": {
     "eyebrow": "Recursos humanos",
@@ -5893,5 +5904,10 @@
     "how_calculated": "Crea el periodo y da «Calcular nómina».",
     "step_closed": "Cerrar el periodo",
     "how_closed": "Revisa los recibos y cierra el periodo."
+  },
+  "payroll_concept_type": {
+    "earning": "Percepción",
+    "deduction": "Deducción",
+    "employer_contribution": "Aportación patronal"
   }
 }

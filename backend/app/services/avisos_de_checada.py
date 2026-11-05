@@ -90,7 +90,10 @@ def avisar_checadas_faltantes(ahora: datetime | None = None) -> int:
                 pendientes.append((id_user, SIN_SALIDA, id_user, "No has checado tu salida",
                                    f"Tu salida era a las {dia.salida:%H:%M}. Sin la salida, el día queda "
                                    "pendiente de justificar y no se paga."))
-        pendientes = [p for p in pendientes if not _ya_avisado(db, p[1], p[0], p[2])]
+        from app.services.employee_leave_service import ve_rh
+        destinos = {u.id_user: u for u in db.scalars(select(User).where(User.id_user.in_([p[0] for p in pendientes] or [0])))}
+        # Solo a quien su rol deja ver RH en el Gestor (pedido de Alan, 2026-11-05).
+        pendientes = [p for p in pendientes if ve_rh(destinos.get(p[0])) and not _ya_avisado(db, p[1], p[0], p[2])]
     enviados = 0
     for destinatario, tipo, id_empleado, titulo, mensaje in pendientes:
         try:

@@ -27,6 +27,9 @@ class _ConChecadas(_ConEquipo):
         with transaction_context() as db:
             db.add(EntityPermission(id_permission=961, entity_name="attendance_record", scope_create=4,
                                     scope_read=4, scope_update=4, scope_delete=4, created_by=1))
+            # El jefe necesita leer Asistencias en el Gestor (pedido de Alan, 2026-11-05).
+            db.add(EntityPermission(id_permission=2, entity_name="attendance_record", scope_create=0,
+                                    scope_read=4, scope_update=0, scope_delete=0, created_by=1))
 
     def checada(self, dia, hora):
         with transaction_context() as db:
@@ -92,6 +95,9 @@ class TestCorregir(_ConChecadas):
     def test_el_motivo_es_obligatorio(self):
         r = self.corregir(BETO, id_attendance_record=self.checada(1, 8), new_time="2026-10-01T08:30", reason=" ")
         self.assertEqual(400, r.status_code)
+        # Una sola letra tampoco alcanza (revision del tester): minimo 5.
+        r = self.corregir(BETO, id_attendance_record=self.checada(1, 8), new_time="2026-10-01T08:30", reason="p")
+        self.assertEqual(400, r.status_code)
 
 
 class TestLimite(_ConChecadas):
@@ -141,6 +147,15 @@ class TestQuienCorrige(_ConChecadas):
         for quien in (ANA, CARLA):
             self.assertEqual(403, self.corregir(quien, id_attendance_record=self.checada(1, 8),
                                                 new_time="2026-10-01T08:30").status_code)
+
+    def test_el_jefe_sin_asistencias_en_el_gestor_no_corrige(self):
+        # Pedido de Alan (2026-11-05): con RH apagado para su rol, ser el jefe no basta.
+        r = self.client.post("/attendance_correction/", headers=self.h(BETO, 777),
+                             json={"id_attendance_record": self.checada(1, 8), "new_time": "2026-10-01T08:30",
+                                   "reason": "Se le olvido checar"})
+        self.assertEqual(403, r.status_code)
+        self.assertEqual(403, self.client.get(f"/attendance_correction/?id_user={ANA}&month=2026-10",
+                                              headers=self.h(BETO, 777)).status_code)
 
     def test_el_empleado_no_ve_su_contador(self):
         self.assertEqual(403, self.contador(ANA).status_code)

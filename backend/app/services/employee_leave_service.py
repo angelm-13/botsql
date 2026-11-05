@@ -430,6 +430,20 @@ def _notificar(destinatario, notification_type: str, titulo: str, mensaje: str, 
         pass
 
 
+# Pantallas de RH que alguien puede tener abiertas. Un aviso automatico de RH solo le llega
+# a quien su rol deja ver al menos una en el Gestor (pedido de Alan, 2026-11-05): con RH
+# apagado para un rol o fuera del plan de la empresa, sus usuarios no reciben nada.
+PANTALLAS_DE_RH = ("my_leaves", "employee_leave", "attendance_record", "attendance_report")
+
+
+def ve_rh(usuario) -> bool:
+    from app.utils.auth import _has_entity_permission
+    if usuario is None:
+        return False
+    actor = {"id_user": usuario.id_user, "id_permission": usuario.id_permission}
+    return any(_has_entity_permission(actor, pantalla, "read") for pantalla in PANTALLAS_DE_RH)
+
+
 def avisar_vacaciones_por_vencer(hoy: date | None = None) -> int:
     """Avisa (campana) al empleado y a su supervisor cuando le quedan dias de
     vacaciones que vencen justo dentro de los dias de aviso de la politica (60 y
@@ -446,6 +460,8 @@ def avisar_vacaciones_por_vencer(hoy: date | None = None) -> int:
         empleados = db.scalars(select(User).where(User.deletion_date.is_(None))
                                .where(User.is_employee.is_(True))).all()
         jefes = {e.id_user: e.supervisor for e in empleados}
+        con_rh = {u.id_user for u in db.scalars(select(User).where(User.id_user.in_(
+            list({e.id_user for e in empleados} | {j for j in jefes.values() if j}) or [0]))) if ve_rh(u)}
         pendientes = []
         for saldo in _saldos(db, empleados, hoy):
             for bloque in saldo["expiring"]:
@@ -457,7 +473,7 @@ def avisar_vacaciones_por_vencer(hoy: date | None = None) -> int:
         que = "pagan" if pol[pv.NO_USADOS] == pv.SE_PAGAN else "pierden"
         mensaje = (f"{saldo['full_name']} tiene {bloque['days']} días de vacaciones que vencen el "
                    f"{bloque['expires_on']} (en {faltan} días). Si no se toman, se {que}.")
-        for destinatario in {saldo["id_user"], jefes.get(saldo["id_user"])} - {None}:
+        for destinatario in ({saldo["id_user"], jefes.get(saldo["id_user"])} - {None}) & con_rh:
             try:
                 # created_by es llave a user: sin el, Postgres rechaza el aviso (SQLite no lo
                 # revisa). Lo escribe el sistema; queda a nombre de quien lo recibe, como el

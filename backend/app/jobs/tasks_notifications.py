@@ -21,6 +21,18 @@ from app.services.email_service import send_email
 from app.utils.tiempo import ahora_utc
 
 
+# Opcion de la empresa en Cifras oficiales (pedido de Alan, 2026-11-05): los avisos por
+# correo valen para todos los modulos, asi que cada empresa decide si los prende. Apagado
+# por omision: una empresa que no lo pide no recibe correos al configurar la cuenta.
+CORREO_DE_AVISOS = "notifications_email_enabled"
+
+
+def correo_activo(db) -> bool:
+    from app.services.payroll_calculation_service import _vigentes
+    from app.utils.tiempo import hoy_negocio
+    return int(_vigentes(db, (CORREO_DE_AVISOS,), hoy_negocio()).get(CORREO_DE_AVISOS, 0) or 0) == 1
+
+
 def correo_del_aviso(aviso: Notification, persona: User) -> tuple[str, str]:
     """(asunto, cuerpo) del correo de un aviso."""
     base = (os.getenv("PUBLIC_FRONTEND_BASE_URL") or "").rstrip("/")
@@ -50,6 +62,8 @@ def send_notification_email(self, id_notification: int) -> dict:
             return result_ok("jobs.notifications.skipped", id_notification=id_notification)
         if aviso.email_sent_at is not None:
             return result_ok("jobs.notifications.already_sent", id_notification=id_notification)
+        if not correo_activo(db):
+            return result_ok("jobs.notifications.company_off", id_notification=id_notification)
         persona = db.get(User, aviso.id_user_recipient)
         correo = str(getattr(persona, "email", "") or "").strip()
         if persona is None or persona.deletion_date is not None or not correo or not persona.receive_email_notifications:

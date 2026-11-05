@@ -37,6 +37,9 @@ class _ConHorasExtra(_ConEquipo):
         with transaction_context() as db:
             db.add(EntityPermission(id_permission=961, entity_name="attendance_record", scope_create=4,
                                     scope_read=4, scope_update=4, scope_delete=4, created_by=1))
+            # El jefe necesita leer Asistencias en el Gestor (pedido de Alan, 2026-11-05).
+            db.add(EntityPermission(id_permission=2, entity_name="attendance_record", scope_create=0,
+                                    scope_read=4, scope_update=0, scope_delete=0, created_by=1))
 
     def checa(self, dia, salida, entrada=(9, 0)):
         with transaction_context() as db:
@@ -171,6 +174,15 @@ class TestQuienYCuando(_ConHorasExtra):
 
 class TestJefeYLuegoRh(_ConHorasExtra):
     """Lo que registra el jefe queda pendiente de RH y no se paga hasta que RH lo confirma (2026-11-04)."""
+
+    def test_sin_asistencias_en_el_gestor_no_registra_ni_ve(self):
+        # Pedido de Alan (2026-11-05): ser el jefe no basta si su rol no lee Asistencias.
+        sin_rh = {"id_user": BETO, "id_permission": 777}
+        for hacer in (lambda: registrar(sin_rh, {"id_user": ANA, "work_date": "2026-10-01", "minutes": 60}),
+                      lambda: del_rango(sin_rh, "2026-10-01", "2026-10-15")):
+            with self.assertRaises(AppError) as error:
+                hacer()
+            self.assertEqual(403, error.exception.status_code)
 
     def test_pendiente_no_se_paga_confirmado_si_y_rechazado_no(self):
         self.checa(6, (20, 0))

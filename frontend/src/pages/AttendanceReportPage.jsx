@@ -115,7 +115,7 @@ export default function AttendanceReportPage() {
             <table>
               <thead><tr>
                 <th>{t("attendance_report.log_date")}</th><th>{t("attendance_report.employee")}</th><th>{t("attendance_report.log_change")}</th>
-                <th>{t("attendance_report.log_reason")}</th><th>{t("attendance_report.supervisor")}</th><th>{t("attendance_report.log_when")}</th>
+                <th>{t("attendance_report.log_reason")}</th><th>{t("attendance_report.log_by")}</th><th>{t("attendance_report.log_when")}</th>
               </tr></thead>
               <tbody>{bitacora.corrections.map((c) => (
                 <tr key={c.id_attendance_correction}>

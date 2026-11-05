@@ -30,6 +30,18 @@ def _celda(ref: str, valor) -> str:
     return f'<c r="{ref}" t="inlineStr"><is><t>{escape(str(valor))}</t></is></c>'
 
 
+def _anchos(filas: list[list]) -> str:
+    """Ancho de cada columna segun su texto mas largo: sin esto Excel cortaba encabezados y nombres."""
+    largos: dict[int, int] = {}
+    for fila in filas:
+        for j, v in enumerate(fila):
+            largos[j] = max(largos.get(j, 0), len(str(v)))
+    if not largos:
+        return ""
+    return "<cols>" + "".join(f'<col min="{j + 1}" max="{j + 1}" width="{min(max(n + 2, 8), 60)}" customWidth="1"/>'
+                              for j, n in sorted(largos.items())) + "</cols>"
+
+
 def libro(nombre_hoja: str, filas: list[list]) -> bytes:
     hoja = "".join(f'<row r="{i + 1}">' + "".join(_celda(_ref(j, i + 1), v) for j, v in enumerate(f)) + "</row>"
                    for i, f in enumerate(filas))
@@ -46,7 +58,7 @@ def libro(nombre_hoja: str, filas: list[list]) -> bytes:
         f'<sheet name="{escape("".join(c for c in nombre_hoja if c not in ":\\/?*[]")[:31])}" sheetId="1" r:id="rId1"/></sheets></workbook>',
         "xl/_rels/workbook.xml.rels": f'{_CABECERA}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
-        "xl/worksheets/sheet1.xml": f'{_CABECERA}<worksheet {_NS}><sheetData>{hoja}</sheetData></worksheet>',
+        "xl/worksheets/sheet1.xml": f'{_CABECERA}<worksheet {_NS}>{_anchos(filas)}<sheetData>{hoja}</sheetData></worksheet>',
     }
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:

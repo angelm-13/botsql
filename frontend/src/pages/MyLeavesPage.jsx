@@ -94,6 +94,15 @@ export default function MyLeavesPage() {
     if (ok) setForm(null);
   }
 
+  // Aprobar repite que se aprueba antes de hacerlo: antes era un solo clic sin vuelta atras.
+  async function aprobar(s) {
+    const pregunta = t(s.step === "hr" ? "my_leaves.confirm_approve_final" : "my_leaves.confirm_approve")
+      .replace("{tipo}", t(`employee_leaves.type_${s.leave_type}`)).replace("{nombre}", s.full_name)
+      .replace("{desde}", s.start_date).replace("{hasta}", s.end_date);
+    if (!(await dialogo.confirmar(pregunta))) return;
+    accion(() => approveEmployeeLeave(s.id_employee_leave), "my_leaves.approved_done");
+  }
+
   async function rechazar(s) {
     const nota = await dialogo.pedirTexto(t("my_leaves.reject_note"));
     if (nota === null) return;
@@ -215,7 +224,7 @@ export default function MyLeavesPage() {
                 </td>
                 <td className="row-actions">
                   {s.leave_type === "disability" && <button type="button" title={t("leave_sheet.title")} aria-label={`${t("leave_sheet.title")} ${s.full_name}`} onClick={() => setHoja(s.id_employee_leave)}><FileText size={15} /></button>}
-                  <button type="button" title={t("my_leaves.approve")} aria-label={`${t("my_leaves.approve")} ${s.full_name}`} onClick={() => accion(() => approveEmployeeLeave(s.id_employee_leave), "my_leaves.approved_done")}><Check size={15} /></button>
+                  <button type="button" title={t("my_leaves.approve")} aria-label={`${t("my_leaves.approve")} ${s.full_name}`} onClick={() => aprobar(s)}><Check size={15} /></button>
                   <button type="button" title={t("my_leaves.reject")} aria-label={`${t("my_leaves.reject")} ${s.full_name}`} onClick={() => rechazar(s)}><X size={15} /></button>
                 </td>
               </tr>

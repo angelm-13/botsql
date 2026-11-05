@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.models import AttendanceRecord, EmployeeSalary, PayrollGroup, PayrollPeriod
+from app.models import AttendanceRecord, EmployeeSalary, EntityPermission, PayrollGroup, PayrollPeriod
 from app.models.session import transaction_context
 from app.services.overtime_service import confirmar, registrar
 from app.services.payroll_calculation_service import calcular_periodo
@@ -73,6 +73,9 @@ class TestFormas(_ConSueldos):
             for n, hora in enumerate((9, 19)):
                 db.add(AttendanceRecord(id_user=ANA, employee_no="71", check_time=datetime(2026, 10, 6, hora),
                                         source="kronos", source_ref=f"fs:{n}", created_by=1))
+            # El jefe necesita leer Asistencias en el Gestor (pedido de Alan, 2026-11-05).
+            db.add(EntityPermission(id_permission=2, entity_name="attendance_record", scope_create=0,
+                                    scope_read=4, scope_update=0, scope_delete=0, created_by=1))
         hecho = registrar({"id_user": BETO, "id_permission": 2}, {"id_user": ANA, "work_date": "2026-10-06", "minutes": 60})
         # Jefe y luego RH (Fase 30): solo lo que RH confirma se paga.
         confirmar({"id_user": 1, "is_superuser": True}, hecho["id_overtime"], True)

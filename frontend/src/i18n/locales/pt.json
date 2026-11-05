@@ -1052,11 +1052,11 @@
       "creation_date": "Data de criação",
       "deletion_date": "Data de exclusão",
       "id_payroll_concept": "ID Conceito da folha",
-      "is_imss": "É IMSS",
-      "is_taxable": "É Tributável",
+      "is_imss": "Integra IMSS",
+      "is_taxable": "Tributa ISR",
       "last_update_date": "Data da última atualização",
-      "payroll_code": "Folha Código",
-      "payroll_concept_description": "Folha Conceito Descrição",
+      "payroll_code": "Código",
+      "payroll_concept_description": "Descrição",
       "type": "Tipo"
     },
     "payroll_detail": {
@@ -3386,7 +3386,8 @@
       "vacation": "Férias",
       "leave": "Licenças",
       "disability": "Afastamento",
-      "checked_during_leave": "Marcou estando ausente"
+      "checked_during_leave": "Marcou estando ausente",
+      "incomplete_hint": "«Incompletas»: dias com uma só marcação. Não são pagos até o RH justificá-los ou corrigi-los, e reduzem os dias pagos."
     },
     "link": {
       "column": "Funcionário do sistema",
@@ -3542,7 +3543,8 @@
       "kind_forgot": "Esqueceu de bater o ponto",
       "kind_device_failure": "Falha do relógio de ponto",
       "kind_field_work": "Serviço externo",
-      "kind_hourly_leave": "Licença por horas"
+      "kind_hourly_leave": "Licença por horas",
+      "reason_min": "Mínimo 5 letras"
     }
   },
   "task_fase": {
@@ -3721,7 +3723,8 @@
       "benefit_loan": "Benefício: empréstimo da empresa (desconto na planilha)",
       "benefit_alimony": "Pensão alimentícia (desconto na planilha)",
       "disability_pay_waiting_days": "Incapacidade por doença geral: a empresa paga os 3 dias de espera",
-      "disability_complement_pct": "Incapacidade por doença geral: a empresa complementa este % do salário a partir do 4.º dia"
+      "disability_complement_pct": "Incapacidade por doença geral: a empresa complementa este % do salário a partir do 4.º dia",
+      "notifications_email_enabled": "Enviar os avisos do sino também por e-mail (todos os módulos)"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -3859,7 +3862,7 @@
     "new_request": "Nova solicitação",
     "send": "Send request",
     "pending": "Pending",
-    "request_hint": "It stays pending until your manager or HR approves it. Pending days are held from your balance. Sick leave is registered by HR.",
+    "request_hint": "Fica pendente até seu chefe aprovar e depois o RH (aprovação final). Os dias pendentes são reservados do seu saldo. Afastamentos são registrados pelo RH.",
     "mine_title": "My requests and absences",
     "status": "Status",
     "review_note": "Review note",
@@ -3887,7 +3890,9 @@
     "step_hr": "RH",
     "boss_absent": "O chefe está ausente: o chefe do chefe pode aprovar.",
     "team_off": "Também faltam {n} de {total} da equipe",
-    "team_all_in": "Ninguém mais da equipe falta nessas datas."
+    "team_all_in": "Ninguém mais da equipe falta nessas datas.",
+    "confirm_approve": "Aprovar {tipo} de {nombre} de {desde} a {hasta}? Depois vai ao RH para a aprovação final.",
+    "confirm_approve_final": "Dar a aprovação final a {tipo} de {nombre} de {desde} a {hasta}?"
   },
   "payroll_groups": {
     "eyebrow": "Recursos humanos",
@@ -3956,7 +3961,7 @@
     "settlement_pay": "É paga",
     "settlement_compensate": "Folga (não é paga)",
     "notes": "Comentário",
-    "form_hint": "O lançamento do RH e a folga exigem comentário. As primeiras 9 horas da semana são pagas em dobro e as demais em triplo.",
+    "form_hint": "O comentário é obrigatório (marcado com *) em «Registro do RH (sem marcações)» ou quando se compensa com folga. As primeiras 9 horas da semana são pagas em dobro e as demais em triplo.",
     "unauthorized_title": "Tempo não autorizado",
     "unauthorized_hint": "Ficaram depois da saída sem autorização. Não é pago até ser aprovado. Tolerância",
     "extra_time": "Tempo a mais",
@@ -3994,7 +3999,8 @@
     "confirmed_done": "Horas extras confirmadas: são pagas na folha.",
     "rejected_done": "Horas extras rejeitadas: não são pagas.",
     "estimated_cost": "Custo estimado",
-    "pending_summary": "Pendentes do RH: {n} · custo estimado {costo}. Revise antes de serem trabalhadas."
+    "pending_summary": "Pendentes do RH: {n} · custo estimado {costo}. Revise antes de serem trabalhadas.",
+    "approved_not_worked": "Confirmada, mas paga-se 0:00 h: não há marcação de saída nesse dia"
   },
   "salaries": {
     "title": "Como cada funcionário recebe",
@@ -4075,7 +4081,9 @@
     "schedule_hint": "A que horas entra e sai (atrasos e faltas). Não decide quando recebe.",
     "group_hint": "De quanto em quanto tempo recebe (semanal, quinzenal…). Não muda o horário de entrada.",
     "base_salary_hint": "Só é usado se o funcionário não tiver salário vigente em «Folha e presença», que prevalece.",
-    "email_notifications_hint": "Se o usuário tiver e-mail, os avisos do sino também chegam lá. O e-mail não é obrigatório."
+    "email_notifications_hint": "Se o usuário tiver e-mail, os avisos do sino também chegam lá, desde que a empresa ative em Valores oficiais › Opções. O e-mail não é obrigatório.",
+    "from_hint": "Vale a partir desta data: períodos anteriores não a usarão. Para um período passado, ponha o primeiro dia dele.",
+    "salary_hint": "Este é o salário que a folha usa."
   },
   "payroll_simulator": {
     "eyebrow": "Recursos humanos",
@@ -4149,7 +4157,10 @@
     "applied": "Pronto: a simulação ficou na folha.",
     "saved": "Salvo e recalculado.",
     "add_concept": "Adicionar conceito",
-    "download": "Baixar Excel"
+    "download": "Baixar Excel",
+    "saved_short": "salvo",
+    "remove_column": "Remover coluna",
+    "no_more_concepts": "Todos os conceitos já estão na planilha."
   },
   "attendance_report": {
     "eyebrow": "Recursos humanos",
@@ -4249,5 +4260,10 @@
     "how_calculated": "Crie o período e clique em «Calcular folha».",
     "step_closed": "Fechar o período",
     "how_closed": "Revise os recibos e feche o período."
+  },
+  "payroll_concept_type": {
+    "earning": "Provento",
+    "deduction": "Desconto",
+    "employer_contribution": "Contribuição patronal"
   }
 }

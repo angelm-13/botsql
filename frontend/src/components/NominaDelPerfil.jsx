@@ -132,6 +132,8 @@ const NominaDelPerfil = forwardRef(function NominaDelPerfil({ idUser }, ref) {
     <label className="field">
       <span>{t("user_payroll.from")}</span>
       <input type="date" value={borrador[bloque].valid_from} onChange={poner(bloque, "valid_from")} disabled={!edita(entidad)} />
+      {/* La fecha viene con hoy: sin este aviso no se nota que una quincena pasada no la usara. */}
+      {edita(entidad) && borrador[bloque].valid_from >= fecha && <small className="muted">{t("user_payroll.from_hint")}</small>}
     </label>
   );
   const desdeCuando = (fila) => (fila && fila.valid_from > fecha ? ` (${t("user_payroll.starts")} ${fila.valid_from})` : "");
@@ -192,6 +194,7 @@ const NominaDelPerfil = forwardRef(function NominaDelPerfil({ idUser }, ref) {
           <label className="field">
             <span>{t(`salaries.amount_${borrador.sueldo.salary_type}`)}</span>
             <input type="number" min="0.01" step="0.01" value={borrador.sueldo.amount} onChange={poner("sueldo", "amount")} disabled={!edita("employee_salary")} />
+            <small className="muted">{t("user_payroll.salary_hint")}</small>
           </label>
           {borrador.sueldo.salary_type === "fixed" && (
             <label className="field">

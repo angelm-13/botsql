@@ -15,7 +15,7 @@ from app.models import EntityPermission, Notification, PayrollParameter
 from app.models.session import transaction_context
 from app.routes.attendance_report import TITULOS
 from app.services.overtime_service import confirmar, registrar
-from app.services.reporte_de_asistencia import bitacora, reporte, xlsx
+from app.services.reporte_de_asistencia import _h_mm, bitacora, reporte, xlsx
 from app.utils.errors import AppError
 from tests.test_services.test_correcciones_de_checadas import _ConChecadas
 from tests.test_services.test_solicitudes_de_vacaciones import ANA, BETO, RH
@@ -33,7 +33,7 @@ class TestReporte(_ConChecadas):
         self.assertEqual((0, 4, 1, 0), (ana["late"], ana["absences"], ana["absences_next_to_rest"], ana["manual_checks"]))
         self.assertEqual([("absences", "high"), ("absence_next_to_rest", "high")],
                          [(a["code"], a["level"]) for a in ana["alerts"]])
-        self.assertEqual(ANA, datos["employees"][0]["id_user"])   # quien tiene alertas va primero
+        self.assertEqual(ANA, datos["employees"][0]["id_user"])   # mas faltas, arriba
         self.assertEqual(1, datos["with_alerts"])
 
     def test_checadas_a_mano_retardos_y_quien_las_capturo(self):
@@ -63,6 +63,8 @@ class TestReporte(_ConChecadas):
         self.assertEqual(["absence_next_to_rest"], [a["code"] for a in self.ana(datos)["alerts"]])
         self.assertEqual((0, 1), (datos["limits"]["report_alert_absences"], datos["limits"]["report_alert_supervisor_manual"]))
         self.assertTrue(datos["supervisors"][0]["alert"])
+        # El orden no depende de que alerta este prendida: con 4 faltas Ana sigue arriba.
+        self.assertEqual(ANA, datos["employees"][0]["id_user"])
 
     def test_horas_extra_confirmadas_y_pendientes_de_rh(self):
         pendiente = registrar({"id_user": BETO, "id_permission": 2}, {"id_user": ANA, "work_date": "2026-10-02", "minutes": 60})
@@ -99,11 +101,17 @@ class TestReporte(_ConChecadas):
                 reporte(desde, hasta)
             self.assertEqual("errors.invalid_field", error.exception.message_key)
 
+    def test_horas_como_en_pantalla(self):
+        self.assertEqual(("2:00", "0:30", "0:00"), (_h_mm(120), _h_mm(30), _h_mm(None)))
+
     def test_excel(self):
         contenido, nombre = xlsx(DESDE, HASTA, TITULOS)
         self.assertEqual("asistencia_2026-10-01_2026-10-11.xlsx", nombre)
         hoja = zipfile.ZipFile(io.BytesIO(contenido)).read("xl/worksheets/sheet1.xml").decode()
         for texto in ("Ana", "Faltas repetidas", "Falta junto a descanso o festivo", "Retardos"):
+            self.assertIn(texto, hoja)
+        # Horas como en pantalla, columnas con ancho y acentos (revision del tester, 5-nov).
+        for texto in ("<t>0:00</t>", "(h:mm)", "<cols>", "Días de permiso"):
             self.assertIn(texto, hoja)
 
 

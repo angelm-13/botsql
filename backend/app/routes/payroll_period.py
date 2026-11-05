@@ -108,7 +108,19 @@ def _jsonify_projected_record(user_data: dict, record: dict | None, status: int 
 
 
 def _jsonify_projected_list(user_data: dict, payload: dict):
-    return jsonify(_project_list_payload(payload, _visible_response_fields_for_actor(user_data)))
+    visibles = _visible_response_fields_for_actor(user_data)
+    result = _project_list_payload(payload, visibles)
+    # La tabla mostraba "Creado por: 1"; se agrega el nombre sin quitar el id.
+    if 'created_by' in visibles and result.get('items'):
+        from sqlalchemy import select
+        from app.models import User
+        from app.models.session import transaction_context
+        ids = {i.get('created_by') for i in result['items'] if i.get('created_by')}
+        with transaction_context() as db:
+            nombres = dict(db.execute(select(User.id_user, User.full_name).where(User.id_user.in_(ids or {0}))).all())
+        for i in result['items']:
+            i['created_by_name'] = nombres.get(i.get('created_by')) or ''
+    return jsonify(result)
 
 
 
@@ -243,7 +255,7 @@ def xlsx_sheet_payroll_period(user_data, id_payroll_period):
     from flask import Response
     from app.services.payroll_sheet_service import xlsx
     from app.utils.xlsx_simple import MIME
-    titulos = {"employee": "Empleado", "days": "Dias", "earnings": "Total ingresos",
+    titulos = {"employee": "Empleado", "days": "Días", "earnings": "Total ingresos",
                "deductions": "Total egresos", "net": "Neto", "totals": "TOTALES"}
     contenido, nombre = xlsx(id_payroll_period, titulos)
     return Response(contenido, mimetype=MIME,

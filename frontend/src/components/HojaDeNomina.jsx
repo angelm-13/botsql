@@ -15,6 +15,7 @@ export default function HojaDeNomina({ t, money, idPeriodo, puedeEscribir, ejecu
   const [cambios, setCambios] = useState({});
   const [extra, setExtra] = useState([]);
   const [ocupado, setOcupado] = useState(false);
+  const [recien, setRecien] = useState(null); // celda que se acaba de guardar: el aviso va junto a ella
 
   async function cargar() {
     const datos = await ejecutar(() => getPayrollSheet(idPeriodo));
@@ -51,8 +52,13 @@ export default function HojaDeNomina({ t, money, idPeriodo, puedeEscribir, ejecu
       const datos = await ejecutar(() => simulatePayrollSheet(idPeriodo, lista(todos)));
       if (datos) { setCambios(todos); setHoja(datos); }
     } else {
-      const datos = await ejecutar(() => savePayrollSheet(idPeriodo, lista(celda)), { doneKey: "payroll_sheet.saved" });
-      if (datos) { setHoja(datos); onGuardado?.(); }
+      const datos = await ejecutar(() => savePayrollSheet(idPeriodo, lista(celda)));
+      if (datos) {
+        setHoja(datos); onGuardado?.();
+        const clave = Object.keys(celda)[0];
+        setRecien(clave);
+        setTimeout(() => setRecien((v) => (v === clave ? null : v)), 3000);
+      }
     }
     setOcupado(false);
   }
@@ -92,9 +98,20 @@ export default function HojaDeNomina({ t, money, idPeriodo, puedeEscribir, ejecu
           aria-label={`${col.description} · ${fila.full_name}`}
           onBlur={(e) => escribir(fila, col, e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+        {recien === `${fila.id_user}:${col.id_payroll_concept}` && <small className="celda-guardada" role="status">✓ {t("payroll_sheet.saved_short")}</small>}
       </td>
     );
   };
+
+  const encabezado = (c) => (
+    <th key={c.id_payroll_concept} className="num">{c.description}
+      {/* Una columna agregada y aun sin montos se puede quitar. */}
+      {extra.includes(c.id_payroll_concept) && hoja.available.some((a) => a.id_payroll_concept === c.id_payroll_concept) && (
+        <button type="button" className="quitar-columna" title={t("payroll_sheet.remove_column")} aria-label={`${t("payroll_sheet.remove_column")} ${c.description}`}
+          onClick={() => setExtra(extra.filter((x) => x !== c.id_payroll_concept))}><X size={12} /></button>
+      )}
+    </th>
+  );
 
   return (
     <div className="hoja-nomina">
@@ -125,6 +142,7 @@ export default function HojaDeNomina({ t, money, idPeriodo, puedeEscribir, ejecu
             </select>
           </label>
         )}
+        {escribible && disponibles.length === 0 && <small className="muted">{t("payroll_sheet.no_more_concepts")}</small>}
         <button type="button" className="button" onClick={descargar}><FileSpreadsheet size={15} /> {t("payroll_sheet.download")}</button>
       </div>
       <p className="muted" style={{ margin: "0 16px 12px" }}>{t(cerrado ? "payroll_sheet.closed_hint" : "payroll_sheet.hint")}</p>
@@ -139,9 +157,9 @@ export default function HojaDeNomina({ t, money, idPeriodo, puedeEscribir, ejecu
             </tr>
             <tr>
               <th>{t("payroll_calc.employee")}</th><th className="num">{t("payroll_calc.days")}</th>
-              {ingresos.map((c) => <th key={c.id_payroll_concept} className="num">{c.description}</th>)}
+              {ingresos.map(encabezado)}
               <th className="num">{t("payroll_sheet.total")}</th>
-              {egresos.map((c) => <th key={c.id_payroll_concept} className="num">{c.description}</th>)}
+              {egresos.map(encabezado)}
               <th className="num">{t("payroll_sheet.total")}</th>
               <th className="num">{t("payroll_calc.net")}</th>
             </tr>

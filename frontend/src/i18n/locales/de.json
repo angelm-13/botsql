@@ -1051,11 +1051,11 @@
       "creation_date": "Erstellungsdatum",
       "deletion_date": "Löschdatum",
       "id_payroll_concept": "ID Lohnabrechnungskonzept",
-      "is_imss": "Ist IMSS",
-      "is_taxable": "Ist Steuerpflichtig",
+      "is_imss": "IMSS-relevant",
+      "is_taxable": "ISR-pflichtig",
       "last_update_date": "Datum der letzten Aktualisierung",
-      "payroll_code": "Lohnabrechnung Code",
-      "payroll_concept_description": "Lohnabrechnung Konzept Beschreibung",
+      "payroll_code": "Code",
+      "payroll_concept_description": "Beschreibung",
       "type": "Typ"
     },
     "payroll_detail": {
@@ -3380,7 +3380,8 @@
       "vacation": "Urlaub",
       "leave": "Freistellung",
       "disability": "Krankheit",
-      "checked_during_leave": "Gestempelt trotz Abwesenheit"
+      "checked_during_leave": "Gestempelt trotz Abwesenheit",
+      "incomplete_hint": "«Unvollständig»: Tage mit nur einer Stempelung. Sie werden erst bezahlt, wenn die Personalabteilung sie begründet oder korrigiert."
     },
     "link": {
       "column": "Mitarbeiter im System",
@@ -3536,7 +3537,8 @@
       "kind_forgot": "Stempeln vergessen",
       "kind_device_failure": "Gerät ausgefallen",
       "kind_field_work": "Außendienst",
-      "kind_hourly_leave": "Stundenweise frei"
+      "kind_hourly_leave": "Stundenweise frei",
+      "reason_min": "Mindestens 5 Zeichen"
     }
   },
   "task_fase": {
@@ -3715,7 +3717,8 @@
       "benefit_loan": "Leistung: Firmendarlehen (Abzug in der Tabelle)",
       "benefit_alimony": "Unterhalt (Abzug in der Tabelle)",
       "disability_pay_waiting_days": "Krankheitsbedingte Arbeitsunfähigkeit: das Unternehmen zahlt die 3 Wartetage",
-      "disability_complement_pct": "Krankheitsbedingte Arbeitsunfähigkeit: das Unternehmen ergänzt diesen % des Gehalts ab Tag 4"
+      "disability_complement_pct": "Krankheitsbedingte Arbeitsunfähigkeit: das Unternehmen ergänzt diesen % des Gehalts ab Tag 4",
+      "notifications_email_enabled": "Glocken-Hinweise auch per E-Mail senden (alle Module)"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -3853,7 +3856,7 @@
     "new_request": "Neuer Antrag",
     "send": "Send request",
     "pending": "Pending",
-    "request_hint": "It stays pending until your manager or HR approves it. Pending days are held from your balance. Sick leave is registered by HR.",
+    "request_hint": "Bleibt offen, bis Ihre Führungskraft und danach die Personalabteilung (endgültig) zustimmen. Offene Tage werden vom Saldo reserviert. Krankmeldungen erfasst die Personalabteilung.",
     "mine_title": "My requests and absences",
     "status": "Status",
     "review_note": "Review note",
@@ -3881,7 +3884,9 @@
     "step_hr": "Personal",
     "boss_absent": "Die Führungskraft ist abwesend: deren Vorgesetzte kann zustimmen.",
     "team_off": "Ebenfalls abwesend: {n} von {total} im Team",
-    "team_all_in": "Sonst fehlt niemand aus dem Team an diesen Tagen."
+    "team_all_in": "Sonst fehlt niemand aus dem Team an diesen Tagen.",
+    "confirm_approve": "{tipo} für {nombre} vom {desde} bis {hasta} genehmigen? Danach folgt die endgültige Freigabe durch die Personalabteilung.",
+    "confirm_approve_final": "{tipo} für {nombre} vom {desde} bis {hasta} endgültig genehmigen?"
   },
   "payroll_groups": {
     "eyebrow": "Personalwesen",
@@ -3950,7 +3955,7 @@
     "settlement_pay": "Wird bezahlt",
     "settlement_compensate": "Freizeit (nicht bezahlt)",
     "notes": "Kommentar",
-    "form_hint": "Erfassung durch die Personalabteilung und Freizeit brauchen einen Kommentar. Die ersten 9 Stunden pro Woche werden doppelt, die übrigen dreifach bezahlt.",
+    "form_hint": "Der Kommentar ist Pflicht (mit * markiert) bei «Erfassung durch Personal (ohne Stempelung)» oder bei Freizeitausgleich. Die ersten 9 Stunden der Woche doppelt, der Rest dreifach.",
     "unauthorized_title": "Ungenehmigte Zeit",
     "unauthorized_hint": "Nach Schichtende ohne Genehmigung geblieben. Wird erst nach Genehmigung bezahlt. Toleranz",
     "extra_time": "Mehrzeit",
@@ -3988,7 +3993,8 @@
     "confirmed_done": "Überstunden bestätigt: werden abgerechnet.",
     "rejected_done": "Überstunden abgelehnt: werden nicht bezahlt.",
     "estimated_cost": "Geschätzte Kosten",
-    "pending_summary": "Wartet auf Personal: {n} · geschätzte Kosten {costo}. Vor der Arbeit prüfen."
+    "pending_summary": "Wartet auf Personal: {n} · geschätzte Kosten {costo}. Vor der Arbeit prüfen.",
+    "approved_not_worked": "Bestätigt, aber 0:00 h bezahlt: an dem Tag gibt es keine Ausstempelung"
   },
   "salaries": {
     "title": "Wie jede Person bezahlt wird",
@@ -4069,7 +4075,9 @@
     "schedule_hint": "Wann die Person kommt und geht (Verspätungen, Fehlzeiten). Bestimmt nicht, wann bezahlt wird.",
     "group_hint": "Wie oft bezahlt wird (wöchentlich, zweiwöchentlich…). Ändert nicht die Arbeitszeit.",
     "base_salary_hint": "Nur verwendet, wenn kein aktuelles Gehalt unter «Lohn und Anwesenheit» besteht, das Vorrang hat.",
-    "email_notifications_hint": "Hat der Benutzer eine E-Mail, gehen die Glocken-Hinweise auch dorthin. E-Mail ist optional."
+    "email_notifications_hint": "Hat der Benutzer eine E-Mail, gehen die Glocken-Hinweise auch dorthin, sofern das Unternehmen es unter Amtliche Werte › Optionen aktiviert. E-Mail ist optional.",
+    "from_hint": "Gilt ab diesem Datum: frühere Zeiträume verwenden es nicht. Für einen vergangenen Zeitraum dessen ersten Tag eintragen.",
+    "salary_hint": "Dieses Gehalt verwendet die Abrechnung."
   },
   "payroll_simulator": {
     "eyebrow": "Personalwesen",
@@ -4143,7 +4151,10 @@
     "applied": "Fertig: die Simulation ist in der Abrechnung.",
     "saved": "Gespeichert und neu berechnet.",
     "add_concept": "Konzept hinzufügen",
-    "download": "Excel herunterladen"
+    "download": "Excel herunterladen",
+    "saved_short": "gespeichert",
+    "remove_column": "Spalte entfernen",
+    "no_more_concepts": "Alle Konzepte sind bereits in der Tabelle."
   },
   "attendance_report": {
     "eyebrow": "Personal",
@@ -4243,5 +4254,10 @@
     "how_calculated": "Zeitraum anlegen und «Abrechnung berechnen».",
     "step_closed": "Zeitraum abschließen",
     "how_closed": "Belege prüfen und den Zeitraum abschließen."
+  },
+  "payroll_concept_type": {
+    "earning": "Bezug",
+    "deduction": "Abzug",
+    "employer_contribution": "Arbeitgeberbeitrag"
   }
 }

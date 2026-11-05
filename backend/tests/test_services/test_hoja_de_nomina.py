@@ -156,6 +156,17 @@ class TestRutas(_ConHoja):
         self.assertEqual((200, "attachment"), (r.status_code, r.headers["Content-Disposition"].split(";")[0]))
         self.assertEqual(403, self.client.get("/payroll_period/5/sheet", headers=self.h(984)).status_code)
 
+    def test_la_lista_de_periodos_trae_el_nombre_de_quien_lo_creo(self):
+        # Antes la tabla mostraba "Creado por: 1" (revision del tester, 5-nov).
+        from app.models import User
+        from app.routes.payroll_period import _jsonify_projected_list
+        with transaction_context() as db:
+            nombre = db.get(User, ANA).full_name
+        with self.app.test_request_context():
+            datos = _jsonify_projected_list({"is_superuser": True},
+                                            {"items": [{"id_payroll_period": 5, "created_by": ANA}, {"id_payroll_period": 6, "created_by": None}]}).get_json()
+        self.assertEqual([nombre, ""], [i["created_by_name"] for i in datos["items"]])
+
     def test_escribir_sin_permiso_de_movimientos(self):
         r = self.client.post("/payroll_period/5/sheet", headers=self.h(983),
                              json={"changes": [{"id_user": ANA, "id_payroll_concept": self.bono, "amount": 10}]})

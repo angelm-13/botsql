@@ -125,6 +125,13 @@ class TestAvisos(_ConPolitica):
             self.assertTrue(all(n.created_by == n.id_user_recipient for n in db.query(Notification)
                                 .filter_by(notification_type="vacation_expiring")))
 
+    def test_sin_rh_en_su_rol_no_les_llega(self):
+        # Pedido de Alan (2026-11-05): con RH apagado en el Gestor para su rol, nada en la campana.
+        with transaction_context() as db:
+            for id_user in (ANA, 80):
+                db.get(User, id_user).id_permission = 777
+        self.assertEqual(0, avisar_vacaciones_por_vencer(date(2026, 12, 31)))
+
     def test_sin_avisos_si_se_acumulan(self):
         self.politica("vacation_unused_policy", 1)
         self.assertEqual(0, avisar_vacaciones_por_vencer(date(2026, 12, 31)))

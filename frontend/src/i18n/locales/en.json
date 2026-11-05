@@ -1089,11 +1089,11 @@
       "creation_date": "Creation Date",
       "deletion_date": "Deletion Date",
       "id_payroll_concept": "Id Payroll Concept",
-      "is_imss": "Is Imss",
-      "is_taxable": "Is Taxable",
+      "is_imss": "Counts for IMSS",
+      "is_taxable": "Subject to ISR",
       "last_update_date": "Last Update Date",
-      "payroll_code": "Payroll Code",
-      "payroll_concept_description": "Payroll Concept Description",
+      "payroll_code": "Code",
+      "payroll_concept_description": "Description",
       "type": "Type"
     },
     "payroll_detail": {
@@ -3787,7 +3787,8 @@
       "vacation": "Vacation",
       "leave": "Leave",
       "disability": "Sick leave",
-      "checked_during_leave": "Checked in while on leave"
+      "checked_during_leave": "Checked in while on leave",
+      "incomplete_hint": "«Incomplete»: days with a single check-in. They are not paid until HR justifies or corrects them, and they lower paid days."
     },
     "link": {
       "column": "System employee",
@@ -3943,7 +3944,8 @@
       "kind_forgot": "Forgot to check in",
       "kind_device_failure": "Device failed",
       "kind_field_work": "Field work or errand",
-      "kind_hourly_leave": "Leave by the hour"
+      "kind_hourly_leave": "Leave by the hour",
+      "reason_min": "At least 5 characters"
     }
   },
   "invoice": {
@@ -5231,7 +5233,8 @@
       "benefit_loan": "Benefit: company loan (deduction in the payroll sheet)",
       "benefit_alimony": "Alimony (deduction in the payroll sheet)",
       "disability_pay_waiting_days": "General illness disability: the company pays the 3 waiting days",
-      "disability_complement_pct": "General illness disability: the company tops up this % of salary from day 4"
+      "disability_complement_pct": "General illness disability: the company tops up this % of salary from day 4",
+      "notifications_email_enabled": "Also send bell notifications by email (all modules)"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -5369,7 +5372,7 @@
     "new_request": "New request",
     "send": "Send request",
     "pending": "Pending",
-    "request_hint": "It stays pending until your manager or HR approves it. Pending days are held from your balance. Sick leave is registered by HR.",
+    "request_hint": "It stays pending until your manager approves it and then HR (final approval). Pending days are held from your balance. Sick leave is registered by HR.",
     "mine_title": "My requests and absences",
     "status": "Status",
     "review_note": "Review note",
@@ -5397,7 +5400,9 @@
     "step_hr": "HR",
     "boss_absent": "Their manager is away: the manager's manager can approve.",
     "team_off": "Also off: {n} of {total} on their team",
-    "team_all_in": "Nobody else on their team is off on those dates."
+    "team_all_in": "Nobody else on their team is off on those dates.",
+    "confirm_approve": "Approve {tipo} for {nombre} from {desde} to {hasta}? It then goes to HR for final approval.",
+    "confirm_approve_final": "Give final approval to {tipo} for {nombre} from {desde} to {hasta}?"
   },
   "payroll_groups": {
     "eyebrow": "Human resources",
@@ -5466,7 +5471,7 @@
     "settlement_pay": "Paid",
     "settlement_compensate": "Time off (not paid)",
     "notes": "Comment",
-    "form_hint": "HR capture and time off require a comment. The first 9 hours of the week are paid double and the rest triple.",
+    "form_hint": "The comment is required (marked *) for «HR entry (no check-ins)» or when settled as time off. The first 9 hours of the week are paid double and the rest triple.",
     "unauthorized_title": "Unauthorized time",
     "unauthorized_hint": "They stayed after their shift without authorization. Not paid until approved. Tolerance",
     "extra_time": "Extra time",
@@ -5504,7 +5509,8 @@
     "confirmed_done": "Overtime confirmed: it is paid in payroll.",
     "rejected_done": "Overtime rejected: it is not paid.",
     "estimated_cost": "Estimated cost",
-    "pending_summary": "Pending HR: {n} · estimated cost {costo}. Review them before they are worked."
+    "pending_summary": "Pending HR: {n} · estimated cost {costo}. Review them before they are worked.",
+    "approved_not_worked": "Confirmed, but 0:00 h is paid: there is no check-out that day"
   },
   "salaries": {
     "title": "How each employee is paid",
@@ -5585,7 +5591,9 @@
     "schedule_hint": "When they clock in and out (lateness and absences). It does not decide when they get paid.",
     "group_hint": "How often they get paid (weekly, biweekly…). It does not change their start time.",
     "base_salary_hint": "Only used if the employee has no current salary in «Payroll and attendance», which takes precedence.",
-    "email_notifications_hint": "If the user has an email, bell notifications also go there. Email is optional."
+    "email_notifications_hint": "If the user has an email, bell notifications also go there, as long as the company turns it on in Official figures › Options. Email is optional.",
+    "from_hint": "This takes effect on this date: earlier periods won't use it. For a past period, enter its first day.",
+    "salary_hint": "This is the salary payroll uses."
   },
   "payroll_simulator": {
     "eyebrow": "Human resources",
@@ -5659,7 +5667,10 @@
     "applied": "Done: the simulation is now in the payroll.",
     "saved": "Saved and recalculated.",
     "add_concept": "Add concept",
-    "download": "Download Excel"
+    "download": "Download Excel",
+    "saved_short": "saved",
+    "remove_column": "Remove column",
+    "no_more_concepts": "All concepts are already on the sheet."
   },
   "attendance_report": {
     "eyebrow": "Human resources",
@@ -5778,5 +5789,10 @@
     "how_calculated": "Create the period and click «Calculate payroll».",
     "step_closed": "Close the period",
     "how_closed": "Review the receipts and close the period."
+  },
+  "payroll_concept_type": {
+    "earning": "Earning",
+    "deduction": "Deduction",
+    "employer_contribution": "Employer contribution"
   }
 }
