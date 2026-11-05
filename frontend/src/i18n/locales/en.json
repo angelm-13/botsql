@@ -1351,31 +1351,31 @@
     },
     "user": {
       "accepts_marketing": "Accepts Marketing",
-      "base_salary": "Base Salary",
+      "base_salary": "Base salary (fallback)",
       "created_by": "Created By",
       "creation_date": "Creation Date",
-      "date_born": "Date Born",
-      "date_start": "Date Start",
+      "date_born": "Date of birth",
+      "date_start": "Start date",
       "deletion_date": "Deletion Date",
       "email": "Email",
       "first_name": "First Name",
       "full_name": "Full Name",
       "hire_date": "Hire Date",
       "id_permission": "Role/profile",
-      "id_proyect": "Id Proyect",
-      "id_status": "Id Status",
+      "id_proyect": "Project",
+      "id_status": "Status",
       "id_user": "Id User",
-      "last_name_father": "Last Name Father",
-      "last_name_mother": "Last Name Mother",
+      "last_name_father": "Father's last name",
+      "last_name_mother": "Mother's last name",
       "last_update_date": "Last Update Date",
-      "national_id": "National Id",
+      "national_id": "National ID (CURP)",
       "password": "Password",
-      "principal_phone": "Principal Phone",
+      "principal_phone": "Main phone",
       "puesto": "Puesto",
-      "secundary_phone": "Secundary Phone",
+      "secundary_phone": "Secondary phone",
       "ssn": "Ssn",
       "supervisor": "Supervisor",
-      "tax_id": "Tax Id",
+      "tax_id": "Tax ID (RFC)",
       "title": "Title",
       "user_type": "User Type",
       "username": "Username"
@@ -1469,7 +1469,8 @@
     "payroll_groups": "Pay groups",
     "terminations": "Terminations",
     "payroll_simulator": "Payroll simulator",
-    "attendance_report": "Attendance report"
+    "attendance_report": "Attendance report",
+    "rh_setup": "HR first steps"
   },
   "placeholders": {
     "bank": {
@@ -3722,9 +3723,9 @@
   },
   "kronos": {
     "page": {
-      "eyebrow": "ACCESS CONTROL",
-      "title": "Kronos",
-      "description": "Attendance and people on the Hikvision device."
+      "eyebrow": "Human resources",
+      "title": "Attendance",
+      "description": "Check-ins, incidents and overtime. Check-ins come from the Kronos clock (Hikvision)."
     },
     "status": {
       "loading": "Querying",
@@ -4618,6 +4619,18 @@
     "kind_tool": "Tool — lent out and returned"
   },
   "page": {
+    "payroll_period": {
+      "subtitle": "Each fortnight, week or month: calculate, review and close. Open one with the eye to see its payroll and sheet."
+    },
+    "payroll_detail": {
+      "subtitle": "Each employee's result in each period (filled by «Calculate payroll»). To review, open the period instead."
+    },
+    "payroll_movement": {
+      "subtitle": "Each earning or deduction per employee and period. Manual ones are easier to type in the period sheet."
+    },
+    "payroll_concept": {
+      "subtitle": "Catalog of earnings and deductions available for payroll."
+    },
     "customer_client": {
       "subtitle": "Register here the companies you sell to or serve: legal name, RFC and address. Add the company first; then, in Contacts (below), add the people you deal with there."
     },
@@ -5277,7 +5290,9 @@
     "weekday_short_5": "Sa",
     "weekday_short_6": "Su",
     "meal": "Meal (min)",
-    "not_group": "The schedule does not decide when the employee gets paid: that is their pay group."
+    "not_group": "The schedule does not decide when the employee gets paid: that is their pay group.",
+    "no_employees": "There are no users marked «Is employee» yet.",
+    "go_to_users": "Create them in Users"
   },
   "employee_leaves": {
     "eyebrow": "Human resources",
@@ -5353,7 +5368,7 @@
     "reject": "Reject",
     "reject_note": "Reason for rejection (optional):",
     "no_pending": "No requests to approve.",
-    "not_employee": "Your user is not marked as an employee.",
+    "not_employee": "Your user is not marked as an employee. Ask HR to tick «Is employee» on your user to request vacation or leave.",
     "requested_done": "Request sent.",
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
@@ -5400,7 +5415,8 @@
     "confirm_delete": "Delete this record?",
     "no_group": "No group (earlier period)",
     "tab_salaries": "Salaries",
-    "not_schedule": "The group does not decide when the employee starts work: that is their schedule."
+    "not_schedule": "The group does not decide when the employee starts work: that is their schedule.",
+    "confirm_default": "{n} employees have no group: with this change they would be paid {frecuencia}. Continue?"
   },
   "leave_sheet": {
     "eyebrow": "Disability",
@@ -5550,7 +5566,8 @@
     "starts": "starts on",
     "scheduled": "from",
     "schedule_hint": "When they clock in and out (lateness and absences). It does not decide when they get paid.",
-    "group_hint": "How often they get paid (weekly, biweekly…). It does not change their start time."
+    "group_hint": "How often they get paid (weekly, biweekly…). It does not change their start time.",
+    "base_salary_hint": "Only used if the employee has no current salary in «Payroll and attendance», which takes precedence."
   },
   "payroll_simulator": {
     "eyebrow": "Human resources",
@@ -5698,5 +5715,39 @@
       "next": "When you open an order, the \"What's next\" box tells you its step and what you have to do.",
       "rental": "Rented machinery is not received at the warehouse: whoever runs the job marks \"Arrived on site\" and \"Returned to supplier\". \"Machinery rentals\" shows what is on site and when it is due."
     }
+  },
+  "user_status": {
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "rh_setup": {
+    "eyebrow": "Human resources",
+    "title": "HR first steps",
+    "subtitle": "What to set up, in order, so payroll runs smoothly. Marked with real data.",
+    "progress": "{n} of {total} steps ready",
+    "ready": "Ready",
+    "pending": "Pending",
+    "go": "Go",
+    "step_figures": "Official figures for the year",
+    "how_figures": "Current UMA, minimum wage and ISR tables; also review calculation options.",
+    "step_schedules": "Schedules",
+    "how_schedules": "At least one schedule with days, hours and tolerance.",
+    "step_groups": "Default pay group",
+    "how_groups": "Anyone without a group is paid in it.",
+    "step_employees": "Employees",
+    "how_employees": "Users marked «Is employee» with a hire date.",
+    "step_payroll_data": "Payroll data of each employee",
+    "how_payroll_data": "Schedule, group and salary from their profile.",
+    "missing_payroll_data": "{n} incomplete",
+    "step_attendance": "Time clock",
+    "how_attendance": "Each employee linked to their Kronos clock number.",
+    "missing_attendance": "{n} not linked",
+    "step_leaves": "Leave up to date",
+    "how_leaves": "No requests waiting for the manager or HR.",
+    "missing_leaves": "{n} pending",
+    "step_calculated": "Calculate payroll",
+    "how_calculated": "Create the period and click «Calculate payroll».",
+    "step_closed": "Close the period",
+    "how_closed": "Review the receipts and close the period."
   }
 }

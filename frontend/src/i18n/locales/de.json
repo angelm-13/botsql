@@ -1312,34 +1312,34 @@
       "unit_name": "Einheit Name"
     },
     "user": {
-      "accepts_marketing": "Accepts Marketing",
-      "base_salary": "Basis Gehalt",
+      "accepts_marketing": "Akzeptiert Marketing",
+      "base_salary": "Grundgehalt (Ersatz)",
       "created_by": "Erstellt von",
       "creation_date": "Erstellungsdatum",
-      "date_born": "Datum Geburt",
-      "date_start": "Datum Start",
+      "date_born": "Geburtsdatum",
+      "date_start": "Startdatum",
       "deletion_date": "Löschdatum",
       "email": "E-Mail",
-      "first_name": "Erste Name",
-      "full_name": "Vollständig Name",
-      "hire_date": "Einstellung Datum",
+      "first_name": "Vorname",
+      "full_name": "Vollständiger Name",
+      "hire_date": "Einstellungsdatum",
       "id_permission": "Rolle/Profil",
-      "id_proyect": "ID Projekt",
-      "id_status": "ID Status",
+      "id_proyect": "Projekt",
+      "id_status": "Status",
       "id_user": "ID Benutzer",
-      "last_name_father": "Letzte Name Vater",
-      "last_name_mother": "Letzte Name Mutter",
+      "last_name_father": "Nachname (Vater)",
+      "last_name_mother": "Nachname (Mutter)",
       "last_update_date": "Datum der letzten Aktualisierung",
-      "national_id": "National ID",
+      "national_id": "CURP",
       "password": "Passwort",
-      "principal_phone": "Haupt Telefon",
+      "principal_phone": "Haupttelefon",
       "puesto": "Position",
-      "secundary_phone": "Sekundär Telefon",
+      "secundary_phone": "Zweittelefon",
       "ssn": "Sozialversicherungsnummer",
       "supervisor": "Vorgesetzter",
-      "tax_id": "Steuer ID",
+      "tax_id": "RFC",
       "title": "Titel",
-      "user_type": "Benutzer Typ",
+      "user_type": "Benutzertyp",
       "username": "Benutzername"
     },
     "user_mfa": {
@@ -1424,7 +1424,8 @@
     "payroll_groups": "Abrechnungsgruppen",
     "terminations": "Austritte",
     "payroll_simulator": "Lohnsimulator",
-    "attendance_report": "Anwesenheitsbericht"
+    "attendance_report": "Anwesenheitsbericht",
+    "rh_setup": "Erste Schritte Personal"
   },
   "placeholders": {
     "bank": {
@@ -3315,9 +3316,9 @@
   },
   "kronos": {
     "page": {
-      "eyebrow": "ZUGANGSKONTROLLE",
-      "title": "Kronos",
-      "description": "Anwesenheiten und Personen des Hikvision-Geräts."
+      "eyebrow": "Personal",
+      "title": "Anwesenheit",
+      "description": "Stempelungen, Vorfälle und Überstunden. Die Stempelungen kommen von der Kronos-Uhr (Hikvision)."
     },
     "status": {
       "loading": "Abfragen",
@@ -3787,7 +3788,9 @@
     "weekday_short_5": "Sa",
     "weekday_short_6": "Su",
     "meal": "Pause (Min.)",
-    "not_group": "Der Arbeitsplan bestimmt nicht, wann bezahlt wird: das ist die Lohngruppe."
+    "not_group": "Der Arbeitsplan bestimmt nicht, wann bezahlt wird: das ist die Lohngruppe.",
+    "no_employees": "Noch keine Benutzer mit «Ist Mitarbeiter».",
+    "go_to_users": "Unter Benutzer anlegen"
   },
   "employee_leaves": {
     "eyebrow": "Personal",
@@ -3863,7 +3866,7 @@
     "reject": "Ablehnen",
     "reject_note": "Reason for rejection (optional):",
     "no_pending": "No requests to approve.",
-    "not_employee": "Your user is not marked as an employee.",
+    "not_employee": "Ihr Benutzer ist nicht als Mitarbeiter markiert. Bitten Sie die Personalabteilung, «Ist Mitarbeiter» zu aktivieren.",
     "requested_done": "Request sent.",
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
@@ -3910,7 +3913,8 @@
     "confirm_delete": "Diesen Eintrag löschen?",
     "no_group": "Ohne Gruppe (früherer Zeitraum)",
     "tab_salaries": "Gehälter",
-    "not_schedule": "Die Gruppe bestimmt nicht die Arbeitszeit: das ist der Arbeitsplan."
+    "not_schedule": "Die Gruppe bestimmt nicht die Arbeitszeit: das ist der Arbeitsplan.",
+    "confirm_default": "{n} Mitarbeiter ohne Gruppe würden mit dieser Änderung {frecuencia} bezahlt. Fortfahren?"
   },
   "leave_sheet": {
     "eyebrow": "Arbeitsunfähigkeit",
@@ -4060,7 +4064,8 @@
     "starts": "beginnt am",
     "scheduled": "ab",
     "schedule_hint": "Wann die Person kommt und geht (Verspätungen, Fehlzeiten). Bestimmt nicht, wann bezahlt wird.",
-    "group_hint": "Wie oft bezahlt wird (wöchentlich, zweiwöchentlich…). Ändert nicht die Arbeitszeit."
+    "group_hint": "Wie oft bezahlt wird (wöchentlich, zweiwöchentlich…). Ändert nicht die Arbeitszeit.",
+    "base_salary_hint": "Nur verwendet, wenn kein aktuelles Gehalt unter «Lohn und Anwesenheit» besteht, das Vorrang hat."
   },
   "payroll_simulator": {
     "eyebrow": "Personalwesen",
@@ -4186,5 +4191,53 @@
     "log_added": "{hora} hinzugefügt",
     "log_exception": "Ausnahme",
     "log_empty": "In diesem Zeitraum wurde nichts korrigiert."
+  },
+  "user_status": {
+    "active": "Aktiv",
+    "inactive": "Inaktiv"
+  },
+  "page": {
+    "payroll_period": {
+      "subtitle": "Jeder Zeitraum wird berechnet, geprüft und abgeschlossen. Mit dem Auge öffnen, um Abrechnung und Tabelle zu sehen."
+    },
+    "payroll_detail": {
+      "subtitle": "Ergebnis je Mitarbeiter und Zeitraum (von «Abrechnung berechnen»). Zum Prüfen besser den Zeitraum öffnen."
+    },
+    "payroll_movement": {
+      "subtitle": "Jeder Bezug oder Abzug je Mitarbeiter und Zeitraum. Manuelle lieber in der Tabelle des Zeitraums."
+    },
+    "payroll_concept": {
+      "subtitle": "Katalog der Bezüge und Abzüge der Abrechnung."
+    }
+  },
+  "rh_setup": {
+    "eyebrow": "Personal",
+    "title": "Erste Schritte Personal",
+    "subtitle": "Was der Reihe nach einzurichten ist, damit die Abrechnung läuft. Mit echten Daten markiert.",
+    "progress": "{n} von {total} Schritten erledigt",
+    "ready": "Erledigt",
+    "pending": "Offen",
+    "go": "Öffnen",
+    "step_figures": "Amtliche Werte des Jahres",
+    "how_figures": "Aktuelle UMA, Mindestlohn und ISR-Tabellen; auch die Berechnungsoptionen prüfen.",
+    "step_schedules": "Arbeitspläne",
+    "how_schedules": "Mindestens ein Plan mit Tagen, Zeiten und Toleranz.",
+    "step_groups": "Standard-Lohngruppe",
+    "how_groups": "Wer keine Gruppe hat, wird darin bezahlt.",
+    "step_employees": "Mitarbeiter",
+    "how_employees": "Benutzer mit «Ist Mitarbeiter» und Einstellungsdatum.",
+    "step_payroll_data": "Lohndaten je Mitarbeiter",
+    "how_payroll_data": "Plan, Gruppe und Gehalt im Profil.",
+    "missing_payroll_data": "{n} unvollständig",
+    "step_attendance": "Stempeluhr",
+    "how_attendance": "Jeder Mitarbeiter mit seiner Kronos-Nummer verknüpft.",
+    "missing_attendance": "{n} nicht verknüpft",
+    "step_leaves": "Abwesenheiten erledigt",
+    "how_leaves": "Keine Anträge, die auf Vorgesetzte oder Personal warten.",
+    "missing_leaves": "{n} offen",
+    "step_calculated": "Abrechnung berechnen",
+    "how_calculated": "Zeitraum anlegen und «Abrechnung berechnen».",
+    "step_closed": "Zeitraum abschließen",
+    "how_closed": "Belege prüfen und den Zeitraum abschließen."
   }
 }

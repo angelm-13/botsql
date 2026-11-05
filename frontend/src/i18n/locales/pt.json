@@ -1313,34 +1313,34 @@
       "unit_name": "Unidade Nome"
     },
     "user": {
-      "accepts_marketing": "Accepts Marketing",
-      "base_salary": "Base Salário",
+      "accepts_marketing": "Aceita marketing",
+      "base_salary": "Salário base (reserva)",
       "created_by": "Criado por",
       "creation_date": "Data de criação",
-      "date_born": "Data Nascimento",
-      "date_start": "Data Início",
+      "date_born": "Data de nascimento",
+      "date_start": "Data de início",
       "deletion_date": "Data de exclusão",
       "email": "E-mail",
-      "first_name": "Primeiro Nome",
-      "full_name": "Completo Nome",
-      "hire_date": "Contratação Data",
+      "first_name": "Nome",
+      "full_name": "Nome completo",
+      "hire_date": "Data de contratação",
       "id_permission": "Função/perfil",
-      "id_proyect": "ID Projeto",
-      "id_status": "ID Status",
+      "id_proyect": "Projeto",
+      "id_status": "Status",
       "id_user": "ID Usuário",
-      "last_name_father": "Última Nome Pai",
-      "last_name_mother": "Última Nome Mãe",
+      "last_name_father": "Sobrenome paterno",
+      "last_name_mother": "Sobrenome materno",
       "last_update_date": "Data da última atualização",
-      "national_id": "Nacional ID",
+      "national_id": "CURP",
       "password": "Senha",
-      "principal_phone": "Principal Telefone",
+      "principal_phone": "Telefone principal",
       "puesto": "Cargo",
-      "secundary_phone": "Secundário Telefone",
+      "secundary_phone": "Telefone secundário",
       "ssn": "NSS",
       "supervisor": "Supervisor",
-      "tax_id": "Imposto ID",
+      "tax_id": "RFC",
       "title": "Título",
-      "user_type": "Usuário Tipo",
+      "user_type": "Tipo de usuário",
       "username": "Usuário"
     },
     "user_mfa": {
@@ -1425,7 +1425,8 @@
     "payroll_groups": "Grupos de pagamento",
     "terminations": "Desligamentos",
     "payroll_simulator": "Simulador de folha",
-    "attendance_report": "Relatório de presença"
+    "attendance_report": "Relatório de presença",
+    "rh_setup": "Primeiros passos de RH"
   },
   "placeholders": {
     "bank": {
@@ -3321,9 +3322,9 @@
   },
   "kronos": {
     "page": {
-      "eyebrow": "CONTROLE DE ACESSO",
-      "title": "Kronos",
-      "description": "Presenças e pessoas do dispositivo Hikvision."
+      "eyebrow": "Recursos humanos",
+      "title": "Presenças",
+      "description": "Registros, incidentes e horas extras. Os registros vêm do relógio Kronos (Hikvision)."
     },
     "status": {
       "loading": "Consultando",
@@ -3793,7 +3794,9 @@
     "weekday_short_5": "Sa",
     "weekday_short_6": "Su",
     "meal": "Refeição (min)",
-    "not_group": "O horário não decide quando o funcionário recebe: isso é o grupo de pagamento."
+    "not_group": "O horário não decide quando o funcionário recebe: isso é o grupo de pagamento.",
+    "no_employees": "Ainda não há usuários marcados «É funcionário».",
+    "go_to_users": "Crie-os em Usuário"
   },
   "employee_leaves": {
     "eyebrow": "Recursos humanos",
@@ -3869,7 +3872,7 @@
     "reject": "Rejeitar",
     "reject_note": "Reason for rejection (optional):",
     "no_pending": "No requests to approve.",
-    "not_employee": "Your user is not marked as an employee.",
+    "not_employee": "Seu usuário não está marcado como funcionário. Peça ao RH para marcar «É funcionário» no seu usuário para pedir férias ou licenças.",
     "requested_done": "Request sent.",
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
@@ -3916,7 +3919,8 @@
     "confirm_delete": "Excluir este registro?",
     "no_group": "Sem grupo (período anterior)",
     "tab_salaries": "Salários",
-    "not_schedule": "O grupo não decide a que horas o funcionário entra: isso é o horário."
+    "not_schedule": "O grupo não decide a que horas o funcionário entra: isso é o horário.",
+    "confirm_default": "Há {n} funcionários sem grupo: com esta mudança receberiam de forma {frecuencia}. Continuar?"
   },
   "leave_sheet": {
     "eyebrow": "Afastamento",
@@ -4066,7 +4070,8 @@
     "starts": "começa em",
     "scheduled": "a partir de",
     "schedule_hint": "A que horas entra e sai (atrasos e faltas). Não decide quando recebe.",
-    "group_hint": "De quanto em quanto tempo recebe (semanal, quinzenal…). Não muda o horário de entrada."
+    "group_hint": "De quanto em quanto tempo recebe (semanal, quinzenal…). Não muda o horário de entrada.",
+    "base_salary_hint": "Só é usado se o funcionário não tiver salário vigente em «Folha e presença», que prevalece."
   },
   "payroll_simulator": {
     "eyebrow": "Recursos humanos",
@@ -4192,5 +4197,53 @@
     "log_added": "Adicionou {hora}",
     "log_exception": "Exceção",
     "log_empty": "Ninguém corrigiu pontos nessas datas."
+  },
+  "user_status": {
+    "active": "Ativo",
+    "inactive": "Inativo"
+  },
+  "page": {
+    "payroll_period": {
+      "subtitle": "Cada quinzena, semana ou mês: calcula-se, revisa-se e fecha-se. Abra um com o olho para ver a folha e a planilha."
+    },
+    "payroll_detail": {
+      "subtitle": "O resultado de cada funcionário em cada período (preenchido por «Calcular folha»). Para revisar, abra o período."
+    },
+    "payroll_movement": {
+      "subtitle": "Cada provento ou desconto por funcionário e período. Os manuais são mais fáceis na planilha do período."
+    },
+    "payroll_concept": {
+      "subtitle": "Catálogo de proventos e descontos da folha."
+    }
+  },
+  "rh_setup": {
+    "eyebrow": "Recursos humanos",
+    "title": "Primeiros passos de RH",
+    "subtitle": "O que deixar pronto, em ordem, para a folha sair sozinha. Marcado com os dados reais.",
+    "progress": "{n} de {total} passos prontos",
+    "ready": "Pronto",
+    "pending": "Pendente",
+    "go": "Ir",
+    "step_figures": "Valores oficiais do ano",
+    "how_figures": "UMA, salário mínimo e tabelas de ISR vigentes; revise também as opções de cálculo.",
+    "step_schedules": "Horários",
+    "how_schedules": "Pelo menos um horário com dias, horas e tolerância.",
+    "step_groups": "Grupo de pagamento padrão",
+    "how_groups": "Quem não tem grupo recebe nele.",
+    "step_employees": "Funcionários",
+    "how_employees": "Usuários marcados «É funcionário» com data de contratação.",
+    "step_payroll_data": "Dados de folha de cada funcionário",
+    "how_payroll_data": "Horário, grupo e salário no perfil.",
+    "missing_payroll_data": "{n} incompletos",
+    "step_attendance": "Relógio de ponto",
+    "how_attendance": "Cada funcionário ligado ao seu número no relógio Kronos.",
+    "missing_attendance": "{n} sem ligar",
+    "step_leaves": "Férias e licenças em dia",
+    "how_leaves": "Sem pedidos esperando o chefe ou o RH.",
+    "missing_leaves": "{n} pendentes",
+    "step_calculated": "Calcular a folha",
+    "how_calculated": "Crie o período e clique em «Calcular folha».",
+    "step_closed": "Fechar o período",
+    "how_closed": "Revise os recibos e feche o período."
   }
 }

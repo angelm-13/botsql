@@ -459,6 +459,10 @@ CAPACIDADES = (
     # faltas, checadas a mano y horas extra, y alertas de patrones. Solo lectura.
     # Por omision solo Administrator.
     Capacidad("attendance_report", "Reporte de asistencia", "rh", menu="sidebar"),
+    # Primeros pasos de RH (2026-11-05): cuantos de los 9 pasos de la puesta en
+    # marcha estan listos, con liga a cada pantalla. Solo lectura. Por omision
+    # solo Administrator.
+    Capacidad("rh_setup", "Primeros pasos de RH", "rh", menu="sidebar"),
     Capacidad("restaurant_waiter", "Meseros", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_kitchen", "Cocina", "restaurante", bits=EDITAR, menu="sidebar"),

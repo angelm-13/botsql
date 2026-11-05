@@ -20,6 +20,7 @@ test("las etiquetas del menu que vienen de la siembra se muestran con acento", (
   assert.equal(etiquetaParaMostrar("Ordenes de servicio"), "Órdenes de servicio");
   assert.equal(etiquetaParaMostrar("Vales de almacen"), "Vales de almacén");
   assert.equal(etiquetaParaMostrar("Periodos de nomina"), "Periodos de nómina");
+  assert.equal(etiquetaParaMostrar("Simulador de nomina"), "Simulador de nómina");
   assert.equal(etiquetaParaMostrar("Tipos de ubicacion"), "Tipos de ubicación");
   assert.equal(etiquetaParaMostrar("Categorias de documento"), "Categorías de documento");
   assert.equal(etiquetaParaMostrar("Bitacora diaria de taller"), "Bitácora diaria de taller");

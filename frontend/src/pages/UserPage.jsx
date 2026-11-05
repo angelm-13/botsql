@@ -362,6 +362,9 @@ export default function UserPage() {
     return String(value);
   }
 
+  // El estado de la instalacion inicial se llama "active": se muestra en espanol.
+  const etiquetaDeEstado = (valor) => t(`user_status.${valor}`, valor);
+
   function getOptionLabel(item, entityName = "") {
     if (!item) return "";
     const normalized = String(entityName || "").toLowerCase();
@@ -591,6 +594,8 @@ export default function UserPage() {
           <label className="field">
             <span>{t("fields.user.base_salary")}</span>
             <input name="base_salary" type="number" value={formData.base_salary ?? ""} onChange={handleChange} placeholder={t("fields.user.base_salary")} aria-invalid={Boolean(fieldErrors["base_salary"])} {...inputPropsForField("base_salary", validationRules["base_salary"], "number")} />
+            {/* Dos sueldos en el mismo perfil confundian: este solo es respaldo. */}
+            <small className="muted">{t("user_payroll.base_salary_hint")}</small>
             {fieldErrors["base_salary"] && <span className="field-error">{formatFieldError("base_salary")}</span>}
           </label>
           )}
@@ -608,7 +613,7 @@ export default function UserPage() {
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
               {statusOptions.map((item) => (
                 <option key={item.id_status ?? item.id ?? JSON.stringify(item)} value={item.id_status ?? item.id ?? ""}>
-                  {getOptionLabel(item, "status")}
+                  {etiquetaDeEstado(getOptionLabel(item, "status"))}
                 </option>
               ))}
             </select>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
   createEmployeeSchedule, createPayrollHoliday, createWorkSchedule, createWorkScheduleDay,
@@ -236,6 +237,7 @@ export default function WorkSchedulesPage() {
                     <option value="">{t("common.select_option", "Selecciona una opción")}</option>
                     {empleados.map((e) => <option key={e.id_user} value={e.id_user}>{e.full_name || e.username}</option>)}
                   </select>
+                  {empleados.length === 0 && <small className="field-error">{t("work_schedules.no_employees")} <Link to="/user">{t("work_schedules.go_to_users")}</Link></small>}
                 </label>
                 <label className="field">{t("work_schedules.schedule")}
                   <select required value={formAsignacion.id_work_schedule} onChange={(e) => setFormAsignacion((f) => ({ ...f, id_work_schedule: e.target.value }))}>

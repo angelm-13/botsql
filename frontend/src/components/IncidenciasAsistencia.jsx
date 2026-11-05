@@ -1,7 +1,8 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import { Pencil, RefreshCw } from "lucide-react";
 import { createAttendanceCorrection, getAttendanceCorrections, getAttendanceIncidences } from "../api";
+import { rangoDe } from "../utils/rangosDeAsistencia.js";
 
 // Pestaña "Incidencias" de Asistencias: retardos, faltas y checadas incompletas
 // por empleado segun su horario, y los dias de vacaciones, permisos e
@@ -15,16 +16,15 @@ import { createAttendanceCorrection, getAttendanceCorrections, getAttendanceInci
 // excepcion (services/attendance_correction_service.py). El contador solo lo ve
 // quien puede corregir: al empleado el backend no se lo da.
 
-function fechaLocal(d) {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-}
-
 // Tipos de incidente de una correccion (services/attendance_correction_service.py).
 const TIPOS_DE_INCIDENTE = ["forgot", "device_failure", "field_work", "hourly_leave"];
 
 export default function IncidenciasAsistencia({ t, describirError }) {
-  const hoy = new Date();
-  const [periodo, setPeriodo] = useState({ startDate: fechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), endDate: fechaLocal(hoy) });
+  // Abre en la quincena en curso y ya generada (revision de usabilidad, 2026-11-05).
+  const [periodo, setPeriodo] = useState(() => {
+    const quincena = rangoDe("biweekly");
+    return { startDate: quincena.start, endDate: quincena.end };
+  });
   const [empleados, setEmpleados] = useState(null);
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
@@ -73,8 +73,10 @@ export default function IncidenciasAsistencia({ t, describirError }) {
     }
   }
 
+  useEffect(() => { generar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function generar(event) {
-    event.preventDefault();
+    event?.preventDefault();
     setCargando(true);
     setError("");
     try {

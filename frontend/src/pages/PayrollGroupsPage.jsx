@@ -110,6 +110,13 @@ export default function PayrollGroupsPage() {
   async function guardarGrupo(event) {
     event.preventDefault();
     const { id_payroll_group: id, group_name, pay_frequency, is_default } = formGrupo;
+    // Pasar a "por omision" mueve a quien no tiene grupo asignado: se pregunta antes cuantos son.
+    if (is_default && !formGrupo.era_por_omision) {
+      const sinGrupo = empleados.filter((e) => !conGrupoHoy.has(e.id_user)).length;
+      const aviso = t("payroll_groups.confirm_default").replace("{n}", sinGrupo)
+        .replace("{frecuencia}", t(`payroll_groups.frequency_${pay_frequency}`).toLowerCase());
+      if (!(await dialogo.confirmar(aviso))) return;
+    }
     const cuerpo = { group_name, pay_frequency, is_default: Boolean(is_default) };
     const ok = await guardar(() => (id ? updatePayrollGroup(id, cuerpo) : createPayrollGroup(cuerpo)), "payroll_groups.saved");
     if (ok) setFormGrupo(null);

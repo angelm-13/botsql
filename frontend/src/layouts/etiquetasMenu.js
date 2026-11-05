@@ -23,6 +23,7 @@ const ETIQUETAS = {
   "Ordenes de servicio": "Órdenes de servicio",
   "Tipos de ubicacion": "Tipos de ubicación",
   "Periodos de nomina": "Periodos de nómina",
+  "Simulador de nomina": "Simulador de nómina",
   "Vales de almacen": "Vales de almacén",
   "Bitacora diaria de taller": "Bitácora diaria de taller",
   "Conexion al dispositivo Kronos": "Conexión al dispositivo Kronos",
