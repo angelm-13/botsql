@@ -12,6 +12,8 @@ BEGIN;
 SET CONSTRAINTS ALL DEFERRED;
 
 INSERT INTO "user" ("id_user", "created_by", "creation_date", "date_born", "date_start", "deletion_date", "email", "first_name", "id_permission", "full_name", "id_proyect", "last_name_father", "last_name_mother", "last_update_date", "national_id", "password", "principal_phone", "secundary_phone", "ssn", "supervisor", "base_salary", "hire_date", "id_status", "tax_id", "title", "user_type", "username", "puesto", "accepts_marketing")
+-- Hash de la contrasena POR DEFECTO del usuario Bootstrap/admin1: es conocido a proposito para el arranque, no un secreto filtrado. Pendiente comprobar en cada ambiente que admin1 ya no lo use (password_hash_needs_reset).
+-- nosemgrep: generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash
 VALUES (1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'admin1@tyakxa.local', 'Admin', 1, 'test first_name', 1, 'test last_name_father', 'test last_name_mother', '2026-01-01 00:00:00', 'test national_id', '$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6', 'test principal_', 'test secundary_', 'test ssn', 1, 1, '2026-01-01 00:00:00', 1, 'test tax_id', 'test title', 'admin', 'admin1', 'sample_puesto', TRUE)
 ON CONFLICT ("id_user") DO NOTHING;
 

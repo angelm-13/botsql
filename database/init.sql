@@ -1869,6 +1869,8 @@ INSERT INTO "user" (
 )
 VALUES (
   1, 1, 'admin1@tyakxa.local', 'Admin', 1, 'Administrador Bootstrap',
+  -- Hash de la contrasena POR DEFECTO del usuario Bootstrap/admin1: es conocido a proposito para el arranque, no un secreto filtrado. Pendiente comprobar en cada ambiente que admin1 ya no lo use (password_hash_needs_reset).
+  -- nosemgrep: generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash
   1, 'Bootstrap', 'System', '$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6', 1,
   1, 'admin', 'admin1'
 )
