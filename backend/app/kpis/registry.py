@@ -928,6 +928,10 @@ def incidencias_abiertas_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     return session.execute(stmt).all()
 
 
+# Estatus de una incidencia/vale cancelado: "cancelada" (incidencias) y "cancelado" (vales, `CANCELADO`).
+ESTATUS_CANCELADO = ("cancelada", "cancelado")
+
+
 def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Foto: cuantas incidencias seguian sin cerrar en cada dia del rango.
 
@@ -964,11 +968,16 @@ def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimen
         select(cast(func.generate_series(fecha_inicio, fecha_fin, text("interval '1 day'")), Date).label("dia"))
         .subquery()
     )
+    # Una cancelada SIN cierre real (nulo o el centinela de Adser) no esta pendiente de nada: solo parecia
+    # "sin cerrar". Una cancelada CON fecha de cierre si estuvo pendiente hasta que se cancelo (historia).
+    cancelada = func.lower(func.coalesce(Incident.incident_status, "")).in_(ESTATUS_CANCELADO)
+    con_cierre_real = and_(Incident.close_date.isnot(None), Incident.close_date != CIERRE_SENTINELA)
     condicion_pendiente = and_(
         Incident.deletion_date.is_(None),
         no_es_checada(),
         Incident.incident_date.isnot(None),
         func.date(Incident.incident_date) <= dias.c.dia,
+        or_(~cancelada, con_cierre_real),
         or_(
             Incident.close_date.is_(None),
             Incident.close_date == CIERRE_SENTINELA,
