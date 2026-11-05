@@ -12,6 +12,7 @@ import {
   esXml, estadoDeOrden, excedeLoAutorizado, requiereReferencia,
 } from "../utils/ordenDeCompra";
 import { PasosDeOrden, QueSigue } from "./GuiaDeCompras.jsx";
+import RentaDeMaquinaria from "./RentaDeMaquinaria.jsx";
 import { useI18n } from "../i18n";
 import "../styles/ordenes-de-compra.css";
 
@@ -30,7 +31,13 @@ const EVENTOS = {
   purchased: "Comprada",
   partially_received: "Recibida en parte",
   received: "Recibida completa",
+  closed: "Cerrada",
   cancelled: "Cancelada",
+  rental_arrived: "Maquinaria rentada: llegó a obra",
+  rental_returned: "Maquinaria rentada: devuelta al proveedor",
+  rental_extension_requested: "Prórroga de renta pedida",
+  rental_extension_approved: "Prórroga de renta aprobada",
+  rental_extension_rejected: "Prórroga de renta rechazada",
 };
 
 // Desde aqui ya hay material comprado: la tabla de renglones muestra cuanto ha llegado.
@@ -176,7 +183,9 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
     .map((l) => ({ id_purchase_order_line: l.id_purchase_order_line,
                    quantity: Number(recepcion.cantidades[l.id_purchase_order_line] || 0) }))
     .filter((l) => Number.isInteger(l.quantity) && l.quantity > 0);
-  const pendiente = (l) => Math.max(0, Number(l.quantity) - Number(l.quantity_received || 0));
+  // La maquinaria rentada no se recibe aqui: llega a la obra y lo marca quien la lleva.
+  const pendiente = (l) => (l.line_kind === "rental" ? 0
+    : Math.max(0, Number(l.quantity) - Number(l.quantity_received || 0)));
   const recepcionValida = llegado.length > 0 && (orden.lines || []).every((l) => {
     const n = Number(recepcion.cantidades[l.id_purchase_order_line] || 0);
     return Number.isInteger(n) && n >= 0 && n <= pendiente(l);
@@ -330,10 +339,14 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
                     </td>
                   </tr>
                   {g.renglones.map((l) => (
-                    <tr key={l.id_purchase_order_line}>
+                    <Fragment key={l.id_purchase_order_line}>
+                    <tr>
                       <td>
                         {l.description}
                         {l.unit && <span className="muted"> · {l.unit}</span>}
+                        {l.line_kind === "rental" && (
+                          <> <span className="renta-marca">{t("rental.badge", "Renta")}</span></>
+                        )}
                         {l.item_class && (
                           <span className="oc-etiqueta">{etiquetaDeClase(l.item_class, t)}</span>
                         )}
@@ -349,9 +362,27 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
                           {l.quantity_received || 0} / {l.quantity}
                         </td>
                       )}
-                      <td className="mono">{dinero(l.unit_cost, moneda)}</td>
+                      <td className="mono">
+                        {dinero(l.unit_cost, moneda)}
+                        {/* Solo la tarifa: tras una prorroga el periodo crece, pero el costo
+                            del renglon es lo que se autorizo; lo extra va en la factura final. */}
+                        {l.rental && l.rental.rate !== null && (
+                          <small className="muted" style={{ display: "block" }}>
+                            {t("rental.rate", "Tarifa")} {dinero(l.rental.rate, moneda)} {t(`rental.per_${l.rental.rate_unit}`, l.rental.rate_unit)}
+                          </small>
+                        )}
+                      </td>
                       <td className="mono">{dinero(l.line_total, moneda)}</td>
                     </tr>
+                    {l.rental && (
+                      <tr className="oc-renta-fila">
+                        <td colSpan={conRecepcion ? 5 : 4}>
+                          <RentaDeMaquinaria renta={l.rental} compacta
+                                             onCambio={(respuesta) => onCambio(respuesta, "renta")} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </Fragment>
               ))}

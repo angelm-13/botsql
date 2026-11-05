@@ -1,0 +1,48 @@
+/* Renta de maquinaria: la ficha de una renta, el selector compra/renta y la lista de rentas activas. */
+
+.renta {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px; border: 1px solid #ddd6fe; border-radius: 8px; background: #faf5ff; font-size: 13px;
+}
+.renta-compacta { padding: 6px 8px; }
+.renta-encabezado { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.renta-dato { margin: 0; font-size: 12px; }
+.renta-prorroga { margin: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 12.5px; color: #6b21a8; }
+.renta-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+.renta-acciones:empty { display: none; }
+.renta-formulario {
+  display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px dashed #c4b5fd; border-radius: 8px; background: #fff;
+}
+.renta-formulario p { margin: 0; font-size: 12px; }
+
+.renta-etapa, .renta-marca {
+  padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.renta-marca { background: #ede9fe; color: #5b21b6; }
+.renta-etapa.pedida { background: #f1f5f9; color: #334155; }
+.renta-etapa.en-camino { background: #dbeafe; color: #1e3a8a; }
+.renta-etapa.en-obra { background: #dcfce7; color: #14532d; }
+.renta-etapa.por-vencer { background: #fef3c7; color: #78350f; }
+.renta-etapa.vencida { background: #fee2e2; color: #7f1d1d; }
+.renta-etapa.devuelta { background: #e2e8f0; color: #334155; }
+.renta-etapa.cancelada { background: #f1f5f9; color: #64748b; text-decoration: line-through; }
+
+/* Selector "Material / Maquinaria rentada" al capturar una necesidad. */
+.necesidad-tipo { grid-column: 1 / -1; display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.necesidad-tipo button {
+  padding: 5px 12px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff;
+  font-size: 12.5px; cursor: pointer;
+}
+.necesidad-tipo button[aria-pressed="true"] { border-color: #7c3aed; background: #ede9fe; color: #4c1d95; font-weight: 700; }
+.necesidad-renta { grid-column: 1 / -1; }
+
+/* La tarifa de un renglon de renta en el editor de la orden. */
+.oc-tarifa { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.oc-tarifa select { width: auto; }
+
+/* Rentas activas (en Ordenes de compra) */
+.rentas-activas { margin: 8px 0 18px; }
+.rentas-activas-resumen { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+.rentas-activas-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rentas-activas-lista li { display: grid; gap: 6px; padding: 10px; border: 1px solid #e8eeeb; border-radius: 9px; background: #fff; }
+.rentas-activas-cabeza { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; }

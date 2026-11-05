@@ -1797,6 +1797,14 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                 raise AppError("errors.project_material_incomplete", 409, material)
 
         if validated_target in {"completed", "collected"}:
+            # Ni con maquinaria rentada en la obra: se seguiria pagando la renta de
+            # una obra cerrada. Primero se marca "Devuelta al proveedor".
+            from app.services.purchase_order_service import rentas_sin_devolver
+            rentas = rentas_sin_devolver(db, project.id_proyect)
+            if rentas:
+                raise AppError("errors.project_rental_not_returned", 409, {"rentals": rentas})
+
+        if validated_target in {"completed", "collected"}:
             # No se completa ni se recolecta con tareas todavia abiertas --
             # "completado"/"recolectado" es el estatus del proyecto, no
             # garantiza que cada tarea individual ya se haya cerrado en el

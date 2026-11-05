@@ -21,6 +21,7 @@ celery.autodiscover_tasks([
     "app.jobs.tasks_kpis",
     "app.jobs.tasks_warehouse",
     "app.jobs.tasks_rh",
+    "app.jobs.tasks_purchases",
 ])
 
 

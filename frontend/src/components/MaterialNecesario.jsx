@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
-import { PackageOpen, Plus, X } from "lucide-react";
+import { PackageOpen, Plus, Truck, X } from "lucide-react";
+import RentaDeMaquinaria from "./RentaDeMaquinaria";
+import { diasDelPeriodo } from "../utils/rentaDeMaquinaria";
 import {
   cancelMaterialNeed, createProyectMaterialNeed, getMaterialNeedSuggestions,
   getMyPermissions, getProyectMaterialNeeds, updateMaterialNeed,
@@ -23,8 +25,8 @@ function esPrivilegiado(actor) {
 }
 
 const FORMULARIO_VACIO = {
-  description: "", id_material: "", material_label: "",
-  quantity: "1", unit: "", needed_by: "", note: "",
+  need_kind: "material", description: "", id_material: "", material_label: "",
+  quantity: "1", unit: "", needed_by: "", note: "", rental_start: "", rental_end: "",
 };
 const SIN_SUGERENCIAS = { materials: [], previous: [] };
 
@@ -97,9 +99,12 @@ export default function MaterialNecesario({ idProyect, estatus }) {
 
   // Las sugerencias salen de lo que se va escribiendo, con una pausa para no
   // preguntar por cada tecla. Una respuesta tardia de un texto anterior se descarta.
+  const esRenta = formulario.need_kind === "rental";
+
   useEffect(() => {
     const texto = formulario.description.trim();
-    if (!puedeCrear || formulario.id_material || texto.length < 3) {
+    // La maquinaria rentada no es del almacen: no se le sugiere el catalogo.
+    if (!puedeCrear || esRenta || formulario.id_material || texto.length < 3) {
       setSugerencias(SIN_SUGERENCIAS);
       return undefined;
     }
@@ -115,9 +120,12 @@ export default function MaterialNecesario({ idProyect, estatus }) {
       }
     }, 300);
     return () => clearTimeout(temporizador);
-  }, [formulario.description, formulario.id_material, puedeCrear]);
+  }, [formulario.description, formulario.id_material, puedeCrear, esRenta]);
 
   const cambiar = (campo) => (e) => setFormulario((f) => ({ ...f, [campo]: e.target.value }));
+  const elegirTipo = (tipo) => setFormulario((f) => ({
+    ...f, need_kind: tipo, id_material: "", material_label: "",
+  }));
 
   function elegirDelCatalogo(s) {
     setFormulario((f) => ({
@@ -142,8 +150,10 @@ export default function MaterialNecesario({ idProyect, estatus }) {
   const motivoSospechoso = !formulario.id_material && textoEscrito.length >= 3
     ? descripcionSospechosa(textoEscrito) : null;
   const cantidadValida = Number(formulario.quantity) >= 1 && Number(formulario.quantity) <= CANTIDAD_MAXIMA;
+  const diasDeRenta = esRenta ? diasDelPeriodo(formulario.rental_start, formulario.rental_end) : null;
+  const periodoValido = !esRenta || diasDeRenta !== null;
   const listoParaAgregar = (formulario.id_material || (textoEscrito && !motivoSospechoso))
-    && cantidadValida;
+    && cantidadValida && periodoValido;
 
   async function agregar(evento) {
     evento.preventDefault();
@@ -153,9 +163,14 @@ export default function MaterialNecesario({ idProyect, estatus }) {
     try {
       const datos = {
         quantity: Number(formulario.quantity),
-        needed_by: formulario.needed_by || undefined,
+        needed_by: esRenta ? undefined : (formulario.needed_by || undefined),
         note: formulario.note.trim() || undefined,
       };
+      if (esRenta) {
+        datos.need_kind = "rental";
+        datos.rental_start = formulario.rental_start;
+        datos.rental_end = formulario.rental_end;
+      }
       if (formulario.id_material) {
         datos.id_material = Number(formulario.id_material);
       } else {
@@ -223,6 +238,9 @@ export default function MaterialNecesario({ idProyect, estatus }) {
   });
 
   function estadoDe(r) {
+    if (r.need_kind === "rental" && !r.order) {
+      return { clase: "compra", texto: t("rental.to_hire", "Renta por contratar") };
+    }
     // Ya va en una orden de compra: lo que importa es en que paso esta la orden.
     if (r.order) {
       return {
@@ -269,6 +287,9 @@ export default function MaterialNecesario({ idProyect, estatus }) {
               <li key={r.id_proyect_material_need}>
                 <div className="necesidad-material">
                   <strong>{r.display_name || `#${r.id_proyect_material_need}`}</strong>
+                  {r.need_kind === "rental" && (
+                    <small><span className="renta-marca">{t("rental.badge", "Renta")}</span></small>
+                  )}
                   {r.linked && (
                     <small className="muted">{t("material_needs.in_catalog", "Del almacén")}</small>
                   )}
@@ -283,12 +304,18 @@ export default function MaterialNecesario({ idProyect, estatus }) {
                   ) : <strong>{r.quantity}</strong>}
                 </label>
                 <span className={`necesidad-estado ${estado.clase}`}>{estado.texto}</span>
-                {r.needed_by && (
+                {r.need_kind === "rental" ? (
+                  <span className="muted necesidad-fecha">
+                    {new Date(`${r.rental_start}T00:00:00`).toLocaleDateString("es-MX")}
+                    {" → "}
+                    {new Date(`${r.rental_end}T00:00:00`).toLocaleDateString("es-MX")}
+                  </span>
+                ) : r.needed_by ? (
                   <span className="muted necesidad-fecha">
                     {t("material_needs.needed_by", "Para")}{" "}
                     {new Date(`${r.needed_by}T00:00:00`).toLocaleDateString("es-MX")}
                   </span>
-                )}
+                ) : <span />}
                 {puedeEditar && (
                   <button type="button" className="vale-icono necesidad-quitar"
                           onClick={() => cancelar(r)}
@@ -296,6 +323,12 @@ export default function MaterialNecesario({ idProyect, estatus }) {
                           title={t("material_needs.remove", "Quitar de la lista")}>
                     <X size={14} />
                   </button>
+                )}
+
+                {r.rental && (
+                  <div className="necesidad-renta">
+                    <RentaDeMaquinaria renta={r.rental} compacta onCambio={() => cargar()} />
+                  </div>
                 )}
 
                 {r.linked && r.covered_by_stock && puedePedirEnAlmacen && !cerrado && (
@@ -338,9 +371,23 @@ export default function MaterialNecesario({ idProyect, estatus }) {
 
       {puedeCrear && (
         <form className="necesidad-formulario" onSubmit={agregar}>
+          <div className="necesidad-tipo" role="group" aria-label={t("rental.kind", "Tipo")}>
+            <button type="button" aria-pressed={!esRenta} onClick={() => elegirTipo("material")}>
+              <PackageOpen size={13} /> {t("rental.kind_material", "Material")}
+            </button>
+            <button type="button" aria-pressed={esRenta} onClick={() => elegirTipo("rental")}>
+              <Truck size={13} /> {t("rental.kind_rental", "Maquinaria rentada")}
+            </button>
+          </div>
+          {esRenta && (
+            <p className="muted necesidad-campo-nota">
+              {t("rental.ask_help",
+                "Maquinaria que la empresa no tiene y hay que rentar. Di qué equipo y del día que se ocupa al día que se devuelve: Compras la contrata.")}
+            </p>
+          )}
           <div className="field necesidad-campo-material">
             <label htmlFor={`necesidad-texto-${idProyect}`}>
-              {t("material_needs.what", "¿Qué necesitas?")}
+              {esRenta ? t("rental.what", "¿Qué equipo?") : t("material_needs.what", "¿Qué necesitas?")}
             </label>
             {formulario.id_material ? (
               <div className="necesidad-vinculo">
@@ -358,7 +405,9 @@ export default function MaterialNecesario({ idProyect, estatus }) {
               <input id={`necesidad-texto-${idProyect}`} type="text" maxLength={200}
                      autoComplete="off" value={formulario.description}
                      aria-invalid={Boolean(motivoSospechoso)}
-                     placeholder={t("material_needs.what_placeholder", "Ej. soldadura 6013, tornillos 1/4…")}
+                     placeholder={esRenta
+                       ? t("rental.what_placeholder", "Ej. plataforma de tijera 10 m, retroexcavadora…")
+                       : t("material_needs.what_placeholder", "Ej. soldadura 6013, tornillos 1/4…")}
                      onChange={cambiar("description")} />
             )}
             {motivoSospechoso && (
@@ -427,10 +476,29 @@ export default function MaterialNecesario({ idProyect, estatus }) {
               </select>
             </label>
           )}
-          <label className="field">
-            <span>{t("material_needs.needed_by_label", "Para cuándo")}</span>
-            <input type="date" value={formulario.needed_by} onChange={cambiar("needed_by")} />
-          </label>
+          {esRenta ? (
+            <>
+              <label className="field">
+                <span>{t("rental.start", "Desde")}</span>
+                <input type="date" value={formulario.rental_start} onChange={cambiar("rental_start")} />
+              </label>
+              <label className="field">
+                <span>{t("rental.end", "Hasta")}</span>
+                <input type="date" min={formulario.rental_start || undefined}
+                       value={formulario.rental_end} onChange={cambiar("rental_end")} />
+              </label>
+              {diasDeRenta !== null && (
+                <p className="muted necesidad-campo-nota">
+                  {t("rental.period_days", "{n} días de renta").replace("{n}", String(diasDeRenta))}
+                </p>
+              )}
+            </>
+          ) : (
+            <label className="field">
+              <span>{t("material_needs.needed_by_label", "Para cuándo")}</span>
+              <input type="date" value={formulario.needed_by} onChange={cambiar("needed_by")} />
+            </label>
+          )}
           <label className="field necesidad-campo-nota">
             <span>{t("material_needs.note", "Nota")}</span>
             <input type="text" maxLength={300} value={formulario.note} onChange={cambiar("note")} />

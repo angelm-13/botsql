@@ -65,6 +65,9 @@ UNIT_MAX = 40
 # Una cantidad absurda ("9999999") es casi siempre un error de dedo, no una necesidad.
 MAX_QUANTITY = 100000
 RETURN_NOTE_MIN = 5
+# Una renta de mas de un año no es una renta de obra: es un error de fecha.
+MAX_RENTAL_DAYS = 366
+NEED_KINDS = ("material", "rental")
 
 # Las unidades que se aceptan, en vez de texto libre: "kg", "kilo" y "kgs" son lo
 # mismo y asi no se agrupan aparte. Se guarda la clave en minusculas.
@@ -121,6 +124,34 @@ def _texto(valor, campo: str, largo: int, *, obligatorio: bool = False) -> str |
         raise AppError("errors.field_too_long", 400, {
             "field": campo, "max_length": largo, "actual_length": len(texto)})
     return texto
+
+
+def _tipo_de_necesidad(valor) -> str:
+    tipo = str(valor or "material").strip().lower()
+    if tipo not in NEED_KINDS:
+        raise AppError("errors.invalid_field", 400, {"field": "need_kind",
+                                                     "allowed": list(NEED_KINDS)})
+    return tipo
+
+
+def periodo_de_renta(desde, hasta) -> tuple[date, date]:
+    """(inicio, fin) de una renta: los dos obligatorios, fin >= inicio y menos de un año.
+
+    Lo usan la necesidad y el renglon de la orden: es la misma regla.
+    """
+    inicio = _fecha_o_nada(desde, "rental_start")
+    fin = _fecha_o_nada(hasta, "rental_end")
+    if inicio is None:
+        raise AppError("errors.invalid_field", 400, {"field": "rental_start"})
+    if fin is None:
+        raise AppError("errors.invalid_field", 400, {"field": "rental_end"})
+    if fin < inicio:
+        raise AppError("errors.rental_end_before_start", 400, {
+            "rental_start": inicio.isoformat(), "rental_end": fin.isoformat()})
+    if (fin - inicio).days + 1 > MAX_RENTAL_DAYS:
+        raise AppError("errors.invalid_field", 400, {
+            "field": "rental_end", "max_days": MAX_RENTAL_DAYS})
+    return inicio, fin
 
 
 def _cantidad(valor) -> int:
@@ -393,18 +424,25 @@ def _necesidad(db, id_need, *, for_update=False) -> ProyectMaterialNeed:
     return need
 
 
-def _duplicada(db, id_proyecto, *, id_material=None, descripcion=None, excepto=None):
+def _duplicada(db, id_proyecto, *, id_material=None, descripcion=None, excepto=None,
+               tipo="material", periodo=None):
     """Otro renglon ABIERTO del mismo proyecto que dice lo mismo, o None.
 
     Dos renglones iguales son una lista que miente: no se sabe cual vale. Se edita
     el que ya esta. Lo vinculado se compara por material; el texto libre, por sus
-    palabras normalizadas ("Tornillo " y "tornillo" son lo mismo).
+    palabras normalizadas ("Tornillo " y "tornillo" son lo mismo). Una renta solo
+    choca con otra renta igual del MISMO periodo: la misma plataforma en dos meses
+    distintos son dos rentas.
     """
     consulta = select(ProyectMaterialNeed).where(
         ProyectMaterialNeed.id_proyect == id_proyecto,
         ProyectMaterialNeed.need_status == "open",
+        ProyectMaterialNeed.need_kind == tipo,
         ProyectMaterialNeed.deletion_date.is_(None),
     )
+    if tipo == "rental" and periodo is not None:
+        consulta = consulta.where(ProyectMaterialNeed.rental_start == periodo[0],
+                                  ProyectMaterialNeed.rental_end == periodo[1])
     if excepto is not None:
         consulta = consulta.where(
             ProyectMaterialNeed.id_proyect_material_need != excepto)
@@ -477,10 +515,16 @@ def list_needs(id_proyect, user_data: dict, *, incluir_canceladas: bool = False)
         # Lo que Compras ya esta comprando, para que el supervisor lo vea sin
         # preguntar: la orden y su estado, no el dinero.
         en_orden = needs_on_orders(db, [n.id_proyect_material_need for n in necesidades])
+        # Como va cada renta (llego, vence, prorroga) y que puede hacer el actor con ella.
+        from app.services.purchase_order_service import rentas_de_necesidades
+        rentas = rentas_de_necesidades(
+            db, [n.id_proyect_material_need for n in necesidades if n.need_kind == "rental"],
+            user_data)
         items = []
         for n in necesidades:
             fila = _renglon(n, materiales, existencias)
             fila["order"] = _orden_de(en_orden, n.id_proyect_material_need)
+            fila["rental"] = rentas.get(int(n.id_proyect_material_need))
             items.append(fila)
         return {"id_proyect": id_proyecto, "items": items}
 
@@ -492,6 +536,13 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
     cantidad = _cantidad(payload.get("quantity"))
     necesaria_para = _fecha_o_nada(payload.get("needed_by"), "needed_by")
     nota = _texto(payload.get("note"), "note", NOTE_MAX)
+    tipo = _tipo_de_necesidad(payload.get("need_kind"))
+    periodo = None
+    if tipo == "rental":
+        # La maquinaria rentada se describe con palabras: no es del catalogo del
+        # almacen (si lo fuera, no se rentaria).
+        periodo = periodo_de_renta(payload.get("rental_start"), payload.get("rental_end"))
+        payload = {**payload, "id_material": None}
 
     hay_material = str(payload.get("id_material") or "").strip() != ""
     id_material = _entero_positivo(payload.get("id_material"), "id_material") if hay_material else None
@@ -504,17 +555,29 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
     with transaction_context() as db:
         if id_material is not None:
             _material(db, id_material)
-        otra = _duplicada(db, id_proyecto, id_material=id_material, descripcion=descripcion)
+        otra = _duplicada(db, id_proyecto, id_material=id_material, descripcion=descripcion,
+                          tipo=tipo, periodo=periodo)
         if otra is not None:
             _rechazar_duplicada(otra, id_material=id_material, description=descripcion)
 
+        if id_material is not None:
+            # Una necesidad que ya nombra un material del catalogo no hay que
+            # revisarla: nace vinculada, y asi se puede meter en una orden.
+            revision = "linked"
+        elif tipo == "rental":
+            # Quien la pide ya dijo que se renta: no hay almacen contra el cual revisarla.
+            revision = "buy"
+        else:
+            revision = None
         need = ProyectMaterialNeed(
             id_proyect=id_proyecto, id_material=id_material, description=descripcion,
             unit=unidad, quantity=cantidad, needed_by=necesaria_para, note=nota,
-            need_status="open", created_by=actor,
-            # Una necesidad que ya nombra un material del catalogo no hay que
-            # revisarla: nace vinculada, y asi se puede meter en una orden.
-            review_result="linked" if id_material is not None else None,
+            need_status="open", created_by=actor, need_kind=tipo,
+            rental_start=periodo[0] if periodo else None,
+            rental_end=periodo[1] if periodo else None,
+            review_result=revision,
+            reviewed_by=actor if tipo == "rental" else None,
+            reviewed_date=_ahora() if tipo == "rental" else None,
         )
         db.add(need)
         db.flush()
@@ -523,9 +586,17 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
         compradores = _quien_compra(db)
     # Ya cerrada la transaccion: el aviso abre la suya. Compras se entera de que
     # hay algo nuevo por comprar sin tener que abrir la lista a ver si hay.
-    avisar_material_solicitado(
-        id_proyecto, "%s x %s" % (fila["display_name"], cantidad), compradores, user_data)
+    if tipo == "rental":
+        que = "Renta: %s x %s (%s a %s)" % (fila["display_name"], cantidad,
+                                            periodo[0].isoformat(), periodo[1].isoformat())
+    else:
+        que = "%s x %s" % (fila["display_name"], cantidad)
+    avisar_material_solicitado(id_proyecto, que, compradores, user_data)
     return fila
+
+
+def _ahora() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _usuarios_con(db, capacidades) -> set[int]:
@@ -582,21 +653,30 @@ def update_need(id_need, payload: dict, user_data: dict) -> dict:
             need.note = _texto(payload.get("note"), "note", NOTE_MAX)
         if "unit" in payload:
             need.unit = _unidad(payload.get("unit"))
+        es_renta = need.need_kind == "rental"
+        if es_renta and ("rental_start" in payload or "rental_end" in payload):
+            need.rental_start, need.rental_end = periodo_de_renta(
+                payload.get("rental_start", need.rental_start),
+                payload.get("rental_end", need.rental_end))
         if "description" in payload and need.id_material is None:
             nueva = _descripcion_valida(_texto(
                 payload.get("description"), "description", DESCRIPTION_MAX,
                 obligatorio=True))
             if _normalizar(nueva) != _normalizar(need.description):
                 otra = _duplicada(db, need.id_proyect, descripcion=nueva,
-                                  excepto=need.id_proyect_material_need)
+                                  excepto=need.id_proyect_material_need,
+                                  tipo=need.need_kind,
+                                  periodo=(need.rental_start, need.rental_end) if es_renta else None)
                 if otra is not None:
                     _rechazar_duplicada(otra, description=nueva)
                 need.description = nueva
-                # Otras palabras, otra pregunta: lo que se reviso ya no aplica.
-                need.review_result = None
-                need.reviewed_by = None
-                need.reviewed_date = None
-                need.review_note = None
+                # Otras palabras, otra pregunta: lo que se reviso ya no aplica. Una
+                # renta no se revisa: sigue confirmada.
+                if not es_renta:
+                    need.review_result = None
+                    need.reviewed_by = None
+                    need.reviewed_date = None
+                    need.review_note = None
         # "Corregir y reenviar": el supervisor ya atendio el motivo de la devolucion
         # -aunque sea para explicar que si era eso- y vuelve a quedar por revisar.
         if (payload.get("resubmit") and need.id_material is None
@@ -669,6 +749,11 @@ def _necesidad_por_revisar(db, id_need, user_data: dict, *,
         raise AppError("errors.need_not_open", 409, {
             "id_proyect_material_need": need.id_proyect_material_need,
             "need_status": need.need_status})
+    if need.need_kind == "rental":
+        # Una renta no se revisa contra el almacen: nace confirmada.
+        raise AppError("errors.need_not_reviewable", 409, {
+            "id_proyect_material_need": need.id_proyect_material_need,
+            "need_kind": need.need_kind})
     _exigir_que_no_este_en_una_orden(db, need)
     if need.id_material is not None:
         raise AppError("errors.need_already_linked", 409, {
@@ -786,9 +871,14 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
             # compra pendiente; el supervisor lo sigue viendo en su lista, con la
             # orden recibida.
             en_su_orden = en_orden.get(int(need.id_proyect_material_need))
-            if en_su_orden is not None and en_su_orden[2] == "received":
+            if en_su_orden is not None and en_su_orden[2] in ("received", "closed"):
                 continue
-            if need.id_material is not None:
+            if need.need_kind == "rental":
+                # Cada renta va sola: la misma maquina en dos periodos son dos contratos.
+                llave = ("r", int(need.id_proyect_material_need))
+                base = {"material": None, "description": need.description,
+                        "unit": need.unit, "linked": False, "in_stock": None}
+            elif need.id_material is not None:
                 llave = ("m", int(need.id_material))
                 base = {
                     "material": materiales.get(int(need.id_material)),
@@ -804,11 +894,15 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
             grupo = grupos.setdefault(llave, {
                 **base, "key": "%s:%s" % llave, "required": 0, "needed_by": None,
                 "needs_review": False, "suggestions": [], "projects": [],
+                "need_kind": need.need_kind,
+                "rental_start": need.rental_start.isoformat() if need.rental_start else None,
+                "rental_end": need.rental_end.isoformat() if need.rental_end else None,
             })
             grupo["required"] += int(need.quantity)
-            if need.needed_by and (grupo["needed_by"] is None
-                                   or need.needed_by < grupo["needed_by"]):
-                grupo["needed_by"] = need.needed_by
+            # Una renta se necesita el dia que empieza.
+            cuando = need.rental_start if need.need_kind == "rental" else need.needed_by
+            if cuando and (grupo["needed_by"] is None or cuando < grupo["needed_by"]):
+                grupo["needed_by"] = cuando
             por_revisar = need.id_material is None and need.review_result is None
             grupo["needs_review"] = grupo["needs_review"] or por_revisar
             grupo["projects"].append({

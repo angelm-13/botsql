@@ -63,4 +63,10 @@ BEAT_SCHEDULE = {
         "task": "app.jobs.tasks_rh.notify_attendance_alerts",
         "schedule": crontab(hour=8, minute=30),
     },
+    # Cada 6 horas (como los vales vencidos): no repite avisos, solo alcanza pronto
+    # el cambio de dia en la hora del negocio.
+    "purchase-rentals-due-every-six-hours": {
+        "task": "app.jobs.tasks_purchases.notify_rentals_due",
+        "schedule": crontab(minute=30, hour="*/6"),
+    },
 }

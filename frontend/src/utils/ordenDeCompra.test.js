@@ -58,6 +58,22 @@ test("recibida con proyectos le recuerda al encargado de la obra que puede inici
   assert.equal(sigue({ order_status: "received", lines: [{ id_proyect: null }] }), "received");
 });
 
+test("una orden de renta no se recibe en el almacen: llega a obra y se devuelve", () => {
+  const renta = (stage, actions = {}) => ({
+    line_kind: "rental", quantity: 1, quantity_received: 0,
+    rental: { stage, actions, rental_end: "2026-11-20" },
+  });
+  assert.equal(sigue({ order_status: "purchased", actions: {}, lines: [renta("waiting_arrival", { arrive: true })] }), "rental_arrive");
+  assert.equal(sigue({ order_status: "purchased", actions: {}, lines: [renta("waiting_arrival")] }), "rental_waiting");
+  const enObra = queSigue({ order_status: "received", actions: {}, lines: [renta("on_site")] });
+  assert.equal(conDatos(enObra.principal.texto, enObra.principal.datos).includes("2026-11-20"), true);
+  assert.equal(sigue({ order_status: "received", actions: {}, lines: [renta("overdue")] }), "rental_overdue");
+  assert.equal(sigue({ order_status: "closed", actions: {}, lines: [renta("returned")] }), "rental_closed");
+  // Con material por recibir, primero lo del almacen.
+  assert.equal(sigue({ order_status: "purchased", actions: { receive: true },
+    lines: [renta("waiting_arrival"), { quantity: 5, quantity_received: 0 }] }), "receive");
+});
+
 test("el avance de recepcion no cuenta de mas lo recibido de mas", () => {
   assert.deepEqual(avanceDeRecepcion([{ quantity: 5, quantity_received: 9 }, { quantity: 5, quantity_received: 1 }]),
     { total: 10, recibido: 6, faltan: 4 });
