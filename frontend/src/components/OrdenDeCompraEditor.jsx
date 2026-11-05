@@ -60,8 +60,9 @@ function desdeRenglon(l) {
  * esten en otra orden; lo demas el servidor lo rechaza igual. Compras tambien puede
  * agregar un renglon por su cuenta (reponer almacen), que queda marcado como tal.
  *
- * El proveedor se escoge de los dados de alta: quien compra no puede pagarle a quien
- * nadie registro.
+ * El proveedor se escribe a mano; se sugieren los dados de alta y, si el nombre
+ * coincide con uno, el servidor liga la orden a el (y compara el RFC de su factura).
+ * Todo va en pesos (MXN): no se pregunta la moneda.
  */
 export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCancelar }) {
   const { t } = useI18n();
@@ -70,9 +71,10 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
   const [proveedores, setProveedores] = useState([]);
   const [disponibles, setDisponibles] = useState([]);
   const [form, setForm] = useState(() => ({
-    id_customer_supplier: orden?.id_customer_supplier ? String(orden.id_customer_supplier) : "",
+    supplier_name: orden?.supplier?.name || orden?.supplier_name || "",
     description: orden?.description || "",
     expected_date: orden?.expected_date || "",
+    // Las ordenes viejas en otra moneda la conservan; las nuevas van en pesos.
     currency: orden?.currency || "MXN",
   }));
   const [renglones, setRenglones] = useState(() => (orden?.lines || []).map(desdeRenglon));
@@ -175,7 +177,7 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
 
   function cuerpo() {
     return {
-      id_customer_supplier: form.id_customer_supplier,
+      supplier_name: form.supplier_name.trim(),
       description: form.description,
       expected_date: form.expected_date || null,
       currency: form.currency,
@@ -218,12 +220,12 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
     }
   }
 
-  const sinProveedor = !form.id_customer_supplier;
+  const sinProveedor = form.supplier_name.trim().length < 2;
   const sinRenglones = renglones.length === 0;
   const sinCostos = total === null;
   // Lo que falta para poder enviarla, dicho en voz alta (el boton solo se apaga).
   const faltantes = [
-    sinProveedor && t("order.missing_supplier", "elegir el proveedor"),
+    sinProveedor && t("order.missing_supplier", "escribir el proveedor"),
     sinRenglones && t("order.missing_lines", "agregar al menos un renglón"),
     !sinRenglones && sinCostos && t("order.missing_costs", "capturar el costo de cada renglón"),
   ].filter(Boolean);
@@ -239,32 +241,22 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
       <div className="oc-form-grid">
         <label>
           <span>{t("order.supplier", "Proveedor")}</span>
-          <select value={form.id_customer_supplier}
-                  onChange={(e) => setForm({ ...form, id_customer_supplier: e.target.value })}>
-            <option value="">{t("order.choose_supplier", "Elige un proveedor")}</option>
-            {proveedores.map((p) => (
-              <option key={p.id_customer_supplier} value={p.id_customer_supplier}>
-                {p.name}{p.tax_id ? ` · ${p.tax_id}` : ""}
-              </option>
-            ))}
-          </select>
-          {proveedores.length === 0 && (
-            <small className="muted">
-              {t("order.no_suppliers", "No hay proveedores dados de alta. Pide que se registre en Clientes y proveedores (tipo proveedor).")}
-            </small>
-          )}
+          <input type="text" maxLength={200} list="oc-proveedores" autoComplete="off"
+                 value={form.supplier_name}
+                 placeholder={t("order.supplier_placeholder", "Ej. Ferretería El Clavo")}
+                 onChange={(e) => setForm({ ...form, supplier_name: e.target.value })} />
+          {/* Los dados de alta salen como sugerencia; se puede escribir cualquiera. */}
+          <datalist id="oc-proveedores">
+            {proveedores.map((p) => <option key={p.id_customer_supplier} value={p.name} />)}
+          </datalist>
+          <small className="muted">
+            {t("order.supplier_hint", "Escríbelo como aparece en su factura o ticket.")}
+          </small>
         </label>
         <label>
           <span>{t("order.expected_date", "Se espera el")}</span>
           <input type="date" value={form.expected_date}
                  onChange={(e) => setForm({ ...form, expected_date: e.target.value })} />
-        </label>
-        <label>
-          <span>{t("order.currency", "Moneda")}</span>
-          <select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
-            <option value="MXN">MXN</option>
-            <option value="USD">USD</option>
-          </select>
         </label>
         <label className="oc-campo-ancho">
           <span>{t("order.description", "Para qué es")}</span>

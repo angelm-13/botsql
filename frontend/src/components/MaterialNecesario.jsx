@@ -9,7 +9,9 @@ import {
   getMyPermissions, getProyectMaterialNeeds, updateMaterialNeed,
 } from "../api";
 import { estadoDeOrden } from "../utils/ordenDeCompra";
-import { CANTIDAD_MAXIMA, UNIDADES, descripcionSospechosa } from "../utils/descripcionDeNecesidad";
+import {
+  CANTIDAD_MAXIMA, UNIDADES, UNIDADES_DE_RENTA, descripcionSospechosa,
+} from "../utils/descripcionDeNecesidad";
 import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
 
@@ -123,8 +125,10 @@ export default function MaterialNecesario({ idProyect, estatus }) {
   }, [formulario.description, formulario.id_material, puedeCrear, esRenta]);
 
   const cambiar = (campo) => (e) => setFormulario((f) => ({ ...f, [campo]: e.target.value }));
+  // Cada tipo tiene su lista de unidades: al cambiar, la maquinaria arranca en "equipo".
   const elegirTipo = (tipo) => setFormulario((f) => ({
     ...f, need_kind: tipo, id_material: "", material_label: "",
+    unit: tipo === "rental" ? "equipo" : "",
   }));
 
   function elegirDelCatalogo(s) {
@@ -472,7 +476,9 @@ export default function MaterialNecesario({ idProyect, estatus }) {
               <span>{t("material_needs.unit", "Unidad")}</span>
               <select value={formulario.unit} onChange={cambiar("unit")}>
                 <option value="">—</option>
-                {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+                {(esRenta ? UNIDADES_DE_RENTA : UNIDADES).map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
               </select>
             </label>
           )}

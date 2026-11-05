@@ -75,6 +75,9 @@ UNIDADES = (
     "pza", "kg", "g", "m", "cm", "mm", "m2", "m3", "lt", "ml", "galon", "cubeta",
     "caja", "bolsa", "saco", "rollo", "juego", "par", "paquete", "tramo",
 )
+# La maquinaria rentada no se cuenta en piezas ni en kilos: una grua es "un equipo",
+# una pipa "un viaje". Lista aparte para que no se cuele en el material.
+UNIDADES_DE_RENTA = ("equipo", "unidad", "servicio", "viaje")
 
 # Palabras que no distinguen nada al buscar ("disco DE corte").
 _PALABRAS_VACIAS = frozenset({
@@ -162,15 +165,17 @@ def _cantidad(valor) -> int:
     return cantidad
 
 
-def _unidad(valor) -> str | None:
-    """Una unidad de la lista, o nada. Texto libre no: se presta a tres escrituras."""
+def _unidad(valor, renta: bool = False) -> str | None:
+    """Una unidad de la lista, o nada. Texto libre no: se presta a tres escrituras.
+    La maquinaria rentada tiene su propia lista (`UNIDADES_DE_RENTA`)."""
     texto = _texto(valor, "unit", UNIT_MAX)
     if texto is None:
         return None
     clave = texto.lower()
-    if clave not in UNIDADES:
+    permitidas = UNIDADES_DE_RENTA if renta else UNIDADES
+    if clave not in permitidas:
         raise AppError("errors.invalid_field", 400, {
-            "field": "unit", "allowed": list(UNIDADES)})
+            "field": "unit", "allowed": list(permitidas)})
     return clave
 
 
@@ -550,7 +555,7 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
     descripcion = None if hay_material else _descripcion_valida(_texto(
         payload.get("description"), "description", DESCRIPTION_MAX, obligatorio=True))
     # Lo vinculado toma su unidad del catalogo; la lista cerrada es para el texto libre.
-    unidad = None if hay_material else _unidad(payload.get("unit"))
+    unidad = None if hay_material else _unidad(payload.get("unit"), renta=tipo == "rental")
 
     with transaction_context() as db:
         if id_material is not None:
@@ -652,7 +657,7 @@ def update_need(id_need, payload: dict, user_data: dict) -> dict:
         if "note" in payload:
             need.note = _texto(payload.get("note"), "note", NOTE_MAX)
         if "unit" in payload:
-            need.unit = _unidad(payload.get("unit"))
+            need.unit = _unidad(payload.get("unit"), renta=need.need_kind == "rental")
         es_renta = need.need_kind == "rental"
         if es_renta and ("rental_start" in payload or "rental_end" in payload):
             need.rental_start, need.rental_end = periodo_de_renta(
