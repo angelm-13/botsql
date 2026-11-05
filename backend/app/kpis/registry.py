@@ -853,15 +853,17 @@ def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimensi
     de la pantalla, no de este query.
 
     Dimension "producto". Sin alcance de proyecto: el saldo de almacen no le
-    pertenece a un proyecto de cliente.
+    pertenece a un proyecto de cliente. Un producto dado de baja (`deletion_date`) no cuenta.
     """
     productos = (filtros_dimension or {}).get("productos")
-    condiciones = []
+    # Un producto dado de baja ya no existe para el negocio aunque conserve saldo en `inventory_stock`.
+    condiciones = [Product.deletion_date.is_(None)]
     if productos:
         condiciones.append(InventoryStock.id_product.in_(productos))
 
     stmt = (
         select(InventoryStock.id_product, func.sum(InventoryStock.quantity))
+        .join(Product, Product.id_product == InventoryStock.id_product)
         .where(*condiciones)
         .group_by(InventoryStock.id_product)
         .order_by(InventoryStock.id_product)
