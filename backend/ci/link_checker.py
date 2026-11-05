@@ -34,6 +34,8 @@ def check_remote(link: str, timeout: int):
     if urlparse(link).scheme not in {'http','https'}: return None
     req=urllib.request.Request(link, method='HEAD', headers={'User-Agent':'TYAKXA-CI-LinkChecker/1.0'})
     try:
+        # Herramienta de CI que revisa enlaces propios; no corre en produccion.
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         with urllib.request.urlopen(req, timeout=timeout) as res:
             if res.status>=400: return f'remote link returned HTTP {res.status}: {link}'
     except urllib.error.HTTPError as exc:

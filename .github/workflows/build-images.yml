@@ -147,6 +147,12 @@ jobs:
   # el servidor por SSH.
   deploy-tyakxa-dev:
     needs: [backend-and-worker, frontend-por-cliente]
+    # Solo desde initAlan. El workflow tambien corre en push a main (para construir las
+    # imagenes), pero main NO despliega a dev: este job commitea el tag nuevo de vuelta a
+    # la rama que lo disparo (git push origin HEAD:${GITHUB_REF_NAME}) y no debe tocar main.
+    # Sin funcion de estado, GitHub lo envuelve en success(): sigue exigiendo que las
+    # construcciones previas hayan salido bien.
+    if: github.ref == 'refs/heads/initAlan'
     concurrency:
       group: deploy-tyakxa-dev-${{ github.ref }}
     runs-on: ubuntu-latest

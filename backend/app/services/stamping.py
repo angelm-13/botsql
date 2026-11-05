@@ -161,6 +161,8 @@ class FacturamaSandboxProvider(StampingProvider):
             method="GET",
         )
         try:
+            # URL = base_url del PAC (env), validada con https:// en __init__; no viene de entrada del usuario.
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urlopen(request, timeout=self.timeout) as response:
                 return response.status == 200, "Conexión exitosa con Facturama."
         except HTTPError as exc:
@@ -372,6 +374,8 @@ class FacturamaSandboxProvider(StampingProvider):
             method="POST",
         )
         try:
+            # URL = base_url del PAC (env), validada con https:// en __init__; no viene de entrada del usuario.
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urlopen(request, timeout=self.timeout) as response:
                 result = json.loads(response.read().decode("utf-8"))
             stamp = result.get("Complement", {}).get("TaxStamp", {})
@@ -409,6 +413,8 @@ class FacturamaSandboxProvider(StampingProvider):
             method="GET",
         )
         try:
+            # URL = base_url del PAC (env), validada con https:// en __init__; no viene de entrada del usuario.
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urlopen(request, timeout=self.timeout) as response:
                 body = json.loads(response.read().decode("utf-8"))
             content = body.get("Content") if isinstance(body, dict) else None
@@ -445,6 +451,8 @@ class FacturamaSandboxProvider(StampingProvider):
             method="DELETE",
         )
         try:
+            # URL = base_url del PAC (env), validada con https:// en __init__; no viene de entrada del usuario.
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urlopen(request, timeout=self.timeout) as response:
                 data = json.loads(response.read().decode("utf-8") or "{}")
             return CancellationResult(
@@ -476,6 +484,8 @@ class FacturamaSandboxProvider(StampingProvider):
             method="GET",
         )
         try:
+            # URL = base_url del PAC (env), validada con https:// en __init__; no viene de entrada del usuario.
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urlopen(request, timeout=self.timeout) as response:
                 data = json.loads(response.read().decode("utf-8") or "{}")
             return CancellationResult(
@@ -553,6 +563,8 @@ class FacturamaMultiemisorProvider(FacturamaSandboxProvider):
             method="POST",
         )
         try:
+            # URL = base_url del PAC (env), validada con https:// en __init__; no viene de entrada del usuario.
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urlopen(request, timeout=self.timeout):
                 return True, "Sello digital registrado correctamente."
         except HTTPError as exc:
@@ -579,6 +591,8 @@ class FacturamaMultiemisorProvider(FacturamaSandboxProvider):
             method="GET",
         )
         try:
+            # URL = base_url del PAC (env), validada con https:// en __init__; no viene de entrada del usuario.
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urlopen(request, timeout=self.timeout) as response:
                 return response.status == 200
         except (HTTPError, TimeoutError, socket.timeout, URLError):

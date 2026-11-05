@@ -113,6 +113,8 @@ def bootstrap_admin_email() -> str:
 # trajera BOOTSTRAP_ADMIN_PASSWORD, porque "ya hay hash" parecia un cambio hecho
 # por una persona (visto en comala-prod, 2026-10-12).
 DEFAULT_BOOTSTRAP_PASSWORD = "test password"
+# Hash de la contrasena POR DEFECTO del usuario Bootstrap/admin1: es conocido a proposito para el arranque, no un secreto filtrado. Pendiente comprobar en cada ambiente que admin1 ya no lo use (password_hash_needs_reset).
+# nosemgrep: generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash
 SEEDED_DEFAULT_HASH = "$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6"
 
 
@@ -298,6 +300,7 @@ def init_database():
                 
                 exigir_clave_de_bootstrap_fuerte()
                 # Hash the password - bcrypt hash of "test password"
+                # nosemgrep: generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash
                 # Fixed hash: $2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6
                 password = bootstrap_password
                 hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()

@@ -15,7 +15,11 @@ verificacion criptografica del sello, que solo el SAT y el PAC pueden hacer.
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+# defusedxml: este modulo LEE XML ajeno (CFDI subido o devuelto por el PAC); el parser
+# estandar es vulnerable a entidades y DTD maliciosos. La guarda tiene_dtd() sigue
+# como primera barrera.
+from defusedxml import DefusedXmlException
+from defusedxml import ElementTree as ET
 from decimal import Decimal, InvalidOperation
 
 from app.services.cfdi_xml import tiene_dtd
@@ -410,7 +414,7 @@ def inspect_cfdi_xml(xml_content) -> dict[str, list[str]]:
 
     try:
         root = ET.fromstring(payload)
-    except ET.ParseError:
+    except (ET.ParseError, DefusedXmlException):
         return {"errors": ["cfdi.xml_mal_formado"], "warnings": []}
 
     if _local(root.tag) != "Comprobante":
