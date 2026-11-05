@@ -1979,7 +1979,7 @@ KPI_REGISTRY = (
     # un proyecto de cliente, mismo motivo que sus vecinos de este modulo. --
     KpiDefinition(
         clave="incidencias_abiertas_por_empleado",
-        etiqueta="Incidencias abiertas por responsable",
+        etiqueta="Incidencias registradas por empleado",
         modulo="operaciones",
         dimensiones=("empleado",),
         etiqueta_dimension="Responsable",
@@ -1990,7 +1990,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("barras", "tabla"),
         grafica_default="barras",
-        descripcion="Incidencias/vales abiertos, por responsable: el usuario a cuyo nombre está el material.",
+        descripcion="Incidencias capturadas por empleado, sin importar su estatus",
     ),
     KpiDefinition(
         clave="incidencias_pendientes",
