@@ -36,6 +36,8 @@ class Notification(Base):
     # usa para abrirlo con un clic. Nulo = el aviso no lleva a ningun lado.
     target_entity: Mapped[str | None] = mapped_column(String(40), nullable=True)
     target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Cuando se mando tambien por correo (jobs/tasks_notifications.py); nulo = no se ha mandado.
+    email_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     creation_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

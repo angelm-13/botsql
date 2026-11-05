@@ -13,7 +13,7 @@ import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { formatearFechaHora } from "../utils/fechas";
 import { useDialogo } from "../dialogo/useDialogo.js";
 
-const emptyForm = { date_born: "", date_start: "", email: "", first_name: "", id_permission: "", full_name: "", id_proyect: "", last_name_father: "", last_name_mother: "", national_id: "", password: "", principal_phone: "", secundary_phone: "", ssn: "", supervisor: "", base_salary: "", hire_date: "", id_status: "", tax_id: "", title: "", user_type: "", username: "", puesto: "", is_employee: false, accepts_marketing: false };
+const emptyForm = { date_born: "", date_start: "", email: "", first_name: "", id_permission: "", full_name: "", id_proyect: "", last_name_father: "", last_name_mother: "", national_id: "", password: "", principal_phone: "", secundary_phone: "", ssn: "", supervisor: "", base_salary: "", hire_date: "", id_status: "", tax_id: "", title: "", user_type: "", username: "", puesto: "", is_employee: false, accepts_marketing: false, receive_email_notifications: true };
 const validationRules = allValidationRules["user"] || {};
 const ENTITY_KEY = "user";
 const ACTION_CREATE = 1;
@@ -668,6 +668,13 @@ export default function UserPage() {
           <label className="field checkbox-field">
             <span>{t("fields.user.is_employee", "Es empleado")}</span>
             <input name="is_employee" type="checkbox" checked={Boolean(formData.is_employee)} onChange={handleChange} />
+          </label>
+          )}
+          {canSeeField("receive_email_notifications") && (
+          <label className="field checkbox-field">
+            <span>{t("fields.user.receive_email_notifications", "Recibir avisos por correo")}</span>
+            <input name="receive_email_notifications" type="checkbox" checked={formData.receive_email_notifications !== false} onChange={handleChange} />
+            <small className="muted">{t("user_payroll.email_notifications_hint")}</small>
           </label>
           )}
           {canSeeField("accepts_marketing") && (

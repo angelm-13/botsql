@@ -1378,7 +1378,8 @@
       "tax_id": "Tax ID (RFC)",
       "title": "Title",
       "user_type": "User Type",
-      "username": "Username"
+      "username": "Username",
+      "receive_email_notifications": "Receive notifications by email"
     },
     "user_mfa": {
       "backup_codes": "Backup Codes",
@@ -5214,7 +5215,9 @@
       "benefit_fonacot": "Benefit: Fonacot loan (deduction in the payroll sheet)",
       "benefit_savings_fund": "Benefit: savings fund (deduction in the payroll sheet)",
       "benefit_loan": "Benefit: company loan (deduction in the payroll sheet)",
-      "benefit_alimony": "Alimony (deduction in the payroll sheet)"
+      "benefit_alimony": "Alimony (deduction in the payroll sheet)",
+      "disability_pay_waiting_days": "General illness disability: the company pays the 3 waiting days",
+      "disability_complement_pct": "General illness disability: the company tops up this % of salary from day 4"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -5567,7 +5570,8 @@
     "scheduled": "from",
     "schedule_hint": "When they clock in and out (lateness and absences). It does not decide when they get paid.",
     "group_hint": "How often they get paid (weekly, biweekly…). It does not change their start time.",
-    "base_salary_hint": "Only used if the employee has no current salary in «Payroll and attendance», which takes precedence."
+    "base_salary_hint": "Only used if the employee has no current salary in «Payroll and attendance», which takes precedence.",
+    "email_notifications_hint": "If the user has an email, bell notifications also go there. Email is optional."
   },
   "payroll_simulator": {
     "eyebrow": "Human resources",

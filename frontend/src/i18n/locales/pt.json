@@ -1341,7 +1341,8 @@
       "tax_id": "RFC",
       "title": "Título",
       "user_type": "Tipo de usuário",
-      "username": "Usuário"
+      "username": "Usuário",
+      "receive_email_notifications": "Receber avisos por e-mail"
     },
     "user_mfa": {
       "backup_codes": "Backup Códigos",
@@ -3718,7 +3719,9 @@
       "benefit_fonacot": "Benefício: crédito Fonacot (desconto na planilha)",
       "benefit_savings_fund": "Benefício: caixa de poupança (desconto na planilha)",
       "benefit_loan": "Benefício: empréstimo da empresa (desconto na planilha)",
-      "benefit_alimony": "Pensão alimentícia (desconto na planilha)"
+      "benefit_alimony": "Pensão alimentícia (desconto na planilha)",
+      "disability_pay_waiting_days": "Incapacidade por doença geral: a empresa paga os 3 dias de espera",
+      "disability_complement_pct": "Incapacidade por doença geral: a empresa complementa este % do salário a partir do 4.º dia"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -4071,7 +4074,8 @@
     "scheduled": "a partir de",
     "schedule_hint": "A que horas entra e sai (atrasos e faltas). Não decide quando recebe.",
     "group_hint": "De quanto em quanto tempo recebe (semanal, quinzenal…). Não muda o horário de entrada.",
-    "base_salary_hint": "Só é usado se o funcionário não tiver salário vigente em «Folha e presença», que prevalece."
+    "base_salary_hint": "Só é usado se o funcionário não tiver salário vigente em «Folha e presença», que prevalece.",
+    "email_notifications_hint": "Se o usuário tiver e-mail, os avisos do sino também chegam lá. O e-mail não é obrigatório."
   },
   "payroll_simulator": {
     "eyebrow": "Recursos humanos",

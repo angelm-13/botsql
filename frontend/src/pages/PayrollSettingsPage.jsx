@@ -47,6 +47,8 @@ const PARAMETROS = [
   ["benefit_infonavit", "option", "options"], ["benefit_fonacot", "option", "options"],
   ["benefit_savings_fund", "option", "options"], ["benefit_loan", "option", "options"],
   ["benefit_alimony", "option", "options"],
+  // Incapacidad por enfermedad general (payroll_calculation_service): lo que paga la empresa.
+  ["disability_pay_waiting_days", "option", "options"], ["disability_complement_pct", "pct", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -79,6 +81,7 @@ const POLITICA_POR_OMISION = {
   report_alert_late: 3, report_alert_absences: 2, report_alert_manual: 2, report_alert_supervisor_manual: 5,
   report_summary_frequency: 2,
   benefit_infonavit: 0, benefit_fonacot: 0, benefit_savings_fund: 0, benefit_loan: 0, benefit_alimony: 0,
+  disability_pay_waiting_days: 0, disability_complement_pct: 0,
 };
 const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];
 const PERIODICIDADES = [1, 7, 10, 15, 30];

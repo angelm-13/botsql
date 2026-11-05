@@ -79,6 +79,10 @@ CODIGO_HORAS_EXTRA = "HORAS_EXTRA"
 # Descanso o festivo trabajado (pago doble) y prima dominical (LFT arts. 71, 73 y
 # 75): tampoco se marcan gravables; su parte gravada la suma el calculo.
 CODIGO_DESCANSO, CODIGO_PRIMA_DOMINICAL = "DESCANSO_TRAB", "PRIMA_DOM"
+# Lo que la empresa paga de su bolsa durante una incapacidad (opciones por empresa,
+# 2026-11-05). El IMSS paga el subsidio aparte; esto no lo sustituye.
+CODIGO_INCAPACIDAD = "INCAP_EMPRESA"
+DIAS_DE_ESPERA = 3   # enfermedad general: el IMSS paga desde el 4o dia (LSS art. 96)
 ABIERTO, CALCULADO, CERRADO = "open", "calculated", "closed"
 # Columnas que solo mueven calcular/cerrar/reabrir; la captura generica no.
 CAMPOS_DEL_ESTADO = ("period_state", "closed_at", "closed_by", "reopened_at", "reopened_by")
@@ -100,6 +104,7 @@ CONCEPTOS_DEL_CALCULO = {
     CODIGO_HORAS_EXTRA: ("Horas extra", "earning", False, False),
     CODIGO_DESCANSO: ("Descanso o festivo trabajado", "earning", False, False),
     CODIGO_PRIMA_DOMINICAL: ("Prima dominical", "earning", False, False),
+    CODIGO_INCAPACIDAD: ("Pago de la empresa por incapacidad", "earning", True, False),
     "ISR": ("ISR retenido (subsidio para el empleo aplicado)", "deduction", False, False),
     "IMSS": ("Cuota obrera IMSS", "deduction", False, False),
 }
@@ -119,6 +124,14 @@ OPCION_AGUINALDO_DESCUENTA = "option_aguinaldo_discounts"    # faltas e incapaci
 OPCION_SUBSIDIO_DIAS_DEL_MES = "option_subsidy_month_days"   # subsidio con dias reales del mes y no 30.4
 OPCIONES = (OPCION_IMSS_EN_FALTAS, OPCION_AGUINALDO_DESCUENTA, OPCION_SUBSIDIO_DIAS_DEL_MES)
 
+# Incapacidad por enfermedad general (la empresa decide; respuestas de RH, 2026-11-05):
+# pagar los 3 dias de espera que el IMSS no paga (1 = si) y complementar el sueldo
+# con un % del diario los dias que el IMSS si paga (0 = nada). Riesgo de trabajo y
+# maternidad los paga el IMSS al 100 %. Una incapacidad sin tipo capturado se toma
+# como enfermedad general. Sin capturar, no se paga nada, como antes.
+INCAP_ESPERA, INCAP_COMPLEMENTO = "disability_pay_waiting_days", "disability_complement_pct"
+POLITICA_DE_INCAPACIDAD = {INCAP_ESPERA: (0, range(0, 2)), INCAP_COMPLEMENTO: (0, range(0, 101))}
+
 # Tabla de vacaciones de la empresa (prestaciones superiores a la ley): clave ->
 # año de servicio en que empieza el renglon. Sin capturar, vale la de la ley.
 TABLA_DE_VACACIONES = {
@@ -133,7 +146,7 @@ TABLA_DE_VACACIONES = {
 # los minutos de los avisos de checada (services/avisos_de_checada.py).
 # clave -> (valor por omision, valores permitidos); los valida payroll_parameter_service.
 POLITICAS = {**POLITICA_DE_VACACIONES, **POLITICA_DE_CHECADAS, **POLITICA_DE_AVISOS, **POLITICA_DE_HORAS_EXTRA,
-             **POLITICA_DEL_REPORTE, **POLITICA_DE_PRESTACIONES}
+             **POLITICA_DEL_REPORTE, **POLITICA_DE_PRESTACIONES, **POLITICA_DE_INCAPACIDAD}
 PARAMETROS_OPCIONALES = OPCIONES + tuple(TABLA_DE_VACACIONES) + tuple(POLITICAS)
 
 
@@ -394,6 +407,12 @@ def calcular_en(db, id_payroll_period, user_id: int) -> dict:
         db, empleados, periodo, parametros, diarios=diarios,
         horas={i: salarios.precio_de_hora(s) for i, s in sueldos.items() if salarios.precio_de_hora(s)})
 
+    incapacidad = _vigentes(db, tuple(POLITICA_DE_INCAPACIDAD), al_dia)
+    paga_espera = int(incapacidad.get(INCAP_ESPERA, 0) or 0) == 1
+    complemento = Decimal(str(incapacidad.get(INCAP_COMPLEMENTO, 0) or 0))
+    incapacidades = _incapacidades_generales(db, [e.id_user for e in empleados], periodo) \
+        if (paga_espera or complemento) else {}
+
     calculados, sin_sueldo, sin_ingreso = [], [], []
     for empleado in empleados:
         diario = diarios[empleado.id_user]
@@ -412,6 +431,10 @@ def calcular_en(db, id_payroll_period, user_id: int) -> dict:
         # Solo se reemplaza lo que escribe este calculo: SUELDO, VAC_PAGADAS,
         # AGUINALDO, PRIMA_VAC, ISR e IMSS.
         movimientos.reemplazar(detalle, conceptos[CODIGO_SUELDO], sueldo, user_id)
+        # Lo que paga la empresa por incapacidad (opciones por empresa); grava como sueldo.
+        monto_incapacidad = _pago_por_incapacidad(incapacidades.get(empleado.id_user, []), periodo, diario,
+                                                  paga_espera, complemento)
+        movimientos.reemplazar(detalle, conceptos[CODIGO_INCAPACIDAD], monto_incapacidad, user_id)
         # Vacaciones sin usar que vencen en el periodo, si la empresa las paga: grava como sueldo.
         vacaciones_pagadas = por_pagar.get(empleado.id_user, 0)
         monto_vacaciones = _dinero(diario * vacaciones_pagadas)
@@ -516,6 +539,7 @@ def calcular_en(db, id_payroll_period, user_id: int) -> dict:
             "vacation_premium_days": dias_vacaciones,
             "unused_vacation_days_paid": vacaciones_pagadas,
             "unused_vacation_pay": float(monto_vacaciones),
+            "disability_pay": float(monto_incapacidad),
             "overtime_double_hours": round(extra.get("double_minutes", 0) / 60, 2),
             "overtime_triple_hours": round(extra.get("triple_minutes", 0) / 60, 2),
             "overtime_pay": float(monto_extra),
@@ -549,6 +573,39 @@ def calcular_en(db, id_payroll_period, user_id: int) -> dict:
         "without_hire_date": sin_ingreso,
         "total_net_pay": float(sum((_dinero(e["net_pay"]) for e in calculados), _dinero(0))),
     }
+
+
+def _incapacidades_generales(db, ids, periodo) -> dict:
+    """{id_user: [EmployeeLeave]} incapacidades aprobadas de enfermedad general (o sin tipo) que tocan el periodo."""
+    from app.models import EmployeeLeave
+    from app.models.employee_leave import APROBADA, INCAPACIDAD_GENERAL
+    salida: dict = {}
+    for a in db.scalars(select(EmployeeLeave).where(EmployeeLeave.id_user.in_(list(ids) or [0]))
+                        .where(EmployeeLeave.leave_type == "disability").where(EmployeeLeave.leave_status == APROBADA)
+                        .where(EmployeeLeave.deletion_date.is_(None))
+                        .where(EmployeeLeave.start_date <= periodo.period_end)
+                        .where(EmployeeLeave.end_date >= periodo.period_start)):
+        if a.disability_type in (None, INCAPACIDAD_GENERAL):
+            salida.setdefault(a.id_user, []).append(a)
+    return salida
+
+
+def _pago_por_incapacidad(incapacidades, periodo, diario: Decimal, paga_espera: bool, complemento: Decimal) -> Decimal:
+    """Dias naturales de la incapacidad dentro del periodo: los 3 primeros de cada
+    incapacidad al 100 % del diario si la empresa paga la espera; del 4o en adelante,
+    el % de complemento. Se cuenta desde que empezo la incapacidad, aunque haya sido
+    en el periodo anterior."""
+    total = Decimal(0)
+    for a in incapacidades:
+        dia = max(a.start_date, periodo.period_start)
+        while dia <= min(a.end_date, periodo.period_end):
+            n = (dia - a.start_date).days + 1
+            if n <= DIAS_DE_ESPERA:
+                total += diario if paga_espera else Decimal(0)
+            else:
+                total += diario * complemento / 100
+            dia += timedelta(days=1)
+    return _dinero(total)
 
 
 def _dias_que_bajan_el_aguinaldo(db, empleados, al_dia) -> dict[int, int]:

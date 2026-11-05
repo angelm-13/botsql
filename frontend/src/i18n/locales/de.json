@@ -1340,7 +1340,8 @@
       "tax_id": "RFC",
       "title": "Titel",
       "user_type": "Benutzertyp",
-      "username": "Benutzername"
+      "username": "Benutzername",
+      "receive_email_notifications": "Benachrichtigungen per E-Mail erhalten"
     },
     "user_mfa": {
       "backup_codes": "Sicherung Codes",
@@ -3712,7 +3713,9 @@
       "benefit_fonacot": "Leistung: Fonacot-Kredit (Abzug in der Tabelle)",
       "benefit_savings_fund": "Leistung: Sparkasse (Abzug in der Tabelle)",
       "benefit_loan": "Leistung: Firmendarlehen (Abzug in der Tabelle)",
-      "benefit_alimony": "Unterhalt (Abzug in der Tabelle)"
+      "benefit_alimony": "Unterhalt (Abzug in der Tabelle)",
+      "disability_pay_waiting_days": "Krankheitsbedingte Arbeitsunfähigkeit: das Unternehmen zahlt die 3 Wartetage",
+      "disability_complement_pct": "Krankheitsbedingte Arbeitsunfähigkeit: das Unternehmen ergänzt diesen % des Gehalts ab Tag 4"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -4065,7 +4068,8 @@
     "scheduled": "ab",
     "schedule_hint": "Wann die Person kommt und geht (Verspätungen, Fehlzeiten). Bestimmt nicht, wann bezahlt wird.",
     "group_hint": "Wie oft bezahlt wird (wöchentlich, zweiwöchentlich…). Ändert nicht die Arbeitszeit.",
-    "base_salary_hint": "Nur verwendet, wenn kein aktuelles Gehalt unter «Lohn und Anwesenheit» besteht, das Vorrang hat."
+    "base_salary_hint": "Nur verwendet, wenn kein aktuelles Gehalt unter «Lohn und Anwesenheit» besteht, das Vorrang hat.",
+    "email_notifications_hint": "Hat der Benutzer eine E-Mail, gehen die Glocken-Hinweise auch dorthin. E-Mail ist optional."
   },
   "payroll_simulator": {
     "eyebrow": "Personalwesen",

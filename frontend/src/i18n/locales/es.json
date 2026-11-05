@@ -1385,7 +1385,8 @@
       "tax_id": "RFC",
       "title": "Título",
       "user_type": "Tipo de usuario",
-      "username": "Usuario"
+      "username": "Usuario",
+      "receive_email_notifications": "Recibir avisos por correo"
     },
     "user_mfa": {
       "backup_codes": "Respaldo Códigos",
@@ -5329,7 +5330,9 @@
       "benefit_fonacot": "Prestación: crédito Fonacot (descuento en la hoja de nómina)",
       "benefit_savings_fund": "Prestación: caja de ahorro (descuento en la hoja de nómina)",
       "benefit_loan": "Prestación: préstamo de la empresa (descuento en la hoja de nómina)",
-      "benefit_alimony": "Pensión alimenticia (descuento en la hoja de nómina)"
+      "benefit_alimony": "Pensión alimenticia (descuento en la hoja de nómina)",
+      "disability_pay_waiting_days": "Incapacidad por enfermedad general: la empresa paga los 3 días de espera",
+      "disability_complement_pct": "Incapacidad por enfermedad general: la empresa complementa este % del sueldo desde el 4.º día"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",
@@ -5682,7 +5685,8 @@
     "scheduled": "desde el",
     "schedule_hint": "Dice a qué hora entra y sale (retardos y faltas). No decide cuándo cobra.",
     "group_hint": "Dice cada cuándo cobra (semanal, quincenal…). No cambia su hora de entrada.",
-    "base_salary_hint": "Solo se usa si el empleado no tiene sueldo vigente en «Nómina y asistencia», que es el que manda."
+    "base_salary_hint": "Solo se usa si el empleado no tiene sueldo vigente en «Nómina y asistencia», que es el que manda.",
+    "email_notifications_hint": "Si el usuario tiene correo, los avisos de la campana también le llegan ahí. El correo no es obligatorio."
   },
   "payroll_simulator": {
     "eyebrow": "Recursos humanos",
