@@ -9,14 +9,29 @@
 // Sin dependencias nuevas: esbuild ya viene con Vite; se empaqueta la entrada
 // JSX, se importa el resultado y se renderiza con react-dom/server.
 import assert from "node:assert/strict";
-import test, { before } from "node:test";
+import test, { after, before } from "node:test";
 import { cargarRender } from "./bundleRender.mjs";
 
 let pintarTarjeta;
 let pintarCuerpo;
 
+// El componente calcula "hoy" con `new Date()` (parametrosEfectivos). Para que estas
+// pruebas no dependan del dia en que corren, el reloj se fija en el dia que
+// suponen sus datos: 4 de noviembre de 2026, a mediodia (hora local).
+const DateReal = globalThis.Date;
+const AHORA_FIJO = new DateReal(2026, 10, 4, 12, 0, 0).getTime();
+class DateFija extends DateReal {
+  constructor(...args) { if (args.length === 0) super(AHORA_FIJO); else super(...args); }
+  static now() { return AHORA_FIJO; }
+}
+
 before(async () => {
   ({ pintarTarjeta, pintarCuerpo } = await cargarRender());
+  globalThis.Date = DateFija;
+});
+
+after(() => {
+  globalThis.Date = DateReal;
 });
 
 // --- catalogo y widgets ---------------------------------------------------
