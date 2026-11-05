@@ -126,6 +126,8 @@ export function avanceDeRecepcion(renglones) {
   let total = 0;
   let recibido = 0;
   for (const r of renglones || []) {
+    // La maquinaria rentada no se recibe en el almacen: no cuenta como piezas.
+    if (r.line_kind === "rental") continue;
     total += Number(r.quantity) || 0;
     recibido += Math.min(Number(r.quantity_received) || 0, Number(r.quantity) || 0);
   }
@@ -188,6 +190,28 @@ export function queSigue(orden) {
     return { principal: a.attach_voucher
       ? frase("upload_invoice", "Autorizada: ya puedes comprar. Sube la factura (de preferencia el XML) o el ticket para registrar la compra.", "accion")
       : frase("buy_others", "Autorizada; falta comprarla y subir su factura o ticket.", "neutro") };
+  }
+  // Maquinaria rentada: no pasa por el almacen. Llega a la obra y se devuelve.
+  const rentas = renglones.filter((r) => r.line_kind === "rental" && r.rental);
+  const rentaPorLlegar = rentas.find((r) => r.rental.stage === "waiting_arrival");
+  const rentaEnObra = rentas.find((r) => ["on_site", "overdue"].includes(r.rental.stage));
+  const soloRentas = rentas.length > 0 && rentas.length === renglones.length;
+  if (rentas.length > 0 && ["purchased", "partially_received", "received"].includes(estado)
+      && (soloRentas || !a.receive)) {
+    if (rentaPorLlegar) {
+      return { principal: rentaPorLlegar.rental.actions?.arrive
+        ? frase("rental_arrive", "Te toca: cuando la maquinaria llegue a la obra, marca \"Llegó a obra\". Desde ahí corre la renta.", "accion")
+        : frase("rental_waiting", "Contratada. Quien lleva la obra marca \"Llegó a obra\" cuando llegue.", "neutro") };
+    }
+    if (rentaEnObra) {
+      const r = rentaEnObra.rental;
+      return { principal: r.stage === "overdue"
+        ? frase("rental_overdue", "La renta ya venció: devuélvela al proveedor o pide una prórroga.", "alerta")
+        : frase("rental_on_site", "En obra hasta el {fin}. Al terminar, marca \"Devuelta al proveedor\"; si se necesita más tiempo, pide prórroga.", "neutro", { fin: r.rental_end }) };
+    }
+  }
+  if (estado === "closed" && rentas.length > 0) {
+    return { principal: frase("rental_closed", "Todo llegó y la maquinaria rentada ya se devolvió. La orden está cerrada.", "ok") };
   }
   if (estado === "purchased" || estado === "partially_received") {
     const parcial = estado === "partially_received";

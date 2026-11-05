@@ -6,6 +6,7 @@ import OrdenDeCompraDetalle from "../components/OrdenDeCompraDetalle.jsx";
 import OrdenDeCompraEditor from "../components/OrdenDeCompraEditor.jsx";
 import PoliticaDeCompra from "../components/PoliticaDeCompra.jsx";
 import PresupuestosDeCompra from "../components/PresupuestosDeCompra.jsx";
+import RentasActivas from "../components/RentasActivas.jsx";
 import { AvisoFlotante, GuiaDelModulo } from "../components/GuiaDeCompras.jsx";
 import {
   getMyPermissions, getPurchaseOrder, getPurchaseOrders, getPurchasePolicy,
@@ -163,8 +164,10 @@ export default function OrdenesDeCompraPage() {
     setOrden(actualizada);
     setModo("ver");
     if (accion) setAvisoFlotante(avisoTrasAccion(accion, actualizada));
+    setVersionRentas((v) => v + 1);
     cargar();
   }
+  const [versionRentas, setVersionRentas] = useState(0);
 
   function alGuardar(guardada) {
     setPrecarga([]);
@@ -184,6 +187,7 @@ export default function OrdenesDeCompraPage() {
     tieneCapacidad("purchase_receive")
       && t("guide.orders.receiver", "Tú recibes: cuando llegue el material, abre las órdenes \"Por recibir\" y anota cuánto llegó de cada renglón."),
     t("guide.orders.next", "Al abrir una orden, el recuadro \"Qué sigue\" te dice en qué paso va y qué te toca."),
+    t("guide.orders.rental", "La maquinaria rentada no se recibe en el almacén: quien lleva la obra marca \"Llegó a obra\" y \"Devuelta al proveedor\". En \"Rentas de maquinaria\" ves lo que está en obra y cuándo vence."),
   ];
 
   const items = lista.items || [];
@@ -219,6 +223,14 @@ export default function OrdenesDeCompraPage() {
       <PoliticaDeCompra politica={politica} puedeEditar={puede("purchase_policy", "scope_update")}
                         onCambio={setPolitica} />
       <PresupuestosDeCompra puedeEditar={puede("purchase_policy", "scope_update")} />
+      <RentasActivas version={versionRentas} onAbrirOrden={abrir}
+                     onCambio={(actualizada) => {
+                       // Si la orden que cambio esta abierta, se pinta la nueva; y la lista se refresca.
+                       if (actualizada && orden?.id_purchase_order === actualizada.id_purchase_order) {
+                         setOrden(actualizada);
+                       }
+                       cargar();
+                     }} />
 
       {error && <div className="alert error">{error}</div>}
       {noSeAbrio && <div className="alert error">{noSeAbrio}</div>}

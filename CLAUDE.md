@@ -6,6 +6,50 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-11-04 (d) — renta de maquinaria por proyecto (rama `feature/renta-maquinaria`)
+
+Pedido de Adser (via Alan). Rama corta desde `origin/initAlan`, worktree en
+`C:\Users\TDW2\worktrees\tyakxa_rentas` (fuera de OneDrive). **Sin commitear ni mergear.**
+No se hizo modulo aparte: la renta entra al flujo de compras que ya existe.
+
+- **Pedirla**: en "Material necesario" del proyecto, tipo "Maquinaria rentada" con periodo
+  (`proyect_material_need.need_kind='rental'`, `rental_start/rental_end`). Nace confirmada
+  (`review_result='buy'`), no se revisa contra el almacen; la misma maquina en otro periodo es
+  otra renta.
+- **Contratarla**: Compras la mete en una orden como siempre; el renglon lleva tarifa por
+  dia/semana/mes (`purchase_order_line.line_kind='rental'`, `rental_rate`, `rental_rate_unit`).
+  `unit_cost` = tarifa x periodos (semana/mes redondean hacia arriba; mes = 30 dias), asi
+  total, presupuesto y autorizacion no cambian de regla. Mismo comprobante para comprar.
+- **Llega y se devuelve** (no pasa por el almacen; `receive_order` rechaza renglones de renta
+  con `order_line_is_rental`): "Llego a obra" y "Devuelta al proveedor" los marca el lider o
+  el Jefe de taller asignado del proyecto, o quien tenga `purchase_receive` (Gestor). Llegar
+  cuenta como recibido (readiness y "Material recibido, iniciar"). Todo llegado + rentas
+  devueltas -> orden `closed`.
+- **Prorroga**: la pide quien lleva la obra o Compras; la decide `purchase_authorize`, no la
+  suya. Aprobada recorre `rental_end`; el costo extra va en la factura final (el renglon no
+  se recalcula).
+- **Candado**: un proyecto no pasa a recolectado/completado con maquinaria en obra sin
+  devolver (`project_rental_not_returned`).
+- **Avisos**: job `tasks_purchases.notify_rentals_due` (cada 6 h, cola `celery`, la que
+  consume el worker de k8s): uno al entrar a "vence en 2 dias o menos" y otro al vencer
+  (`rental_reminder_date`). Tipos nuevos en `20261007100000`.
+- **Pantallas**: `RentaDeMaquinaria.jsx` (ficha + botones, usada en proyecto, detalle de orden
+  y lista), `RentasActivas.jsx` (panel en Ordenes de compra), editor con tarifa, Por comprar
+  con marca "Renta". Sin capacidad nueva en el Gestor ni resiembra.
+- Migracion `20261104100000_renta_de_maquinaria.sql` (aditiva; aplicada dos veces sobre
+  Postgres). Pruebas: `test_api_purchase_rental.py` (30) + compras/necesidades/proyectos =
+  448 en verde; frontend 20 + `vite build`. Probado en navegador de punta a punta sobre una
+  copia de la base local (supervisor pide, Compras arma, llega, prorroga, se aprueba, se
+  devuelve, orden cerrada). Sin probar en sistema-test.
+
+## Bitacora 2026-11-04 (c) — PROMOVIDO a adser-prod (`4b89d69`)
+
+adser-prod pasa de `037bc25` a `4b89d69` ("Material recibido, iniciar" del encargado de la obra,
+guia de Compras, KPIs de Aurora). Overlay en `952d6a38` (initAlan). Respaldo previo en el VPS:
+`/home/alanp/adser_antes_de_4b89d69_20261104_1513.sql`. Sin migraciones nuevas. Pods 1/1,
+esquema al dia, sitio y API 200. Pendiente: Gerencia edita y guarda los proyectos #2 y #74
+(maquila sin Jefe asignado) para que se asigne solo a frara.
+
 ## Bitacora 2026-11-04 (b) — guia en Por comprar y Ordenes de compra
 
 Pedido de Alan: que quien entre a Compras sepa que hacer en cada etapa. **Sin commitear.** Solo

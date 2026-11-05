@@ -10,6 +10,7 @@ import {
 import { conDatos, estadoDeOrden } from "../utils/ordenDeCompra";
 import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
+import "../styles/renta-maquinaria.css";
 
 function actorGuardado() {
   try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
@@ -155,6 +156,7 @@ export default function PorComprarPage() {
       ? t("guide.buy.order", "Marca las casillas de lo que vas a comprar y presiona \"Armar orden de compra\". Lo que ya está en una orden muestra su folio.")
       : t("guide.buy.reader", "Las órdenes de compra las arma Compras; aquí puedes ver qué falta y para cuándo."),
     t("guide.buy.urgency", "Rojo = ya venció la fecha en que se necesitaba; ámbar = vence en 3 días o menos."),
+    t("guide.buy.rental", "Lo marcado \"Renta\" es maquinaria que la obra necesita rentar, con su periodo. Se mete en una orden igual; ahí pones la tarifa por día, semana o mes."),
   ];
   // Lo que se puede comprar pero nadie ha escogido: la pista para empezar.
   const pistaDeSeleccion = !puedeArmarOrden || seleccionables.length === 0 ? ""
@@ -177,7 +179,15 @@ export default function PorComprarPage() {
                 {t("purchase.in_catalog", "Del almacén")}
               </small>
             )}
-            {!g.linked && (
+            {g.need_kind === "rental" && (
+              <>
+                {" "}<span className="renta-marca">{t("rental.badge", "Renta")}</span>
+                <small className="muted por-comprar-origen">
+                  {t("rental.period", "Periodo")}: {fechaCorta(g.rental_start)} → {fechaCorta(g.rental_end)}
+                </small>
+              </>
+            )}
+            {!g.linked && g.need_kind !== "rental" && (
               <span className={`necesidad-estado ${g.needs_review ? "revisar" : "compra"}`}>
                 {g.needs_review
                   ? t("purchase.badge_review", "Por revisar")

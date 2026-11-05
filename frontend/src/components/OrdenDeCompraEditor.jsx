@@ -9,7 +9,19 @@ import { CANTIDAD_MAXIMA, UNIDADES, descripcionSospechosa } from "../utils/descr
 import { dinero, totalDeRenglones } from "../utils/ordenDeCompra";
 import { useI18n } from "../i18n";
 import { CLASES_DE_ARTICULO } from "../utils/clasesDeProducto";
+import { UNIDADES_DE_TARIFA, costoDeRenta, periodosDeRenta } from "../utils/rentaDeMaquinaria";
 import "../styles/ordenes-de-compra.css";
+import "../styles/renta-maquinaria.css";
+
+const fechaCorta = (texto) => (texto
+  ? new Date(`${String(texto).slice(0, 10)}T00:00:00`).toLocaleDateString("es-MX") : "—");
+
+/** El costo unitario que cuenta: el capturado, o en una renta tarifa x periodos. */
+function conCosto(r) {
+  if (r.line_kind !== "rental") return r;
+  const costo = costoDeRenta(r.rental_rate, r.rental_start, r.rental_end, r.rental_rate_unit);
+  return { ...r, unit_cost: costo === null ? "" : String(costo) };
+}
 
 const LIBRE_VACIO = { description: "", quantity: "1", unit: "", unit_cost: "", item_class: "" };
 
@@ -31,6 +43,11 @@ function desdeRenglon(l) {
     quantity: String(l.quantity),
     unit_cost: l.unit_cost === null || l.unit_cost === undefined ? "" : String(l.unit_cost),
     proyecto: etiquetaDeProyecto(l.project),
+    line_kind: l.line_kind || "purchase",
+    rental_start: l.rental_start || "",
+    rental_end: l.rental_end || "",
+    rental_rate: l.rental_rate === null || l.rental_rate === undefined ? "" : String(l.rental_rate),
+    rental_rate_unit: l.rental_rate_unit || "day",
   };
 }
 
@@ -92,6 +109,8 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
               cantidad: p.quantity,
               id_proyect: p.id_proyect,
               proyecto: etiquetaDeProyecto(p),
+              renta: g.need_kind === "rental"
+                ? { rental_start: g.rental_start, rental_end: g.rental_end } : null,
             });
           }
         }
@@ -105,7 +124,7 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
     () => new Set(renglones.map((r) => r.id_proyect_material_need).filter(Boolean)),
     [renglones]);
   const porAgregar = disponibles.filter((d) => !yaEstan.has(d.id));
-  const total = totalDeRenglones(renglones);
+  const total = totalDeRenglones(renglones.map(conCosto));
 
   const agregarNecesidad = useCallback((d) => {
     setRenglones((actuales) => (actuales.some((r) => r.id_proyect_material_need === d.id)
@@ -115,6 +134,10 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
         id_material: d.id_material, description: d.nombre, unit: d.unidad,
         quantity: String(d.cantidad), maxQuantity: d.cantidad, unit_cost: "",
         proyecto: d.proyecto,
+        ...(d.renta ? {
+          line_kind: "rental", rental_start: d.renta.rental_start, rental_end: d.renta.rental_end,
+          rental_rate: "", rental_rate_unit: "day",
+        } : { line_kind: "purchase" }),
       }]));
   }, []);
 
@@ -157,7 +180,13 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
       expected_date: form.expected_date || null,
       currency: form.currency,
       lines: renglones.map((r) => {
-        const base = {
+        // En una renta el costo lo calcula el servidor con la tarifa y el periodo.
+        const base = r.line_kind === "rental" ? {
+          quantity: r.quantity, line_kind: "rental",
+          rental_rate: r.rental_rate === "" ? null : r.rental_rate,
+          rental_rate_unit: r.rental_rate_unit, rental_start: r.rental_start,
+          rental_end: r.rental_end,
+        } : {
           quantity: r.quantity, unit_cost: r.unit_cost === "" ? null : r.unit_cost,
           item_class: r.item_class || null,
         };
@@ -264,12 +293,24 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
             </thead>
             <tbody>
               {renglones.map((r) => {
-                const subtotal = r.unit_cost === "" ? null : Number(r.quantity) * Number(r.unit_cost);
+                const esRenta = r.line_kind === "rental";
+                const costo = conCosto(r).unit_cost;
+                const subtotal = costo === "" ? null : Number(r.quantity) * Number(costo);
+                const periodos = esRenta
+                  ? periodosDeRenta(r.rental_start, r.rental_end, r.rental_rate_unit) : null;
                 return (
                   <tr key={r.key}>
                     <td>
                       <strong>{r.description}</strong>
                       {r.unit && <span className="muted"> · {r.unit}</span>}
+                      {esRenta && (
+                        <>
+                          {" "}<span className="renta-marca">{t("rental.badge", "Renta")}</span>
+                          <small className="muted" style={{ display: "block" }}>
+                            {fechaCorta(r.rental_start)} → {fechaCorta(r.rental_end)}
+                          </small>
+                        </>
+                      )}
                       {!r.id_proyect_material_need && (
                         <span className="oc-etiqueta oc-etiqueta-propio">
                           {t("order.own_line", "agregado por Compras")}
@@ -278,13 +319,15 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
                     </td>
                     <td>{r.proyecto || <span className="muted">—</span>}</td>
                     <td>
-                      <select value={r.item_class} aria-label={t("item_class.label", "Clase")}
-                              onChange={(e) => cambiarRenglon(r.key, "item_class", e.target.value)}>
-                        <option value="">—</option>
-                        {CLASES_DE_ARTICULO.map((c) => (
-                          <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
-                        ))}
-                      </select>
+                      {esRenta ? <span className="muted">—</span> : (
+                        <select value={r.item_class} aria-label={t("item_class.label", "Clase")}
+                                onChange={(e) => cambiarRenglon(r.key, "item_class", e.target.value)}>
+                          <option value="">—</option>
+                          {CLASES_DE_ARTICULO.map((c) => (
+                            <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td>
                       <input type="number" min="1" max={r.maxQuantity || CANTIDAD_MAXIMA} step="1"
@@ -292,9 +335,29 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
                              onChange={(e) => cambiarRenglon(r.key, "quantity", e.target.value)} />
                     </td>
                     <td>
-                      <input type="number" min="0" step="0.01" className="oc-numero oc-numero-ancho"
-                             value={r.unit_cost} placeholder="0.00"
-                             onChange={(e) => cambiarRenglon(r.key, "unit_cost", e.target.value)} />
+                      {esRenta ? (
+                        <div className="oc-tarifa">
+                          <input type="number" min="0" step="0.01" className="oc-numero oc-numero-ancho"
+                                 value={r.rental_rate} placeholder="0.00"
+                                 aria-label={t("rental.rate", "Tarifa")}
+                                 onChange={(e) => cambiarRenglon(r.key, "rental_rate", e.target.value)} />
+                          <select value={r.rental_rate_unit} aria-label={t("rental.rate_unit", "Por")}
+                                  onChange={(e) => cambiarRenglon(r.key, "rental_rate_unit", e.target.value)}>
+                            {UNIDADES_DE_TARIFA.map((u) => (
+                              <option key={u} value={u}>{t(`rental.per_${u}`, u)}</option>
+                            ))}
+                          </select>
+                          {periodos !== null && (
+                            <small className="muted">
+                              × {periodos} {t(`rental.unit_${r.rental_rate_unit}`, r.rental_rate_unit)}
+                            </small>
+                          )}
+                        </div>
+                      ) : (
+                        <input type="number" min="0" step="0.01" className="oc-numero oc-numero-ancho"
+                               value={r.unit_cost} placeholder="0.00"
+                               onChange={(e) => cambiarRenglon(r.key, "unit_cost", e.target.value)} />
+                      )}
                     </td>
                     <td className="mono">{subtotal === null || Number.isNaN(subtotal)
                       ? <span className="muted">—</span> : dinero(subtotal, form.currency)}</td>
@@ -332,6 +395,7 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
               <li key={d.id}>
                 <span>
                   <strong>{d.nombre}</strong>
+                  {d.renta && <> <span className="renta-marca">{t("rental.badge", "Renta")}</span></>}
                   {d.unidad && <span className="muted"> · {d.unidad}</span>}
                   <small className="muted"> {d.proyecto} · {d.cantidad}</small>
                 </span>
