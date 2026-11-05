@@ -320,6 +320,8 @@ def vales_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, filtr
     fecha_col = func.date(NmIncidentProduct.due_date)
     condiciones = [
         NmIncidentProduct.deletion_date.is_(None),
+        # Solo lo que SALIO del almacen se reclama: una ENTRADA no es un prestamo (igual que los otros KPI de prestamos).
+        NmIncidentProduct.direction == SALIDA,
         or_(
             NmIncidentProduct.close_date.is_(None),
             NmIncidentProduct.close_date == CIERRE_SENTINELA,
