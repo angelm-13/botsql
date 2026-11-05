@@ -5691,7 +5691,18 @@
     "code_severance_twenty_days": "Indemnización: 20 días por año",
     "code_isr": "ISR",
     "code_isr_severance": "ISR de la separación",
-    "code_imss": "IMSS"
+    "code_imss": "IMSS",
+    "extra_title": "Otros pagos y descuentos",
+    "extra_hint": "Bonos o pagos pendientes que se suman, y descuentos como Infonavit, Fonacot o deudas pendientes que se restan. Se guardan con la baja.",
+    "kind": "Tipo",
+    "kind_earning": "Otro pago",
+    "kind_deduction": "Otro descuento",
+    "taxable": "Grava ISR",
+    "not_taxable": "No grava ISR",
+    "add_line": "Agregar",
+    "confirm_remove_line": "¿Quitar «{concepto}» del finiquito?",
+    "earning_example": "Ej. Bono de productividad",
+    "deduction_example": "Ej. Infonavit"
   },
   "user_payroll": {
     "title": "Nómina y asistencia",

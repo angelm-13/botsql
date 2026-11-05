@@ -655,6 +655,9 @@ export const createEmployeeTermination = (payload) => request("/employee_termina
 export const deleteEmployeeTermination = (id) => request(`/employee_termination/${id}`, { method: "DELETE" });
 export const getTerminationSettlement = (id) => request(`/employee_termination/${id}/settlement`);
 export const downloadTerminationSettlement = (id) => requestBlob(`/employee_termination/${id}/settlement/pdf`);
+// Otros pagos (bonos, pagos pendientes) y otros descuentos (Infonavit, Fonacot, deudas) del finiquito.
+export const addTerminationLine = (id, payload) => request(`/employee_termination/${id}/lines`, { method: "POST", body: payload });
+export const deleteTerminationLine = (id, idLine) => request(`/employee_termination/${id}/lines/${idLine}`, { method: "DELETE" });
 export const getAllEmployeeSalary = (params = {}) => request("/employee_salary/", { params });
 export const createEmployeeSalary = (payload) => request("/employee_salary/", { method: "POST", body: payload });
 // Cambio "a partir de" una fecha (cierra la vigente el dia anterior): perfil del usuario.

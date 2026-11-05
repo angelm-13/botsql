@@ -77,3 +77,73 @@ class TestValidaciones(_ConBaja):
         creada = EmployeeTerminationService.create({"id_user": ANA, "termination_date": "2026-10-15",
                                                      "reason": "resignation", "pay_twenty_days": True}, user_id=1)
         self.assertFalse(creada["pay_twenty_days"])
+
+
+class TestOtrosPagosYDescuentos(_ConBaja):
+    """Bonos y descuentos que RH captura, como en el Excel de la contadora (2026-11-05).
+
+    Renuncia + bono de 1,000 que grava + pago de 500 que no + Infonavit 500:
+    ISR sobre 17,918.51 + 1,000 = 18,918.51: 1,856.84 + 1,384.86 x 21.36 % = 2,152.65.
+    Neto 20,661.43 + 1,500 - 213.60 (ISR de mas) - 500 = 21,447.83.
+    """
+
+    def test_se_suman_se_restan_y_solo_grava_el_pago_que_lo_dice(self):
+        from app.services.termination_service import agregar_renglon, quitar_renglon
+        creada = EmployeeTerminationService.create({"id_user": ANA, "termination_date": "2026-10-15",
+                                                     "reason": "resignation"}, user_id=1)
+        ident = creada["id_employee_termination"]
+        agregar_renglon(ident, {"line_kind": "earning", "description": "Bono de productividad", "amount": 1000})
+        agregar_renglon(ident, {"line_kind": "earning", "description": "Pago pendiente", "amount": 500,
+                                "taxable": False})
+        infonavit = agregar_renglon(ident, {"line_kind": "deduction", "description": "Infonavit", "amount": "500",
+                                            "taxable": True})
+        self.assertFalse(infonavit["taxable"])   # un descuento nunca grava
+        f = calcular(ident)
+        otros = [(c["description"], c["amount"]) for c in f["earnings"] + f["deductions"] if c["code"] == "extra"]
+        self.assertEqual([("Bono de productividad", 1000.0), ("Pago pendiente", 500.0), ("Infonavit", 500.0)], otros)
+        self.assertEqual((2152.65, 21447.83), (self.de(f["deductions"])["isr"], f["net_pay"]))
+        self.assertEqual(3, len(f["extra_lines"]))
+        # Quitar el descuento lo saca del calculo.
+        quitar_renglon(ident, infonavit["id_employee_termination_line"])
+        self.assertEqual(21947.83, calcular(ident)["net_pay"])
+
+    def test_validaciones(self):
+        from app.services.termination_service import agregar_renglon, quitar_renglon
+        ident = EmployeeTerminationService.create({"id_user": ANA, "termination_date": "2026-10-15",
+                                                    "reason": "resignation"}, user_id=1)["id_employee_termination"]
+        for malo in ({"line_kind": "otro", "description": "x", "amount": 1},
+                     {"line_kind": "earning", "description": "  ", "amount": 1},
+                     {"line_kind": "earning", "description": "x" * 121, "amount": 1},
+                     {"line_kind": "earning", "description": "Bono", "amount": 0},
+                     {"line_kind": "earning", "description": "Bono", "amount": "abc"},
+                     {"line_kind": "earning", "description": "Bono", "amount": "NaN"}):
+            with self.subTest(malo=malo), self.assertRaises(AppError):
+                agregar_renglon(ident, malo)
+        with self.assertRaises(AppError) as error:
+            quitar_renglon(ident, 999999)
+        self.assertEqual(404, error.exception.status_code)
+
+
+class TestRutasDeOtrosPagos(_ConBaja):
+    """Se editan con el permiso de actualizar Bajas del Gestor; sin el, 403."""
+
+    def setUp(self):
+        super().setUp()
+        from app.models import EntityPermission
+        from app.models.session import transaction_context
+        with transaction_context() as db:
+            for permiso, editar in ((971, 4), (972, 0)):
+                db.add(EntityPermission(id_permission=permiso, entity_name="employee_termination", scope_create=4,
+                                        scope_read=4, scope_update=editar, scope_delete=0, created_by=1))
+        self.ident = EmployeeTerminationService.create({"id_user": ANA, "termination_date": "2026-10-15",
+                                                         "reason": "resignation"}, user_id=1)["id_employee_termination"]
+
+    def test_con_y_sin_permiso_de_actualizar(self):
+        cuerpo = {"line_kind": "deduction", "description": "Fonacot", "amount": 300}
+        url = f"/employee_termination/{self.ident}/lines"
+        self.assertEqual(403, self.client.post(url, headers=self.h(ANA, 972), json=cuerpo).status_code)
+        r = self.client.post(url, headers=self.h(ANA, 971), json=cuerpo)
+        self.assertEqual(201, r.status_code)
+        linea = self.json(r)["id_employee_termination_line"]
+        self.assertEqual(403, self.client.delete(f"{url}/{linea}", headers=self.h(ANA, 972)).status_code)
+        self.assertEqual(200, self.client.delete(f"{url}/{linea}", headers=self.h(ANA, 971)).status_code)

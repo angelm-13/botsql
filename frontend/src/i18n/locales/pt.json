@@ -4066,7 +4066,18 @@
     "code_severance_twenty_days": "Indenização: 20 dias por ano",
     "code_isr": "ISR",
     "code_isr_severance": "ISR da separação",
-    "code_imss": "IMSS"
+    "code_imss": "IMSS",
+    "extra_title": "Outros pagamentos e descontos",
+    "extra_hint": "Bônus ou pagamentos pendentes somam; descontos como Infonavit, Fonacot ou dívidas pendentes subtraem. Ficam salvos com o desligamento.",
+    "kind": "Tipo",
+    "kind_earning": "Outro pagamento",
+    "kind_deduction": "Outro desconto",
+    "taxable": "Tributa ISR",
+    "not_taxable": "Não tributa ISR",
+    "add_line": "Adicionar",
+    "confirm_remove_line": "Remover «{concepto}» da rescisão?",
+    "earning_example": "Ex. Bônus de produtividade",
+    "deduction_example": "Ex. Infonavit"
   },
   "user_payroll": {
     "title": "Folha e frequência",

@@ -171,3 +171,21 @@ def settlement_pdf_employee_termination(user_data, id_employee_termination):
     from app.services.termination_service import pdf_del_finiquito
     pdf, nombre = pdf_del_finiquito(id_employee_termination)
     return Response(pdf, mimetype='application/pdf', headers={'Content-Disposition': f'inline; filename="{nombre}"'})
+
+
+@bp_employee_termination.route('/<id_employee_termination>/lines', methods=['POST'])
+@token_required
+@require_entity_permission('employee_termination', 'update')
+def add_employee_termination_line(user_data, id_employee_termination):
+    """Otro pago o descuento del finiquito (bono, Infonavit, Fonacot, deuda)."""
+    from app.services.termination_service import agregar_renglon
+    return jsonify(agregar_renglon(id_employee_termination, request.get_json() or {},
+                                   user_id=user_data.get('id_user'))), 201
+
+
+@bp_employee_termination.route('/<id_employee_termination>/lines/<id_line>', methods=['DELETE'])
+@token_required
+@require_entity_permission('employee_termination', 'update')
+def delete_employee_termination_line(user_data, id_employee_termination, id_line):
+    from app.services.termination_service import quitar_renglon
+    return jsonify(quitar_renglon(id_employee_termination, id_line, user_id=user_data.get('id_user')))

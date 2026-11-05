@@ -37,9 +37,10 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
-from app.models import (EmployeeTermination, PayrollConcept, PayrollDetail, PayrollMovement, PayrollPeriod,
+from app.models import (EmployeeTermination, EmployeeTerminationLine, PayrollConcept, PayrollDetail, PayrollMovement, PayrollPeriod,
                         User)
 from app.models.employee_termination import DESPIDO_INJUSTIFICADO, DESPIDO_JUSTIFICADO, MOTIVOS
+from app.models.employee_termination_line import OTRO_PAGO, TIPOS_DE_RENGLON
 from app.models.session import transaction_context
 from app.services import payroll_tax_rules as ley
 from app.services.base_service import CrudService
@@ -95,6 +96,65 @@ class EmployeeTerminationService(CrudService):
         cls._validar(datos, excluir_id=item_id)
         payload["pay_twenty_days"] = bool(datos.get("pay_twenty_days")) and datos["reason"] == DESPIDO_INJUSTIFICADO
         return super().update(item_id, payload, user_id=user_id)
+
+
+# ------------------------------------------------- otros pagos y descuentos
+
+MONTO_MAXIMO = Decimal("9999999.99")
+
+
+def _baja_viva(db, id_employee_termination) -> EmployeeTermination:
+    baja = db.get(EmployeeTermination, _entero(id_employee_termination, "id_employee_termination"))
+    if baja is None or baja.deletion_date is not None:
+        raise AppError("errors.resource_not_found", 404)
+    return baja
+
+
+def agregar_renglon(id_employee_termination, payload: dict, user_id: int | None = None) -> dict:
+    """Un bono o pago pendiente (se suma) o un descuento como Infonavit, Fonacot o una
+    deuda (se resta), capturado por RH como en el Excel de la contadora (2026-11-05)."""
+    payload = dict(payload or {})
+    tipo = payload.get("line_kind")
+    if tipo not in TIPOS_DE_RENGLON:
+        raise AppError("errors.invalid_field", 400, {"field": "line_kind", "allowed": list(TIPOS_DE_RENGLON)})
+    concepto = str(payload.get("description") or "").strip()
+    if not concepto or len(concepto) > 120:
+        raise AppError("errors.invalid_field", 400, {"field": "description"})
+    try:
+        monto = Decimal(str(payload.get("amount")))
+    except Exception as exc:
+        raise AppError("errors.invalid_field", 400, {"field": "amount"}) from exc
+    if not monto.is_finite() or monto <= 0 or monto > MONTO_MAXIMO:
+        raise AppError("errors.invalid_field", 400, {"field": "amount"})
+    with transaction_context() as db:
+        baja = _baja_viva(db, id_employee_termination)
+        # Un descuento no cambia el ISR; solo un pago puede gravar.
+        renglon = EmployeeTerminationLine(id_employee_termination=baja.id_employee_termination, line_kind=tipo,
+                                          description=concepto, amount=_d(monto),
+                                          taxable=tipo == OTRO_PAGO and payload.get("taxable", True) is not False,
+                                          created_by=user_id or 1)
+        db.add(renglon)
+        db.flush()
+        return renglon.serialize()
+
+
+def quitar_renglon(id_employee_termination, id_line, user_id: int | None = None) -> dict:
+    from app.utils.tiempo import ahora_utc
+    with transaction_context() as db:
+        baja = _baja_viva(db, id_employee_termination)
+        renglon = db.get(EmployeeTerminationLine, _entero(id_line, "id_employee_termination_line"))
+        if (renglon is None or renglon.deletion_date is not None
+                or renglon.id_employee_termination != baja.id_employee_termination):
+            raise AppError("errors.resource_not_found", 404)
+        renglon.deletion_date = ahora_utc()
+        return {"id_employee_termination_line": renglon.id_employee_termination_line, "deleted": True}
+
+
+def _renglones(db, id_employee_termination) -> list:
+    return list(db.scalars(select(EmployeeTerminationLine)
+                           .where(EmployeeTerminationLine.id_employee_termination == id_employee_termination)
+                           .where(EmployeeTerminationLine.deletion_date.is_(None))
+                           .order_by(EmployeeTerminationLine.id_employee_termination_line)))
 
 
 # ------------------------------------------------------------------ calculo
@@ -192,8 +252,13 @@ def calcular(id_employee_termination) -> dict:
         # ISR: lo ordinario con la tarifa mensual; la separacion con la tasa del ultimo sueldo mensual.
         aguinaldo_gravado = ley.parte_gravada(aguinaldo, uma, p["aguinaldo_exempt_umas"])
         prima_gravada = ley.parte_gravada(prima_vacacional, uma, p["vacation_premium_exempt_umas"])
+        renglones = _renglones(db, baja.id_employee_termination)
+        otros_pagos = [x for x in renglones if x.line_kind == OTRO_PAGO]
+        otros_descuentos = [x for x in renglones if x.line_kind != OTRO_PAGO]
+        otros_gravados = sum((Decimal(str(x.amount)) for x in otros_pagos if x.taxable), Decimal(0))
         tramos, _ = _tarifa_isr(db, fecha.year, 30, "monthly")
-        isr_ordinario = ley.isr_por_tarifa(salario + vacaciones + aguinaldo_gravado + prima_gravada, tramos)
+        isr_ordinario = ley.isr_por_tarifa(salario + vacaciones + aguinaldo_gravado + prima_gravada + otros_gravados,
+                                           tramos)
         separacion = prima_antiguedad + tres_meses + veinte_dias
         resto = (fecha - pv.aniversario(ingreso, anios)).days
         anios_exentos = anios + (1 if resto > 182 else 0)
@@ -204,22 +269,28 @@ def calcular(id_employee_termination) -> dict:
         sbc = ley.salario_base_de_cotizacion(diario, factor, minimo, uma, p["sbc_cap_umas"])
         imss = ley.cuota_obrera_imss(sbc, pagados, diario, minimo, uma, p)
 
-        percepciones = [(codigo, monto) for codigo, monto in (
+        percepciones = [(codigo, monto, None) for codigo, monto in (
             ("pending_days", salario), ("aguinaldo", aguinaldo), ("vacations", vacaciones),
             ("vacation_premium", prima_vacacional), ("seniority_premium", prima_antiguedad),
             ("severance_three_months", tres_meses), ("severance_twenty_days", veinte_dias)) if monto > 0]
-        deducciones = [(codigo, monto) for codigo, monto in (
+        percepciones += [("extra", _d(x.amount), x.description) for x in otros_pagos]
+        deducciones = [(codigo, monto, None) for codigo, monto in (
             ("isr", isr_ordinario), ("isr_severance", isr_separacion), ("imss", imss)) if monto > 0]
-        total = sum((m for _, m in percepciones), Decimal(0))
-        descuentos = sum((m for _, m in deducciones), Decimal(0))
+        deducciones += [("extra", _d(x.amount), x.description) for x in otros_descuentos]
+        total = sum((m for _, m, _ in percepciones), Decimal(0))
+        descuentos = sum((m for _, m, _ in deducciones), Decimal(0))
+
+        def concepto(codigo, monto, descripcion):
+            return {"code": codigo, "amount": float(monto), **({"description": descripcion} if descripcion else {})}
         return {
             **baja.serialize(), "full_name": empleado.full_name or "", "hire_date": ingreso.isoformat(),
             "daily_salary": float(diario), "integrated_daily_salary": float(_d(integrado)),
             "years_of_service": float(round(anios_exactos, 2)),
             "pending_from": desde.isoformat(), "pending_paid_days": pagados,
             "vacation_days_available": float(disponibles), "vacation_days_proportional": float(proporcionales),
-            "earnings": [{"code": c, "amount": float(m)} for c, m in percepciones],
-            "deductions": [{"code": c, "amount": float(m)} for c, m in deducciones],
+            "earnings": [concepto(*x) for x in percepciones],
+            "deductions": [concepto(*x) for x in deducciones],
+            "extra_lines": [x.serialize() for x in renglones],
             "taxable_severance": float(separacion_gravada), "severance_tax_rate": float(round(tasa * 100, 2)),
             "total_earnings": float(_d(total)), "total_deductions": float(_d(descuentos)),
             "net_pay": float(_d(total - descuentos)),
@@ -254,8 +325,9 @@ def pdf_del_finiquito(id_employee_termination) -> tuple[bytes, str]:
             "title": "Liquidación" if datos["reason"] == DESPIDO_INJUSTIFICADO else "Finiquito",
             "reason_label": MOTIVOS_TEXTO[datos["reason"]],
             "company": (empresa.name if empresa else "") or "", "company_tax_id": (empresa.tax_id if empresa else "") or "",
-            "earnings": [{**m, "description": ETIQUETAS[m["code"]]} for m in datos["earnings"]],
-            "deductions": [{**m, "description": ETIQUETAS[m["code"]]} for m in datos["deductions"]],
+            "earnings": [{**m, "description": m.get("description") or ETIQUETAS[m["code"]]} for m in datos["earnings"]],
+            "deductions": [{**m, "description": m.get("description") or ETIQUETAS[m["code"]]}
+                           for m in datos["deductions"]],
         }
     app_path = os.getenv("DOCUMENTS_REPORTS_APP_PATH", "/documents-reports/app")
     if app_path not in sys.path:

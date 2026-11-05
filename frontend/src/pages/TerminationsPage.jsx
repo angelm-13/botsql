@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Calculator, FileDown, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
-  createEmployeeTermination, deleteEmployeeTermination, downloadTerminationSettlement, getAllEmployeeTermination,
+  addTerminationLine, createEmployeeTermination, deleteEmployeeTermination, deleteTerminationLine, downloadTerminationSettlement, getAllEmployeeTermination,
   getAttendanceEmployeeOptions, getMyPermissions, getTerminationSettlement,
 } from "../api";
 import { useI18n } from "../i18n";
@@ -15,6 +15,7 @@ import "../styles/kronos.css";
 // backend (services/termination_service.py). Desactivar al usuario es aparte.
 
 const MOTIVOS = ["resignation", "mutual_agreement", "justified_dismissal", "unjustified_dismissal"];
+const RENGLON_VACIO = { line_kind: "earning", description: "", amount: "", taxable: true };
 
 function hoy() {
   const d = new Date();
@@ -38,6 +39,7 @@ export default function TerminationsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [renglon, setRenglon] = useState(RENGLON_VACIO);
 
   const actor = useMemo(actorGuardado, []);
   const privilegiado = Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
@@ -103,6 +105,32 @@ export default function TerminationsPage() {
       setError(describirError(e));
     }
   }
+
+  // Otros pagos y descuentos que RH captura a mano (como en el Excel de la contadora).
+  async function agregarRenglon(event) {
+    event.preventDefault();
+    setError("");
+    try {
+      await addTerminationLine(calculo.id_employee_termination, {
+        ...renglon, amount: Number(renglon.amount), taxable: renglon.line_kind === "earning" && Boolean(renglon.taxable) });
+      setRenglon(RENGLON_VACIO);
+      await ver(calculo);
+    } catch (e) {
+      setError(describirError(e));
+    }
+  }
+
+  async function quitarRenglon(linea) {
+    if (!(await dialogo.confirmar(t("terminations.confirm_remove_line").replace("{concepto}", linea.description)))) return;
+    try {
+      await deleteTerminationLine(calculo.id_employee_termination, linea.id_employee_termination_line);
+      await ver(calculo);
+    } catch (e) {
+      setError(describirError(e));
+    }
+  }
+
+  const etiqueta = (c) => (c.code === "extra" ? c.description : t(`terminations.code_${c.code}`));
 
   async function borrar(b) {
     if (!(await dialogo.confirmar(t("terminations.confirm_delete")))) return;
@@ -175,12 +203,52 @@ export default function TerminationsPage() {
           <table>
             <thead><tr><th>{t("terminations.concept")}</th><th>{t("terminations.amount")}</th></tr></thead>
             <tbody>
-              {calculo.earnings.map((c) => <tr key={c.code}><td>{t(`terminations.code_${c.code}`)}</td><td>{money(c.amount)}</td></tr>)}
-              {calculo.deductions.map((c) => <tr key={c.code}><td>− {t(`terminations.code_${c.code}`)}</td><td>− {money(c.amount)}</td></tr>)}
+              {calculo.earnings.map((c, i) => <tr key={`p${i}`}><td>{etiqueta(c)}</td><td>{money(c.amount)}</td></tr>)}
+              {calculo.deductions.map((c, i) => <tr key={`d${i}`}><td>− {etiqueta(c)}</td><td>− {money(c.amount)}</td></tr>)}
             </tbody>
             <tfoot><tr><td><strong>{t("terminations.net")}</strong></td><td><strong>{money(calculo.net_pay)}</strong></td></tr></tfoot>
           </table>
           {calculo.taxable_severance > 0 && <p className="muted" style={{ padding: "0 18px" }}>{t("terminations.severance_hint")} {money(calculo.taxable_severance)} ({calculo.severance_tax_rate} %)</p>}
+          <div style={{ padding: "0 18px 18px" }}>
+            <h4 style={{ margin: "12px 0 4px" }}>{t("terminations.extra_title")}</h4>
+            <p className="muted" style={{ margin: "0 0 8px" }}>{t("terminations.extra_hint")}</p>
+            {(calculo.extra_lines || []).length > 0 && (
+              <ul style={{ margin: "0 0 10px", paddingLeft: 18 }}>
+                {calculo.extra_lines.map((l) => (
+                  <li key={l.id_employee_termination_line}>
+                    {t(`terminations.kind_${l.line_kind}`)}: {l.description} · {money(l.amount)}
+                    {l.line_kind === "earning" && <small className="muted"> · {t(l.taxable ? "terminations.taxable" : "terminations.not_taxable")}</small>}
+                    {puede("scope_update") && <button type="button" className="button ghost" style={{ marginLeft: 8, padding: "2px 8px" }}
+                      title={t("common.delete")} aria-label={`${t("common.delete")} ${l.description}`} onClick={() => quitarRenglon(l)}><Trash2 size={13} /></button>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {puede("scope_update") && (
+              <form className="form-grid" onSubmit={agregarRenglon}>
+                <label className="field">{t("terminations.kind")}
+                  <select value={renglon.line_kind} onChange={(e) => setRenglon((r) => ({ ...r, line_kind: e.target.value }))}>
+                    <option value="earning">{t("terminations.kind_earning")}</option>
+                    <option value="deduction">{t("terminations.kind_deduction")}</option>
+                  </select>
+                </label>
+                <label className="field">{t("terminations.concept")}
+                  <input required maxLength={120} placeholder={t(renglon.line_kind === "earning" ? "terminations.earning_example" : "terminations.deduction_example")}
+                    value={renglon.description} onChange={(e) => setRenglon((r) => ({ ...r, description: e.target.value }))} />
+                </label>
+                <label className="field">{t("terminations.amount")}
+                  <input required type="number" min="0.01" step="0.01" value={renglon.amount} onChange={(e) => setRenglon((r) => ({ ...r, amount: e.target.value }))} />
+                </label>
+                {renglon.line_kind === "earning" && (
+                  <label className="field checkbox-field">
+                    <input type="checkbox" checked={renglon.taxable} onChange={(e) => setRenglon((r) => ({ ...r, taxable: e.target.checked }))} />
+                    {t("terminations.taxable")}
+                  </label>
+                )}
+                <div className="form-actions"><button className="button" type="submit"><Plus size={15} /> {t("terminations.add_line")}</button></div>
+              </form>
+            )}
+          </div>
         </div>
       )}
 

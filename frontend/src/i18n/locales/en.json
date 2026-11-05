@@ -5576,7 +5576,18 @@
     "code_severance_twenty_days": "Severance: 20 days per year",
     "code_isr": "ISR",
     "code_isr_severance": "Separation ISR",
-    "code_imss": "IMSS"
+    "code_imss": "IMSS",
+    "extra_title": "Other payments and deductions",
+    "extra_hint": "Bonuses or pending payments are added; deductions such as Infonavit, Fonacot or pending debts are subtracted. They are saved with the termination.",
+    "kind": "Type",
+    "kind_earning": "Other payment",
+    "kind_deduction": "Other deduction",
+    "taxable": "Subject to ISR",
+    "not_taxable": "Not subject to ISR",
+    "add_line": "Add",
+    "confirm_remove_line": "Remove «{concepto}» from the settlement?",
+    "earning_example": "e.g. Productivity bonus",
+    "deduction_example": "e.g. Infonavit"
   },
   "user_payroll": {
     "title": "Payroll and attendance",

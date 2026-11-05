@@ -4060,7 +4060,18 @@
     "code_severance_twenty_days": "Abfindung: 20 Tage pro Jahr",
     "code_isr": "ISR",
     "code_isr_severance": "ISR der Trennung",
-    "code_imss": "IMSS"
+    "code_imss": "IMSS",
+    "extra_title": "Weitere Zahlungen und Abzüge",
+    "extra_hint": "Boni oder ausstehende Zahlungen werden addiert; Abzüge wie Infonavit, Fonacot oder offene Schulden abgezogen. Sie werden mit dem Austritt gespeichert.",
+    "kind": "Art",
+    "kind_earning": "Weitere Zahlung",
+    "kind_deduction": "Weiterer Abzug",
+    "taxable": "ISR-pflichtig",
+    "not_taxable": "Nicht ISR-pflichtig",
+    "add_line": "Hinzufügen",
+    "confirm_remove_line": "«{concepto}» aus der Abrechnung entfernen?",
+    "earning_example": "z. B. Leistungsbonus",
+    "deduction_example": "z. B. Infonavit"
   },
   "user_payroll": {
     "title": "Lohn und Anwesenheit",
