@@ -10,6 +10,8 @@ ISR (art. 96 LISR, art. 175 RLISR, regla 3.12.2 RMF)
     ISR = cuota fija + (base - limite inferior) x porcentaje.
     Tabla segun los dias del periodo: 7, 10, 15 (14 a 16 dias) o mensual (28 a
     31); cualquier otro largo usa la tarifa diaria multiplicada por los dias.
+    Si el periodo es de un grupo de pago, la tabla sale de su periodicidad
+    (semanal, quincenal, mensual; catorcenal = diaria x 14), no de los dias.
 
 Subsidio para el empleo (decreto, DOF 31/12/2025)
     Aplica si el ingreso gravable, llevado a mes (/ dias x 30.4), no pasa del
@@ -75,6 +77,21 @@ def tabla_para_dias(dias: int) -> tuple[int, Decimal]:
     if 28 <= dias <= 31:
         return 30, Decimal(1)
     return 1, Decimal(dias)
+
+
+# Dias que puede durar un periodo de cada periodicidad: la quincena va de 13
+# (16 al 28 de febrero) a 16 dias y el mes de 28 a 31.
+DIAS_POR_PERIODICIDAD = {"weekly": (7, 7), "biweekly": (14, 14), "semimonthly": (13, 16), "monthly": (28, 31)}
+
+
+def tabla_para_periodicidad(periodicidad: str) -> tuple[int, Decimal]:
+    """(tabla oficial, factor) segun como paga el grupo, no segun cuantos dias tiene el periodo.
+
+    La quincena usa la tarifa quincenal aunque tenga 13 o 16 dias, y el mes la
+    mensual. La catorcena no tiene tarifa propia en el Anexo 8: diaria x 14.
+    """
+    return {"weekly": (7, Decimal(1)), "biweekly": (1, Decimal(14)),
+            "semimonthly": (15, Decimal(1)), "monthly": (30, Decimal(1))}[periodicidad]
 
 
 def isr_por_tarifa(base, tramos, factor=Decimal(1)) -> Decimal:

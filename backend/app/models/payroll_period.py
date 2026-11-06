@@ -43,6 +43,11 @@ class PayrollPeriod(Base):
     # Si esta marcada, el calculo paga el aguinaldo en este periodo
     # (migracion 20261020110000_aguinaldo_y_prima_vacacional.sql).
     includes_aguinaldo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
+    # Grupo de pago (migracion 20261028100000_grupos_de_pago.sql): de el salen
+    # la periodicidad -y con ella la tarifa del ISR- y que empleados se calculan.
+    # Nulo = periodo de antes de los grupos: todos los empleados, tarifa por dias.
+    id_payroll_group: Mapped[int | None] = mapped_column(Integer, ForeignKey('payroll_group.id_payroll_group'),
+                                                         nullable=True)
 
     def serialize(self) -> dict:
         return {
@@ -61,6 +66,7 @@ class PayrollPeriod(Base):
             'reopened_at': a_iso_utc(self.reopened_at),
             'reopened_by': to_json_value(self.reopened_by),
             'includes_aguinaldo': bool(self.includes_aguinaldo),
+            'id_payroll_group': to_json_value(self.id_payroll_group),
         }
 
     def serialize_summary(self) -> dict:

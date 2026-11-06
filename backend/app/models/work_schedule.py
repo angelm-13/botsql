@@ -40,6 +40,10 @@ class WorkSchedule(Base):
     id_work_schedule: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     schedule_name: Mapped[str] = mapped_column(String(120), nullable=False)
     tolerance_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=10, server_default='10')
+    # Minutos de comida dentro del horario (migracion 20261030100000): la jornada
+    # que se paga es de la entrada a la salida menos la comida; de ella sale el
+    # precio de la hora extra.
+    meal_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default='60')
     created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -47,7 +51,8 @@ class WorkSchedule(Base):
 
     def serialize(self) -> dict:
         return {'id_work_schedule': self.id_work_schedule, 'schedule_name': self.schedule_name,
-                'tolerance_minutes': self.tolerance_minutes, **_auditoria(self)}
+                'tolerance_minutes': self.tolerance_minutes, 'meal_minutes': self.meal_minutes,
+                **_auditoria(self)}
 
     def serialize_summary(self) -> dict:
         return {'id_work_schedule': self.id_work_schedule}

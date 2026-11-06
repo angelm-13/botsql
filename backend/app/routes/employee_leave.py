@@ -1,5 +1,5 @@
 from __future__ import annotations
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, send_file
 from app.services.employee_leave_service import EmployeeLeaveService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
@@ -218,3 +218,40 @@ def reject_employee_leave(user_data, id_employee_leave):
     """Rechaza una solicitud (su supervisor o RH), con nota opcional."""
     from app.services.employee_leave_service import revisar
     return jsonify(revisar(user_data, id_employee_leave, False, (request.get_json(silent=True) or {}).get('review_note')))
+
+
+# Hoja de incapacidad: solo exigen sesion; quien la ve o la sube (el propio
+# empleado o RH) lo decide employee_leave_document_service.
+def _almacen():
+    from app.services.document_service import SecureDocumentStorage
+    return SecureDocumentStorage(current_app.config["UPLOAD_ROOT"])
+
+
+@bp_employee_leave.route('/<id_employee_leave>/documents', methods=['GET'])
+@token_required
+def list_employee_leave_documents(user_data, id_employee_leave):
+    """Las hojas de una incapacidad (la ultima primero)."""
+    from app.services.employee_leave_document_service import listar
+    return jsonify({'documents': listar(id_employee_leave, user_data)})
+
+
+@bp_employee_leave.route('/<id_employee_leave>/documents', methods=['POST'])
+@token_required
+def upload_employee_leave_document(user_data, id_employee_leave):
+    """Sube una hoja de incapacidad (JPG, PNG o PDF de hasta 10 MB)."""
+    from app.services.employee_leave_document_service import subir
+    archivo = request.files.get('file')
+    if not archivo or not archivo.filename:
+        return jsonify({'error_key': 'errors.invalid_field', 'meta': {'field': 'file'}}), 400
+    return jsonify(subir(id_employee_leave, user_data, archivo.read(), archivo.filename, _almacen())), 201
+
+
+@bp_employee_leave.route('/<id_employee_leave>/documents/<int:version>/content', methods=['GET'])
+@token_required
+def employee_leave_document_content(user_data, id_employee_leave, version):
+    """La hoja en el navegador (PDF e imagenes se muestran; ?download=1 la baja)."""
+    from app.services.employee_leave_document_service import contenido
+    ruta, mime, nombre = contenido(id_employee_leave, version, user_data, _almacen())
+    respuesta = send_file(ruta, mimetype=mime, as_attachment=request.args.get('download') == '1', download_name=nombre)
+    respuesta.headers['X-Content-Type-Options'] = 'nosniff'
+    return respuesta

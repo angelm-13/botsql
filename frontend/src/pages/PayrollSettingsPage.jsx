@@ -6,6 +6,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import { useDialogo } from "../dialogo/useDialogo.js";
 import "../styles/kronos.css";
 
 // Cifras oficiales que usa el calculo de nomina (payroll_calculation_service.py):
@@ -25,6 +26,31 @@ const PARAMETROS = [
   // Opciones de calculo de la empresa (1 = si, 0 = no); sin capturar, "no".
   ["option_imss_on_absences", "option", "options"], ["option_aguinaldo_discounts", "option", "options"],
   ["option_subsidy_month_days", "option", "options"],
+  // Correcciones de checadas por empleado y mes (services/attendance_correction_service.py).
+  ["attendance_correction_limit", "count", "options"],
+  // Minutos de los avisos de checada que falta (services/avisos_de_checada.py); 0 = sin aviso.
+  ["attendance_warning_entry_minutes", "minutes", "options"], ["attendance_warning_supervisor_minutes", "minutes", "options"],
+  ["attendance_warning_exit_minutes", "minutes", "options"],
+  // Horas extra (services/overtime_service.py): tolerancia para el tiempo no
+  // autorizado y jornada para el precio de la hora de quien no tiene horario.
+  ["overtime_tolerance_minutes", "minutes", "options"], ["overtime_day_hours", "count", "options"],
+  // 1 = dividir el diario entre las horas de su horario; 0 (omision) = entre overtime_day_hours (8).
+  ["overtime_hours_from_schedule", "option", "options"],
+  // Prima dominical (LFT art. 71): 25 % por omision; la empresa puede dar mas.
+  ["sunday_premium_pct", "pct", "options"],
+  // Alertas del reporte de asistencia para RH (services/reporte_de_asistencia.py); 0 = sin esa alerta.
+  ["report_alert_late", "count", "options"], ["report_alert_absences", "count", "options"],
+  ["report_alert_manual", "count", "options"], ["report_alert_supervisor_manual", "count", "options"],
+  // Resumen de asistencia a RH: 0 no, 1 semanal, 2 quincenal (services/reporte_de_asistencia.py).
+  ["report_summary_frequency", "choice", "options"],
+  // Prestaciones que la empresa ofrece (services/prestaciones.py): solo las activas salen en la hoja.
+  ["benefit_infonavit", "option", "options"], ["benefit_fonacot", "option", "options"],
+  ["benefit_savings_fund", "option", "options"], ["benefit_loan", "option", "options"],
+  ["benefit_alimony", "option", "options"],
+  // Incapacidad por enfermedad general (payroll_calculation_service): lo que paga la empresa.
+  ["disability_pay_waiting_days", "option", "options"], ["disability_complement_pct", "pct", "options"],
+  // Avisos de la campana tambien por correo, para todos los modulos (jobs/tasks_notifications.py); apagado por omision.
+  ["notifications_email_enabled", "option", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -32,6 +58,10 @@ const PARAMETROS = [
   ["vacation_days_years_11_15", "days", "vacations"], ["vacation_days_years_16_20", "days", "vacations"],
   ["vacation_days_years_21_25", "days", "vacations"], ["vacation_days_years_26_30", "days", "vacations"],
   ["vacation_days_years_31_plus", "days", "vacations"],
+  // Politica de vacaciones (services/politica_de_vacaciones.py); sin capturar, la de la ley.
+  ["vacation_accrual_monthly", "option", "vacation_policy"], ["vacation_advance_max_days", "days", "vacation_policy"],
+  ["vacation_expiry_months", "choice", "vacation_policy"], ["vacation_unused_policy", "choice", "vacation_policy"],
+  ["vacation_warning_days_1", "days", "vacation_policy"], ["vacation_warning_days_2", "days", "vacation_policy"],
 ].map(([clave, unidad, grupo = "parameters"]) => ({ clave, unidad, grupo }));
 // Dias de la ley (LFT art. 76) al empezar cada renglon de la tabla; el backend
 // nunca da menos que esto aunque se capture menos.
@@ -41,7 +71,21 @@ const DIAS_DE_LEY = {
   vacation_days_years_16_20: 26, vacation_days_years_21_25: 28, vacation_days_years_26_30: 30,
   vacation_days_years_31_plus: 32,
 };
-const PESTANAS = ["parameters", "options", "vacations", "isr"];
+// Valores que acepta cada clave de "eleccion", y lo que vale la politica sin
+// capturar. Espejo de POLITICA en services/politica_de_vacaciones.py.
+const ELECCIONES = { vacation_expiry_months: [12, 18], vacation_unused_policy: [0, 1, 2], report_summary_frequency: [0, 1, 2] };
+const POLITICA_POR_OMISION = {
+  vacation_accrual_monthly: 0, vacation_advance_max_days: 0, vacation_expiry_months: 12,
+  vacation_unused_policy: 0, vacation_warning_days_1: 60, vacation_warning_days_2: 30,
+  attendance_correction_limit: 0,
+  overtime_tolerance_minutes: 15, overtime_day_hours: 8, sunday_premium_pct: 25, overtime_hours_from_schedule: 0,
+  attendance_warning_entry_minutes: 15, attendance_warning_supervisor_minutes: 30, attendance_warning_exit_minutes: 30,
+  report_alert_late: 3, report_alert_absences: 2, report_alert_manual: 2, report_alert_supervisor_manual: 5,
+  report_summary_frequency: 2,
+  benefit_infonavit: 0, benefit_fonacot: 0, benefit_savings_fund: 0, benefit_loan: 0, benefit_alimony: 0,
+  disability_pay_waiting_days: 0, disability_complement_pct: 0, notifications_email_enabled: 0,
+};
+const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];
 const PERIODICIDADES = [1, 7, 10, 15, 30];
 const PARAMETRO_VACIO = { value: "", valid_from: "", valid_to: "", source: "" };
 const TRAMO_VACIO = { lower_limit: "", upper_limit: "", fixed_fee: "", rate_pct: "", source: "" };
@@ -57,6 +101,7 @@ function hoy() {
 
 export default function PayrollSettingsPage() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [view, setView] = useState("parameters");
   const [parametros, setParametros] = useState([]);
   const [tramos, setTramos] = useState([]);
@@ -75,7 +120,9 @@ export default function PayrollSettingsPage() {
     || Number(permisos.find((p) => p.entity_name === entidad)?.[campo] || 0) !== 0;
 
   const money = (v) => new Intl.NumberFormat(lang, { style: "currency", currency: "MXN" }).format(Number(v || 0));
-  const formato = (unidad, v) => {
+  const formato = (unidad, v, clave) => {
+    if (unidad === "minutes") return `${Number(v)} min`;
+    if (unidad === "choice") return t(`payroll_settings.choice_${clave}_${Number(v)}`);
     if (unidad === "money") return money(v);
     if (unidad === "pct") return `${Number(v)} %`;
     if (unidad === "uma") return `${Number(v)} UMA`;
@@ -130,8 +177,10 @@ export default function PayrollSettingsPage() {
     return grupos;
   }, [parametros, view]);
   const sinCapturar = (clave) => {
+    if (clave in POLITICA_POR_OMISION && grupoDe(clave) === "options") return `${t("payroll_settings.policy_default")}: ${formato(unidadDe(clave), POLITICA_POR_OMISION[clave], clave)}`;
     if (grupoDe(clave) === "options") return t("payroll_settings.option_default");
     if (grupoDe(clave) === "vacations") return `${t("payroll_settings.vacation_default")} (${DIAS_DE_LEY[clave]} ${t("payroll_settings.days")})`;
+    if (grupoDe(clave) === "vacation_policy") return `${t("payroll_settings.policy_default")}: ${formato(unidadDe(clave), POLITICA_POR_OMISION[clave], clave)}`;
     return t("payroll_settings.missing");
   };
   const vigente = (fila) => fila.valid_from <= fechaHoy && (!fila.valid_to || fila.valid_to >= fechaHoy);
@@ -177,7 +226,7 @@ export default function PayrollSettingsPage() {
   }
 
   async function borrar(accion) {
-    if (!window.confirm(t("payroll_settings.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("payroll_settings.confirm_delete")))) return;
     await guardar(accion, "payroll_settings.deleted");
   }
 
@@ -213,14 +262,19 @@ export default function PayrollSettingsPage() {
                   </select>
                 </label>
                 <label className="field">{t("payroll_settings.field_value")}
-                  {unidadDe(formParametro.parameter_key) === "option" ? (
+                  {unidadDe(formParametro.parameter_key) === "choice" ? (
+                    <select required value={String(formParametro.value)} onChange={(e) => setFormParametro((f) => ({ ...f, value: e.target.value }))}>
+                      <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+                      {ELECCIONES[formParametro.parameter_key].map((v) => <option key={v} value={v}>{formato("choice", v, formParametro.parameter_key)}</option>)}
+                    </select>
+                  ) : unidadDe(formParametro.parameter_key) === "option" ? (
                     <select required value={String(formParametro.value)} onChange={(e) => setFormParametro((f) => ({ ...f, value: e.target.value }))}>
                       <option value="">{t("common.select_option", "Selecciona una opción")}</option>
                       <option value="1">{t("payroll_settings.option_yes")}</option>
                       <option value="0">{t("payroll_settings.option_no")}</option>
                     </select>
                   ) : campo(formParametro, setFormParametro, "value", { required: true, type: "number", min: 0,
-                    step: grupoDe(formParametro.parameter_key) === "vacations" ? 1 : "any" })}
+                    step: ["vacations", "vacation_policy"].includes(grupoDe(formParametro.parameter_key)) || ["count", "minutes"].includes(unidadDe(formParametro.parameter_key)) ? 1 : "any" })}
                 </label>
                 <label className="field">{t("payroll_settings.field_from")}{campo(formParametro, setFormParametro, "valid_from", { required: true, type: "date" })}</label>
                 <label className="field">{t("payroll_settings.field_to")}{campo(formParametro, setFormParametro, "valid_to", { type: "date" })}</label>
@@ -250,7 +304,7 @@ export default function PayrollSettingsPage() {
                     {fila ? (
                       <>
                         <td>
-                          {formato(unidadDe(clave), fila.value)} {vigente(fila) && <span className="quotation-status-badge status-approved">{t("payroll_settings.current")}</span>}
+                          {formato(unidadDe(clave), fila.value, clave)} {vigente(fila) && <span className="quotation-status-badge status-approved">{t("payroll_settings.current")}</span>}
                           {DIAS_DE_LEY[clave] > Number(fila.value) && <small className="muted"> · {t("payroll_settings.below_law")} ({DIAS_DE_LEY[clave]} {t("payroll_settings.days")})</small>}
                         </td>
                         <td>{fila.valid_from}</td>

@@ -48,6 +48,21 @@ BEAT_SCHEDULE = {
         "task": "app.jobs.tasks_warehouse.notify_overdue_vouchers",
         "schedule": crontab(minute=0, hour="*/6"),
     },
+    # RH: vacaciones que vencen en los dias de aviso de la politica de la empresa.
+    "rh-expiring-vacations-daily": {
+        "task": "app.jobs.tasks_rh.notify_expiring_vacations",
+        "schedule": crontab(hour=8, minute=0),
+    },
+    # RH: quien no ha checado entrada o salida (minutos de aviso en Ajustes de nomina).
+    "rh-missing-checks-every-five-minutes": {
+        "task": "app.jobs.tasks_rh.notify_missing_checks",
+        "schedule": crontab(minute="*/5"),
+    },
+    # RH: alertas de asistencia nuevas y el resumen semanal o quincenal (reporte de asistencia).
+    "rh-attendance-alerts-daily": {
+        "task": "app.jobs.tasks_rh.notify_attendance_alerts",
+        "schedule": crontab(hour=8, minute=30),
+    },
     # Cada 6 horas (como los vales vencidos): no repite avisos, solo alcanza pronto
     # el cambio de dia en la hora del negocio.
     "purchase-rentals-due-every-six-hours": {

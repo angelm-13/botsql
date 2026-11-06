@@ -58,6 +58,9 @@ class WorkScheduleService(CrudService):
         tolerancia = _entero(datos.get("tolerance_minutes", 10), "tolerance_minutes")
         if not 0 <= tolerancia <= 240:
             raise AppError("errors.invalid_field", 400, {"field": "tolerance_minutes"})
+        comida = _entero(datos.get("meal_minutes", 60), "meal_minutes")
+        if not 0 <= comida <= 240:
+            raise AppError("errors.invalid_field", 400, {"field": "meal_minutes"})
 
     @classmethod
     def create(cls, payload: dict, user_id: int | None = None):

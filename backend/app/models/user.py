@@ -51,6 +51,9 @@ class User(Base):
     puesto: Mapped[object] = mapped_column(String(50), nullable=True)
     is_employee: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
     accepts_marketing: Mapped[bool] = mapped_column(Boolean, nullable=True)
+    # Si tiene correo, los avisos de la campana tambien le llegan ahi, salvo que lo apague.
+    receive_email_notifications: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
+                                                              server_default='true')
 
     def serialize(self) -> dict:
         return {
@@ -83,6 +86,7 @@ class User(Base):
             'puesto': to_json_value(self.puesto),
             'is_employee': to_json_value(self.is_employee),
             'accepts_marketing': to_json_value(self.accepts_marketing),
+            'receive_email_notifications': to_json_value(self.receive_email_notifications),
         }
 
     def serialize_summary(self) -> dict:

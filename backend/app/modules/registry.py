@@ -232,7 +232,14 @@ MODULOS = (
          # y dias pagados (pantalla propia /work_schedules).
          "work_schedule", "work_schedule_day", "employee_schedule", "payroll_holiday",
          # Vacaciones, permisos e incapacidades (pantalla propia /employee_leaves).
-         "employee_leave"),
+         "employee_leave",
+         # Grupos de pago (semanal, catorcenal, quincenal, mensual) y quien
+         # pertenece a cada uno (pantalla propia /payroll_groups).
+         "payroll_group", "employee_payroll_group",
+         # Forma de salario de cada empleado (por dia, por hora o fijo), con vigencia.
+         "employee_salary",
+         # Bajas para el finiquito y la liquidacion (pantalla propia /terminations).
+         "employee_termination"),
     ),
     # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
     # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para
@@ -443,6 +450,19 @@ CAPACIDADES = (
     # (actualizar), para poder dejar a un rol en "solo ver" desde el Gestor.
     Capacidad("my_leaves", "Mis vacaciones", "rh", bits=CAPTURA, menu="sidebar",
               autoservicio=True),
+    # Simulador de nomina (2026-11-03): RH calcula un recibo de prueba -sueldo,
+    # faltas, horas extra, bonos y premios- sin tocar ningun periodo. Por omision
+    # solo Administrator (recibe todas las capacidades). Pasar los bonos a un
+    # periodo real pide ademas el permiso de alta de `payroll_movement`.
+    Capacidad("payroll_simulator", "Simulador de nomina", "rh", menu="sidebar"),
+    # Reporte de asistencia para RH (2026-11-04): semana o quincena con retardos,
+    # faltas, checadas a mano y horas extra, y alertas de patrones. Solo lectura.
+    # Por omision solo Administrator.
+    Capacidad("attendance_report", "Reporte de asistencia", "rh", menu="sidebar"),
+    # Primeros pasos de RH (2026-11-05): cuantos de los 9 pasos de la puesta en
+    # marcha estan listos, con liga a cada pantalla. Solo lectura. Por omision
+    # solo Administrator.
+    Capacidad("rh_setup", "Primeros pasos de RH", "rh", menu="sidebar"),
     Capacidad("restaurant_waiter", "Meseros", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_kitchen", "Cocina", "restaurante", bits=EDITAR, menu="sidebar"),

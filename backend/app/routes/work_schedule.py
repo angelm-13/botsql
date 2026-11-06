@@ -6,7 +6,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_work_schedule = Blueprint('work_schedule', __name__, url_prefix='/work_schedule')
-ALLOWED_FIELDS = ['id_work_schedule', 'schedule_name', 'tolerance_minutes', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_work_schedule', 'schedule_name', 'tolerance_minutes', 'meal_minutes', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_work_schedule'}
 FIELD_READ_BIT = 2

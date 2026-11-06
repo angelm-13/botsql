@@ -335,7 +335,7 @@ export default function PayrollConceptPage() {
   const filtered = items;
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
-    const key = String(item.type ?? t("common.unclassified"));
+    const key = item.type ? t(`payroll_concept_type.${item.type}`, item.type) : t("common.unclassified");
     acc[key] = acc[key] || []; acc[key].push(item); return acc;
   }, {}), [filtered, lang]);
 
@@ -375,9 +375,9 @@ export default function PayrollConceptPage() {
             <span>{t("fields.payroll_concept.type")}</span>
             <select name="type" value={formData.type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["type"])} {...inputPropsForField("type", validationRules["type"], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              <option key="earning" value="earning">earning</option>
-              <option key="deduction" value="deduction">deduction</option>
-              <option key="employer_contribution" value="employer_contribution">employer_contribution</option>
+              <option key="earning" value="earning">{t("payroll_concept_type.earning")}</option>
+              <option key="deduction" value="deduction">{t("payroll_concept_type.deduction")}</option>
+              <option key="employer_contribution" value="employer_contribution">{t("payroll_concept_type.employer_contribution")}</option>
             </select>
             {fieldErrors["type"] && <span className="field-error">{formatFieldError("type")}</span>}
           </label>
@@ -434,7 +434,7 @@ export default function PayrollConceptPage() {
               {canSeeField("id_payroll_concept") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_concept)}</pre></td>}
               {canSeeField("payroll_code") && <td><pre className="cell-value">{formatTableValue(item.payroll_code)}</pre></td>}
               {canSeeField("payroll_concept_description") && <td><pre className="cell-value">{formatTableValue(item.payroll_concept_description)}</pre></td>}
-              {canSeeField("type") && <td><pre className="cell-value">{formatTableValue(item.type)}</pre></td>}
+              {canSeeField("type") && <td>{item.type ? t(`payroll_concept_type.${item.type}`, item.type) : ""}</td>}
               {canSeeField("is_taxable") && <td><pre className="cell-value">{formatTableValue(item.is_taxable)}</pre></td>}
               {canSeeField("is_imss") && <td><pre className="cell-value">{formatTableValue(item.is_imss)}</pre></td>}
               {canSeeField("created_by") && <td><pre className="cell-value">{formatTableValue(item.created_by)}</pre></td>}

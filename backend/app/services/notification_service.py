@@ -69,7 +69,22 @@ def create_notification(
         db.add(notification)
         db.flush()
         db.refresh(notification)
-        return notification
+    _encolar_correo(notification.id_notification)
+    return notification
+
+
+def _encolar_correo(id_notification: int) -> None:
+    """El aviso tambien sale por correo al de quien lo recibe (2026-11-05), en segundo
+    plano y solo si la empresa configuro la cuenta que envia. Nunca falla el aviso."""
+    import os
+    from app.services.email_service import email_configured
+    if os.getenv("TESTING", "0") == "1" or not email_configured():
+        return
+    try:
+        from app.jobs.tasks_notifications import send_notification_email
+        send_notification_email.delay(id_notification)
+    except Exception:
+        pass
 
 
 def get_user_notifications(

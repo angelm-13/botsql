@@ -14,8 +14,12 @@ TIPOS_DE_AUSENCIA = ('vacation', 'paid_leave', 'unpaid_leave', 'disability')
 # Estado de la ausencia (migracion 20261022100000): solo lo aprobado cuenta;
 # lo solicitado aparta dias del saldo de vacaciones.
 SOLICITADA, APROBADA, RECHAZADA, CANCELADA = 'requested', 'approved', 'rejected', 'cancelled'
-ESTADOS_DE_AUSENCIA = (SOLICITADA, APROBADA, RECHAZADA, CANCELADA)
-ESTADOS_VIGENTES = (SOLICITADA, APROBADA)
+# Dos pasos (migracion 20261104100000, decision de RH 2026-11-04): la aprueba su
+# jefe directo y queda pendiente de RH; solo la aprobacion de RH la hace contar.
+JEFE_APROBO = 'boss_approved'
+ESTADOS_DE_AUSENCIA = (SOLICITADA, JEFE_APROBO, APROBADA, RECHAZADA, CANCELADA)
+ESTADOS_VIGENTES = (SOLICITADA, JEFE_APROBO, APROBADA)
+ESTADOS_PENDIENTES = (SOLICITADA, JEFE_APROBO)
 # Tipo de incapacidad (migracion 20261026100000): solo la de enfermedad general
 # puede bajar el aguinaldo, si la empresa lo elige; riesgo de trabajo y
 # maternidad nunca (LFT). Sin capturar = no se descuenta.
@@ -31,7 +35,7 @@ class EmployeeLeave(Base):
         CheckConstraint("leave_type IN ('vacation', 'paid_leave', 'unpaid_leave', 'disability')",
                         name='ck_employee_leave_type'),
         CheckConstraint('end_date >= start_date', name='ck_employee_leave_dates'),
-        CheckConstraint("leave_status IN ('requested', 'approved', 'rejected', 'cancelled')",
+        CheckConstraint("leave_status IN ('requested', 'boss_approved', 'approved', 'rejected', 'cancelled')",
                         name='ck_employee_leave_status'),
         CheckConstraint("disability_type IS NULL OR disability_type IN ('general_illness', 'work_risk', 'maternity')",
                         name='ck_employee_leave_disability_type'),
@@ -49,6 +53,10 @@ class EmployeeLeave(Base):
     reviewed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reviewed_at: Mapped[object] = mapped_column(DateTime, nullable=True)
     review_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # El primer paso (jefe directo); reviewed_* es el ultimo, el que la cierra.
+    boss_reviewed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    boss_reviewed_at: Mapped[object] = mapped_column(DateTime, nullable=True)
+    boss_review_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -61,7 +69,9 @@ class EmployeeLeave(Base):
                 'disability_type': self.disability_type,
                 'leave_status': self.leave_status, 'requested_by': self.requested_by,
                 'reviewed_by': self.reviewed_by, 'reviewed_at': a_iso_utc(self.reviewed_at),
-                'review_note': self.review_note, **_auditoria(self)}
+                'review_note': self.review_note, 'boss_reviewed_by': self.boss_reviewed_by,
+                'boss_reviewed_at': a_iso_utc(self.boss_reviewed_at), 'boss_review_note': self.boss_review_note,
+                **_auditoria(self)}
 
     def serialize_summary(self) -> dict:
         return {'id_employee_leave': self.id_employee_leave}

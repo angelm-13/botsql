@@ -65,6 +65,15 @@ class PayrollParameterService(CrudService):
             raise AppError("errors.invalid_field", 400, {"field": "value", "allowed": [0, 1]})
         if clave in TABLA_DE_VACACIONES and (valor != valor.to_integral_value() or not 1 <= valor <= 365):
             raise AppError("errors.invalid_field", 400, {"field": "value", "reason": "whole_days"})
+        # Las politicas (vacaciones, limite de correcciones): enteros, y solo los
+        # valores que el sistema sabe usar.
+        from app.services.payroll_calculation_service import POLITICAS
+        if clave in POLITICAS:
+            permitidos = POLITICAS[clave][1]
+            if valor != valor.to_integral_value() or int(valor) not in permitidos:
+                limites = {"min": permitidos.start, "max": permitidos.stop - 1} if isinstance(permitidos, range) \
+                    else {"allowed": sorted(permitidos)}
+                raise AppError("errors.invalid_field", 400, {"field": "value", **limites})
         desde = _fecha(datos.get("valid_from"), "valid_from")
         hasta = _fecha(datos.get("valid_to"), "valid_to")
         if desde is None:

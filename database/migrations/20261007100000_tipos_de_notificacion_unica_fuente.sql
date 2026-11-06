@@ -61,6 +61,17 @@ ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
         -- Solicitudes de vacaciones y permisos (RH, 2026-10-22): por autorizar y ya revisada.
         'leave_requested',
         'leave_reviewed',
+        -- Vacaciones por vencer (politica de vacaciones, 2026-10-28).
+        'vacation_expiring',
+        -- Avisos de checada que falta (punto 3 de la revision contable, 2026-10-29).
+        'attendance_missing_check_in',
+        'attendance_missing_check_in_team',
+        'attendance_missing_check_out',
+        -- Alertas y resumen del reporte de asistencia para RH (2026-11-04).
+        'attendance_alert',
+        'attendance_summary',
+        -- Horas extra que pide un supervisor y espera la aprobacion de RH (2026-11-05).
+        'overtime_requested',
         'custom'
     )
 );

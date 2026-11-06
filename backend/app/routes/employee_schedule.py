@@ -138,6 +138,19 @@ def create_employee_schedule(user_data):
     return _jsonify_projected_record(user_data, EmployeeScheduleService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
+# Cambio "a partir de" una fecha desde el perfil del usuario: cierra la
+# asignacion vigente el dia anterior y abre la nueva (services/vigencias.py).
+# Crea una fila y acorta otra, asi que pide los dos permisos del Gestor.
+@bp_employee_schedule.route('/change', methods=['POST'])
+@token_required
+@require_entity_permission('employee_schedule', 'create')
+@require_entity_permission('employee_schedule', 'update')
+def change_employee_schedule(user_data):
+    from app.services.vigencias import cambiar_desde
+    payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    return _jsonify_projected_record(user_data, cambiar_desde(EmployeeScheduleService, payload, user_id=user_data.get('id_user')), status=201)
+
+
 @bp_employee_schedule.route('/<id_employee_schedule>', methods=['PUT'])
 @token_required
 @require_entity_permission('employee_schedule', 'update')

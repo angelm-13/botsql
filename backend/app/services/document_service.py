@@ -221,11 +221,33 @@ class DocumentManagementService:
         return stmt.where(or_(~es_vale, ver))
 
     @staticmethod
+    def _sin_incapacidades_ajenas(stmt, user_data: dict):
+        """La hoja de incapacidad es un dato medico: en Documentos solo la ven RH
+        y el propio empleado (ver employee_leave_document_service). El permiso de
+        documentos no basta, igual que con los vales."""
+        from sqlalchemy import String, cast
+
+        from app.models import EmployeeLeave
+        from app.services.employee_leave_document_service import CATEGORIA, REFERENCIA, puede_ver_todas
+
+        if puede_ver_todas(user_data):
+            return stmt
+        propias = select(cast(EmployeeLeave.id_employee_leave, String)).where(
+            EmployeeLeave.id_user == _actor_id(user_data))
+        es_hoja = exists().where(and_(
+            DocumentCategory.id_document_category == Document.id_document_category,
+            DocumentCategory.code == CATEGORIA,
+        ))
+        return stmt.where(or_(~es_hoja, and_(Document.business_reference_type == REFERENCIA,
+                                             Document.business_reference_value.in_(propias))))
+
+    @staticmethod
     def _scope(stmt, user_data: dict):
         if _is_unrestricted(user_data):
             return stmt
         stmt = stmt.where(Document.id_proyect == _actor_project(user_data))
         stmt = DocumentManagementService._sin_vales_ajenos(stmt, user_data)
+        stmt = DocumentManagementService._sin_incapacidades_ajenas(stmt, user_data)
         if _actor_type(user_data) in {"client", "supplier"}:
             customer_relation = exists().where(
                 and_(
