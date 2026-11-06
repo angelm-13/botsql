@@ -20,7 +20,9 @@ name: ci-seguridad
 
 on:
   pull_request:
-    branches: [initAlan]
+    # `main` tambien: un PR de promocion (cambia el tag de un overlay) va hacia main y el
+    # ruleset de esa rama exige estos checks; sin este trigger nunca correrian.
+    branches: [initAlan, main]
   # Disparo manual. GitHub solo lo permite desde ramas distintas a la default
   # cuando el archivo ya existe en ella; mientras tanto el trigger útil es el PR.
   workflow_dispatch: {}
