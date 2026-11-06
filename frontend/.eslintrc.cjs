@@ -30,7 +30,6 @@ module.exports = {
       files: [
         'src/main.jsx',
         'src/pages/Dashboard.jsx',
-        'src/pages/DashboardPreviewPage.jsx',
         'src/components/ErrorBoundary.jsx',
         'src/components/FormularioPlegable.jsx',
         'src/components/kpi-widgets/**/*.{js,jsx}',

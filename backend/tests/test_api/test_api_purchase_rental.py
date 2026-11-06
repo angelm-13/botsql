@@ -38,7 +38,7 @@ class BaseRentas(BaseRecepcion):
         self.fin = self.inicio + timedelta(days=2)  # 3 dias contando inicio y fin
         with transaction_context() as db:
             db.add(_con_id(ProyectMaterialNeed(
-                id_proyect=PROYECTO_A, description="Plataforma de tijera 10 m", unit="pza",
+                id_proyect=PROYECTO_A, description="Plataforma de tijera 10 m", unit="equipo",
                 quantity=1, need_status="open", review_result="buy", need_kind="rental",
                 rental_start=self.inicio, rental_end=self.fin, created_by=11),
                 id_proyect_material_need=N_PLATAFORMA))
@@ -85,6 +85,22 @@ class TestPedirLaRenta(BaseRentas):
         self.assertEqual("rental", fila["need_kind"])
         self.assertEqual("buy", fila["review_result"])
         self.assertFalse(fila["needs_review"])
+
+    def test_machinery_is_counted_in_its_own_units_not_in_pieces(self):
+        from app.services.proyect_material_need_service import create_need
+
+        base = {"need_kind": "rental", "description": "Grua de 30 toneladas", "quantity": 1,
+                "rental_start": self.inicio.isoformat(),
+                "rental_end": (self.inicio + timedelta(days=1)).isoformat()}
+        self.assertEqual("equipo", create_need(PROYECTO_A, {**base, "unit": "Equipo"}, ADMIN)["unit"])
+        with self.assertRaises(AppError) as caja:
+            create_need(PROYECTO_A, {**base, "description": "Pipa de agua", "unit": "pza"}, ADMIN)
+        self.assertEqual(["equipo", "unidad", "servicio", "viaje"],
+                         caja.exception.meta["allowed"])
+        # Y el material no acepta las de la maquinaria.
+        with self.assertRaises(AppError):
+            create_need(PROYECTO_A, {"description": "Soldadura 6013", "quantity": 1,
+                                     "unit": "viaje"}, ADMIN)
 
     def test_a_rental_without_a_valid_period_is_refused(self):
         from app.services.proyect_material_need_service import create_need
@@ -174,7 +190,8 @@ class TestLaOrdenDeRenta(BaseRentas):
             "line_kind": "rental", "description": "Generador 50 kVA", "quantity": 1,
             "rental_start": self.inicio.isoformat(),
             "rental_end": (self.inicio + timedelta(days=13)).isoformat(),
-            "rental_rate": 3000, "rental_rate_unit": "week", "id_proyect": PROYECTO_A}])
+            "rental_rate": 3000, "rental_rate_unit": "week", "id_proyect": PROYECTO_A,
+            "unit": "equipo"}])
 
         self.assertEqual(201, respuesta.status_code, respuesta.get_data(as_text=True))
         self.assertEqual(6000, self.json(respuesta)["lines"][0]["unit_cost"])

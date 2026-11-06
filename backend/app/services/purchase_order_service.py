@@ -334,8 +334,42 @@ def _total_de_renglones(renglones) -> Decimal | None:
     return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+SUPPLIER_NAME_MAX = 200
+
+
+def _proveedor_de_la_orden(db, payload: dict) -> tuple[int | None, str]:
+    """El proveedor que trae la orden: `(id_customer_supplier o None, nombre)`.
+
+    Se escribe a mano (`supplier_name`): dar de alta a cada proveedor antes de comprar
+    le resultaba engorroso a Compras. Si el nombre coincide (sin importar mayusculas
+    ni espacios) con un proveedor dado de alta, la orden queda ligada a el y se sigue
+    comparando el RFC de su factura. Un `id_customer_supplier` explicito tambien se
+    acepta, y entonces debe ser un proveedor dado de alta."""
+    if str(payload.get("id_customer_supplier") or "").strip() != "":
+        proveedor = _proveedor(db, payload.get("id_customer_supplier"))
+        return proveedor.id_customer_supplier, proveedor.name
+    nombre = " ".join(str(_texto(payload.get("supplier_name"), "supplier_name",
+                                 SUPPLIER_NAME_MAX, obligatorio=True)).split())
+    if len(nombre) < 2:
+        raise AppError("errors.invalid_field", 400, {"field": "supplier_name"})
+    ligado = db.execute(
+        select(CustomerSupplier.id_customer_supplier, CustomerSupplier.name).where(
+            CustomerSupplier.deletion_date.is_(None),
+            CustomerSupplier.type == "supplier",
+            func.lower(func.trim(CustomerSupplier.name)) == nombre.lower(),
+        ).order_by(CustomerSupplier.id_customer_supplier).limit(1)
+    ).first()
+    if ligado is not None:
+        return int(ligado[0]), ligado[1]
+    return None, nombre
+
+
+def _nombre_del_proveedor(orden: PurchaseOrder, proveedor) -> str | None:
+    return orden.supplier_name or (proveedor.name if proveedor else None)
+
+
 def _proveedor(db, id_proveedor) -> CustomerSupplier:
-    """Un proveedor DADO DE ALTA. Compras no puede pagarle a quien nadie registro."""
+    """Un proveedor DADO DE ALTA (cuando la orden se liga a uno por su id)."""
     proveedor = db.scalars(
         select(CustomerSupplier).where(
             CustomerSupplier.id_customer_supplier == _entero_positivo(
@@ -488,7 +522,7 @@ def _renglon_libre(db, dato: dict) -> dict:
             "id_material": None, "item_class": None,
             "description": _descripcion_valida(_texto(
                 dato.get("description"), "description", 200, obligatorio=True)),
-            "unit": _unidad(dato.get("unit")),
+            "unit": _unidad(dato.get("unit"), renta=True),
             "quantity": _cantidad(dato.get("quantity")),
             **_datos_de_renta(dato),
         }
@@ -640,7 +674,8 @@ def _ficha(db, orden: PurchaseOrder, user_data: dict, *, detalle: bool = True) -
     actor = _actor(user_data)
     renglones = _renglones(db, orden.id_purchase_order)
     comprobantes = _comprobantes(db, orden.id_purchase_order)
-    proveedor = db.get(CustomerSupplier, orden.id_customer_supplier)
+    proveedor = (db.get(CustomerSupplier, orden.id_customer_supplier)
+                 if orden.id_customer_supplier else None)
     ficha = orden.serialize()
 
     ids_proyecto = {int(r.id_proyect) for r in renglones if r.id_proyect}
@@ -666,8 +701,9 @@ def _ficha(db, orden: PurchaseOrder, user_data: dict, *, detalle: bool = True) -
     ficha.update({
         "supplier": {
             "id_customer_supplier": orden.id_customer_supplier,
-            "name": proveedor.name if proveedor else None,
+            "name": _nombre_del_proveedor(orden, proveedor),
             "tax_id": proveedor.tax_id if proveedor else None,
+            "registered": proveedor is not None,
         },
         "lines": lineas,
         "lines_total": (float(_total_de_renglones(renglones))
@@ -704,10 +740,11 @@ def list_orders(user_data: dict, *, status=None, id_supplier=None, q=None,
     limite = max(1, min(int(limit or 100), 200))
     desde = max(0, int(offset or 0))
     with transaction_context() as db:
+        nombre_proveedor = func.coalesce(PurchaseOrder.supplier_name, CustomerSupplier.name)
         consulta = (
-            select(PurchaseOrder, CustomerSupplier.name)
-            .join(CustomerSupplier,
-                  CustomerSupplier.id_customer_supplier == PurchaseOrder.id_customer_supplier)
+            select(PurchaseOrder, nombre_proveedor)
+            .outerjoin(CustomerSupplier,
+                       CustomerSupplier.id_customer_supplier == PurchaseOrder.id_customer_supplier)
             .where(PurchaseOrder.deletion_date.is_(None))
         )
         if status:
@@ -724,7 +761,7 @@ def list_orders(user_data: dict, *, status=None, id_supplier=None, q=None,
             patron = "%" + texto.lower() + "%"
             consulta = consulta.where(or_(
                 func.lower(PurchaseOrder.folio).like(patron),
-                func.lower(CustomerSupplier.name).like(patron),
+                func.lower(func.coalesce(nombre_proveedor, "")).like(patron),
                 func.lower(func.coalesce(PurchaseOrder.description, "")).like(patron),
                 func.lower(func.coalesce(PurchaseOrder.purchase_folio, "")).like(patron),
             ))
@@ -807,13 +844,13 @@ def create_order(payload: dict, user_data: dict) -> dict:
     esperada = _fecha_o_nada(payload.get("expected_date"), "expected_date")
     moneda = _moneda(payload.get("currency"))
     with transaction_context() as db:
-        proveedor = _proveedor(db, payload.get("id_customer_supplier"))
+        id_proveedor, nombre_proveedor = _proveedor_de_la_orden(db, payload)
         renglones = _preparar_renglones(db, payload.get("lines") or [])
         # El folio se conoce hasta tener id: se asigna tras el primer flush, con un
         # marcador unico mientras tanto.
         orden = PurchaseOrder(
             folio="OC-NUEVA-" + uuid.uuid4().hex[:12],
-            id_customer_supplier=proveedor.id_customer_supplier,
+            id_customer_supplier=id_proveedor, supplier_name=nombre_proveedor,
             order_status="draft", description=descripcion, expected_date=esperada,
             currency=moneda, created_by=actor)
         db.add(orden)
@@ -822,7 +859,7 @@ def create_order(payload: dict, user_data: dict) -> dict:
         _guardar_renglones(db, orden, renglones, actor)
         orden.quoted_total = _total_de_renglones(renglones) if renglones else None
         _evento(db, orden, "created", actor, a="draft", detalle={
-            "supplier": proveedor.name, "lines": len(renglones)})
+            "supplier": nombre_proveedor, "lines": len(renglones)})
         db.flush()
         return _ficha(db, orden, user_data)
 
@@ -851,11 +888,12 @@ def update_order(id_order, payload: dict, user_data: dict) -> dict:
             if nueva != orden.currency:
                 cambios["currency"] = [orden.currency, nueva]
                 orden.currency = nueva
-        if "id_customer_supplier" in payload:
-            proveedor = _proveedor(db, payload.get("id_customer_supplier"))
-            if proveedor.id_customer_supplier != orden.id_customer_supplier:
-                cambios["supplier"] = [orden.id_customer_supplier, proveedor.id_customer_supplier]
-                orden.id_customer_supplier = proveedor.id_customer_supplier
+        if "supplier_name" in payload or "id_customer_supplier" in payload:
+            id_proveedor, nombre = _proveedor_de_la_orden(db, payload)
+            if (id_proveedor, nombre) != (orden.id_customer_supplier, orden.supplier_name):
+                cambios["supplier"] = [orden.supplier_name, nombre]
+                orden.id_customer_supplier = id_proveedor
+                orden.supplier_name = nombre
         if "lines" in payload:
             antes = _total_de_renglones(_renglones(db, orden.id_purchase_order))
             renglones = _preparar_renglones(
@@ -887,7 +925,10 @@ def submit_order(id_order, user_data: dict) -> dict:
         if total is None or total <= 0:
             # Autorizar sin saber cuanto cuesta es firmar en blanco.
             raise AppError("errors.order_without_costs", 409)
-        _proveedor(db, orden.id_customer_supplier)
+        if orden.id_customer_supplier:
+            _proveedor(db, orden.id_customer_supplier)
+        elif not (orden.supplier_name or "").strip():
+            raise AppError("errors.invalid_field", 400, {"field": "supplier_name"})
 
         politica = _politica(db)
         requiere = total > politica.authorize_above
@@ -1005,14 +1046,20 @@ def _inspeccionar_archivo(storage: SecureDocumentStorage, raw: bytes, nombre: st
     return extension, mime, None
 
 
-def _duplicado(db, *, sha256: str, id_proveedor: int, folio: str | None,
-               uuid_cfdi: str | None, tipo: str):
-    """Otro comprobante vivo que ya justifica una compra con ese mismo papel, o None."""
+def _duplicado(db, *, sha256: str, id_proveedor: int | None, nombre_proveedor: str | None,
+               folio: str | None, uuid_cfdi: str | None, tipo: str):
+    """Otro comprobante vivo que ya justifica una compra con ese mismo papel, o None.
+    El folio se repite entre proveedores: se compara dentro del mismo proveedor (por
+    su alta, o por el nombre escrito si la orden no esta ligada a uno)."""
     llaves = [("file", PurchaseVoucher.sha256 == sha256)]
     if uuid_cfdi:
         llaves.append(("cfdi", PurchaseVoucher.cfdi_uuid == uuid_cfdi))
-    if folio and tipo in EVIDENCE_KINDS:
-        llaves.append(("folio", (PurchaseVoucher.id_customer_supplier == id_proveedor)
+    if folio and tipo in EVIDENCE_KINDS and (id_proveedor or nombre_proveedor):
+        mismo_proveedor = (
+            PurchaseVoucher.id_customer_supplier == id_proveedor if id_proveedor
+            else (PurchaseVoucher.id_customer_supplier.is_(None)
+                  & (func.lower(PurchaseOrder.supplier_name) == nombre_proveedor.lower())))
+        llaves.append(("folio", mismo_proveedor
                        & (func.upper(PurchaseVoucher.folio) == folio.upper())
                        & PurchaseVoucher.kind.in_(EVIDENCE_KINDS)))
     for clave, condicion in llaves:
@@ -1055,7 +1102,9 @@ def add_voucher(id_order, campos: dict, raw: bytes, nombre: str, user_data: dict
             # Un comprobante por orden: la compra tiene UNA factura o UN ticket. Si el
             # que se subio esta mal, se quita (queda en la bitacora) y se sube el bueno.
             raise AppError("errors.voucher_one_per_order", 409)
-        proveedor = db.get(CustomerSupplier, orden.id_customer_supplier)
+        # Sin proveedor dado de alta no hay RFC contra el cual comparar la factura.
+        proveedor = (db.get(CustomerSupplier, orden.id_customer_supplier)
+                     if orden.id_customer_supplier else None)
 
         folio = _texto(campos.get("folio"), "folio", FOLIO_MAX)
         monto = _decimal(campos.get("amount"), "amount", obligatorio=False)
@@ -1098,7 +1147,7 @@ def add_voucher(id_order, campos: dict, raw: bytes, nombre: str, user_data: dict
                 raise AppError("errors.invalid_field", 400, {"field": "issue_date"})
 
         previo = _duplicado(db, sha256=huella, id_proveedor=orden.id_customer_supplier,
-                            folio=folio, uuid_cfdi=uuid_cfdi, tipo=tipo)
+                            nombre_proveedor=orden.supplier_name, folio=folio, uuid_cfdi=uuid_cfdi, tipo=tipo)
         if previo is not None:
             clave, folio_orden, id_orden_previa = previo
             raise AppError("errors.voucher_duplicate", 409, {
@@ -1638,11 +1687,12 @@ def _fila_de_renta(db, renglon, orden, proveedor, proyecto, user_data, actor) ->
 
 def _consulta_de_rentas():
     return (
-        select(PurchaseOrderLine, PurchaseOrder, CustomerSupplier.name,
+        select(PurchaseOrderLine, PurchaseOrder,
+               func.coalesce(PurchaseOrder.supplier_name, CustomerSupplier.name),
                Proyect.id_proyect, Proyect.folio, Proyect.title)
         .join(PurchaseOrder, PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order)
-        .join(CustomerSupplier,
-              CustomerSupplier.id_customer_supplier == PurchaseOrder.id_customer_supplier)
+        .outerjoin(CustomerSupplier,
+                   CustomerSupplier.id_customer_supplier == PurchaseOrder.id_customer_supplier)
         .outerjoin(Proyect, Proyect.id_proyect == PurchaseOrderLine.id_proyect)
         .where(PurchaseOrderLine.line_kind == "rental",
                PurchaseOrderLine.deletion_date.is_(None),

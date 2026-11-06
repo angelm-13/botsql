@@ -44,4 +44,8 @@ export const UNIDADES = [
   "caja", "bolsa", "saco", "rollo", "juego", "par", "paquete", "tramo",
 ];
 
+// La maquinaria rentada no va en piezas: una grua es "un equipo", una pipa "un viaje".
+// Misma lista que `UNIDADES_DE_RENTA` del servidor.
+export const UNIDADES_DE_RENTA = ["equipo", "unidad", "servicio", "viaje"];
+
 export const CANTIDAD_MAXIMA = 100000;

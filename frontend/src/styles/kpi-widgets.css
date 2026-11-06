@@ -1,8 +1,6 @@
-/* Tokens y clases de widget compartidos entre el Dashboard real
-   (.kpi-dashboard) y la vista previa (.dashboard-preview-page): lo que pinta
-   un numero, una tabla, una dona o un skeleton se ve igual en los dos.
-   Lo propio de la vista previa (barra superior, cuadricula demo, editor de
-   demostracion) vive aparte en dashboard-preview.css. El tema oscuro es
+/* Tokens y clases de widget del Dashboard de KPIs (.kpi-dashboard): lo que pinta
+   un numero, una tabla, una dona o un skeleton. El selector .dashboard-preview-page
+   quedo sin uso al retirar esa pantalla. El tema oscuro es
    [data-theme="dark"] en el contenedor -- el resto de TYAKXA no tiene modo
    oscuro todavia y no debe heredar nada de aqui. */
 

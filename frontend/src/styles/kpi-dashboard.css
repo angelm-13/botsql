@@ -99,6 +99,7 @@ body.kpi-pdf-exporting .kpi-fechas-fijas-accion{display:none}
 .kpi-number-range-hint{font-size:11px;color:#8a96a5;white-space:nowrap}
 
 .kpi-empty-inline{color:#8a96a5;text-align:center;padding:24px 8px;font-size:13px}
+.kpi-empty-accion{display:block;margin:10px auto 0}
 .kpi-error-inline{color:#c62828;background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;font-size:13px}
 
 /* Panel fijo arriba de la cuadricula (ya no modal con backdrop): nunca

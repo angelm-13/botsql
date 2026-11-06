@@ -87,8 +87,11 @@ class PurchaseOrder(_Serializable, Base):
     id_purchase_order: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # El numero con el que se conoce la orden: OC-2026-00012.
     folio: Mapped[str] = mapped_column(String(30), nullable=False, unique=True)
-    id_customer_supplier: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customer_supplier.id_customer_supplier"), nullable=False, index=True)
+    # El proveedor se escribe a mano (`supplier_name`); si coincide con uno dado de
+    # alta, la orden queda ademas ligada a el y se compara el RFC de su factura.
+    id_customer_supplier: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("customer_supplier.id_customer_supplier"), nullable=True, index=True)
+    supplier_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     order_status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="draft", server_default=text("'draft'"))
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
@@ -228,8 +231,9 @@ class PurchaseVoucher(_Serializable, Base):
         Integer, primary_key=True, autoincrement=True)
     id_purchase_order: Mapped[int] = mapped_column(
         Integer, ForeignKey("purchase_order.id_purchase_order"), nullable=False, index=True)
-    # Del proveedor de la orden, copiado: el folio es unico POR PROVEEDOR.
-    id_customer_supplier: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Del proveedor de la orden, copiado: el folio es unico POR PROVEEDOR. Vacio si la
+    # orden lleva un proveedor escrito a mano, sin alta.
+    id_customer_supplier: Mapped[int | None] = mapped_column(Integer, nullable=True)
     kind: Mapped[str] = mapped_column(String(14), nullable=False)
     folio: Mapped[str | None] = mapped_column(String(60), nullable=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)

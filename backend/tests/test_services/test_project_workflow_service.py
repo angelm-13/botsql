@@ -1213,6 +1213,28 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         take_project(id_proyect, self.workshop)
         require_task_access(id_task, self.workshop, escribe=True)
 
+    def test_the_supervisor_captures_tasks_in_their_own_project_only(self):
+        """El Supervisor captura tareas en lo que creo o lidera, no en lo ajeno."""
+        from app.services.project_management_service import require_project_taken_by_actor
+
+        propio = self._create(self.supervisor, "Propio")["id_proyect"]
+        ajeno = self._create(self.other_supervisor, "Ajeno")["id_proyect"]
+
+        require_project_taken_by_actor(propio, self.supervisor)
+        with self.assertRaises(AppError) as fallo:
+            require_project_taken_by_actor(ajeno, self.supervisor)
+        self.assertEqual("errors.project_not_taken_by_actor", fallo.exception.message_key)
+
+    def test_the_workshop_still_needs_to_hold_the_project_to_capture(self):
+        """Para el Jefe de taller nada cambia: solo lo que tomo."""
+        from app.services.project_management_service import require_project_taken_by_actor
+
+        id_proyect = self._autorizado()
+        with self.assertRaises(AppError):
+            require_project_taken_by_actor(id_proyect, self.workshop)
+        take_project(id_proyect, self.workshop)
+        require_project_taken_by_actor(id_proyect, self.workshop)
+
     def test_the_workshop_takes_a_free_project(self):
         id_proyect = self._autorizado()
 

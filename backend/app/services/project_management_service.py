@@ -881,14 +881,31 @@ def require_project_open(project_id) -> None:
                             "management_status": project.management_status})
 
 
-def require_project_taken_by_actor(project_id, user_data: dict) -> None:
-    """El proyecto debe estar TOMADO por este actor (`take_project`).
+def es_proyecto_propio_para_capturar(project, user_data: dict) -> bool:
+    """El actor puede capturar tareas y bitacora en este proyecto.
 
-    Correccion de negocio explicita (2026-09-28): Jefe de taller sube tareas
-    y bitacora del proyecto al que se asigno, no de cualquier proyecto
-    visible del taller. `_scoped_query` (scope "execution") es mas ancha a
-    proposito -- deja ver todo lo autorizado para poder tomarlo -- asi que no
-    alcanza para esta regla; hace falta el candado aparte.
+    Es suyo si lo tomo como Jefe de taller (`id_supervisor`), o si lo lidera
+    (`leader`) o lo creo (`created_by`): lo mismo que el Gestor llama "Propios"
+    en `proyect` para un Supervisor. Correccion de negocio (2026-09-28): Jefe
+    de taller sube tareas del proyecto al que se asigno, no de cualquiera
+    visible del taller; pedido de Alan (2026-11-05): el Supervisor captura en
+    los suyos. Espejo en `frontend/src/pages/TaskPage.jsx` (filtro del
+    selector de proyecto).
+    """
+    actor = _actor_id(user_data)
+    return actor is not None and actor in {
+        _safe_int(project.id_supervisor),
+        _safe_int(getattr(project, "leader", None)),
+        _safe_int(getattr(project, "created_by", None)),
+    }
+
+
+def require_project_taken_by_actor(project_id, user_data: dict) -> None:
+    """El proyecto debe ser propio del actor (ver `es_proyecto_propio_para_capturar`).
+
+    `_scoped_query` (scope "execution") es mas ancha a proposito -- deja ver
+    todo lo autorizado para poder tomarlo -- asi que no alcanza para esta
+    regla; hace falta el candado aparte.
     """
     if _is_unrestricted(user_data):
         return
@@ -896,7 +913,7 @@ def require_project_taken_by_actor(project_id, user_data: dict) -> None:
         project = db.get(Proyect, project_id)
         if not project or project.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
-        if _safe_int(project.id_supervisor) != _actor_id(user_data):
+        if not es_proyecto_propio_para_capturar(project, user_data):
             raise AppError("errors.project_not_taken_by_actor", 403,
                            {"id_proyect": project_id})
 

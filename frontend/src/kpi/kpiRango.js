@@ -154,6 +154,37 @@ export function formatoDeRango(inicio, fin, { locale = "es-MX" } = {}) {
   return `${a.dia} ${mesA} ${a.anio} – ${b.dia} ${mesB} ${b.anio}`;
 }
 
+/** Cuantos dias tiene un rango, contando ambos extremos ("2026-10-06" a "2026-11-04" son 30). 0 si una fecha no es valida o el rango va al reves. */
+export function diasDeRango(inicio, fin) {
+  const a = partesDeFecha(inicio);
+  const b = partesDeFecha(fin);
+  if (!a || !b) return 0;
+  const dias = Math.round((Date.UTC(b.anio, b.mes, b.dia) - Date.UTC(a.anio, a.mes, a.dia)) / 86400000) + 1;
+  return dias > 0 ? dias : 0;
+}
+
+/** "6 oct – 4 nov 2026 (30 días)"; un solo dia dice "(1 día)". `textos.uno` y `textos.otros` son plantillas ("1 día", "{n} días"). */
+export function formatoDeRangoConDias(inicio, fin, { locale = "es-MX", textos = {} } = {}) {
+  const rango = formatoDeRango(inicio, fin, { locale });
+  const dias = diasDeRango(inicio, fin);
+  if (!rango || !dias) return rango;
+  const plantilla = dias === 1 ? (textos.uno || "1 día") : (textos.otros || "{n} días");
+  return `${rango} (${plantilla.replace("{n}", String(dias))})`;
+}
+
+/** Como `formatoDeRango`, pero SIN el año cuando todo el rango cae en `anioDeReferencia` ("6 sep – 5 oct"): para leyendas chicas, donde el
+ * año ya lo dice el rango principal. Si algun extremo es de otro año, lleva el año completo. Sin `anioDeReferencia` es `formatoDeRango`. */
+export function formatoDeRangoCorto(inicio, fin, { locale = "es-MX", anioDeReferencia = null } = {}) {
+  const a = partesDeFecha(inicio);
+  const b = partesDeFecha(fin);
+  if (!a || !b) return "";
+  if (!anioDeReferencia || a.anio !== anioDeReferencia || b.anio !== anioDeReferencia) return formatoDeRango(inicio, fin, { locale });
+  const mesA = nombreDeMes(a.mes, a.anio, "short", locale);
+  const mesB = nombreDeMes(b.mes, b.anio, "short", locale);
+  if (a.mes === b.mes) return a.dia === b.dia ? `${a.dia} ${mesA}` : `${a.dia} – ${b.dia} ${mesA}`;
+  return `${a.dia} ${mesA} – ${b.dia} ${mesB}`;
+}
+
 /** "1 de octubre de 2026 al 30 de octubre de 2026": para el tooltip. */
 export function formatoDeRangoLargo(inicio, fin, { locale = "es-MX", al = "al" } = {}) {
   const a = partesDeFecha(inicio);

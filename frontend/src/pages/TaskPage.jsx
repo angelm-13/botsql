@@ -130,17 +130,20 @@ export default function TaskPage() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
       if (canSeeField("id_proyect")) {
         try {
-          const proyectData = await getAllProyect({ page: 1, per_page: 100 });
+          // Todas las paginas: con solo la primera, un proyecto propio que
+          // cayera en la segunda no aparecia en el selector.
+          const proyectData = await fetchAllPages(getAllProyect);
           const todos = Array.isArray(proyectData) ? proyectData : (proyectData.items || []);
-          // El backend exige que el proyecto este TOMADO por el actor
-          // (`require_project_taken_by_actor`, pedido de negocio del
-          // 2026-09-28) -- ofrecer aqui proyectos libres o de otro Jefe de
-          // taller era un boton visible que el servidor siempre iba a
-          // rechazar con 403. Quien es unrestricted (Administrator/
-          // superusuario) si puede dar de alta sobre cualquiera, igual que
-          // ya le permite el backend.
-          setProyectOptions(isSuperUser ? todos
-            : todos.filter((p) => Number(p.id_supervisor) === Number(currentUser?.id_user)));
+          // Espejo de `es_proyecto_propio_para_capturar` (backend): se ofrecen
+          // solo los proyectos propios -- tomado como Jefe de taller, liderado
+          // o creado por el actor (lo que el Supervisor ve como "Propios").
+          // Ofrecer otros era una opcion que el servidor rechaza con 403.
+          // Administrator/superusuario captura en cualquiera, igual que el
+          // backend.
+          const yo = Number(currentUser?.id_user);
+          const esPropio = (p) => [p.id_supervisor, p.leader, p.created_by]
+            .some((id) => id != null && Number(id) === yo);
+          setProyectOptions(isSuperUser ? todos : todos.filter(esPropio));
         } catch (_) {
           setProyectOptions([]);
         }
