@@ -62,6 +62,11 @@ jobs:
             echo "::error::No hay commit previo contra el cual comparar (rama nueva)."; exit 1
           fi
           cambios="$(git diff --name-only "$ANTES" "$DESPUES" -- 'k8s/overlays/*/kustomization.yaml' | grep -v '^k8s/overlays/_template/' || true)"
+          # tyakxa-dev lo despliega el bot de CD en cada push a initAlan, asi que casi todo PR que
+          # traiga commits de initAlan lo incluye. No es una promocion a un cliente: si hay OTRO
+          # overlay cambiado se ignora el de dev; si es el unico, se trata como promocion (ensayo).
+          otros="$(printf '%s\n' "$cambios" | grep -v '^k8s/overlays/tyakxa-dev/' || true)"
+          if [ -n "$otros" ]; then cambios="$otros"; fi
           n="$(printf '%s\n' "$cambios" | grep -c . || true)"
           if [ "$n" != "1" ]; then
             echo "::error::Una promocion es UN cliente. Overlays cambiados: $n"
@@ -89,6 +94,11 @@ jobs:
           git cat-file -e "${be}^{commit}" 2>/dev/null || { echo "::error::El commit $be no existe en el repositorio."; exit 1; }
           git merge-base --is-ancestor "$be" origin/initAlan \
             || { echo "::error::El commit $be no esta en initAlan."; exit 1; }
+          # Y tiene que estar DENTRO de lo que se va a sincronizar: k8s/base y components salen de
+          # este checkout (main). Si main fuera anterior al commit, se aplicaria un base viejo
+          # con imagenes nuevas.
+          git merge-base --is-ancestor "$be" "$DESPUES" \
+            || { echo "::error::El commit $be no esta dentro de main: k8s/base podria ser anterior al codigo que se promueve."; exit 1; }
 
           echo "namespace=$ns" >> "$GITHUB_OUTPUT"
           echo "tag=$be" >> "$GITHUB_OUTPUT"
