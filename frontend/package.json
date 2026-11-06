@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "test": "node --test --test-concurrency=1 \"src/kpi/*.test.js\" \"src/kpi/*.test.mjs\" \"src/dialogo/*.test.js\" \"src/layouts/*.test.js\" \"src/notifications/*.test.js\" \"src/utils/*.test.js\""
+    "test": "node --test --test-concurrency=1 \"src/kpi/*.test.js\" \"src/kpi/*.test.mjs\" \"src/api/*.test.js\" \"src/dialogo/*.test.js\" \"src/layouts/*.test.js\" \"src/notifications/*.test.js\" \"src/utils/*.test.js\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

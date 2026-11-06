@@ -560,3 +560,27 @@ test("barras agrupadas por periodo: Orientacion deshabilitada con la nota del ej
   for (const etiqueta of ["Automática", "Horizontal", "Vertical"]) assert.match(chip(seccion, etiqueta), /disabled/, etiqueta);
   assert.match(seccion, /Agrupado por periodo el eje son fechas: solo se dibuja vertical\./);
 });
+
+// --- U5: el catalogo del editor cargando, fallido o vacio ---------------------------------------------------------------
+test("el editor distingue 'cargando', 'no se pudieron cargar' y 'no hay KPIs'", () => {
+  const cargando = pintarPanel({ kpiCatalog: [], catalogoEstado: "cargando" });
+  assert.ok(cargando.includes("Cargando KPIs…"));
+  assert.ok(!cargando.includes("No hay KPIs para mostrar") && !cargando.includes("pide a tu administrador"), "cargar no es no tener permiso");
+
+  const fallo = pintarPanel({ kpiCatalog: [], catalogoEstado: "error" });
+  assert.ok(fallo.includes("No se pudieron cargar los KPIs") && fallo.includes("Reintentar"));
+  assert.ok(!fallo.includes("pide a tu administrador"), "una caida de red no manda a pedir permisos");
+  assert.match(fallo, /<button type="button" class="button">Reintentar<\/button>/);
+
+  const vacio = pintarPanel({ kpiCatalog: [], catalogoEstado: "listo" });
+  assert.ok(vacio.includes("No hay KPIs para mostrar") && vacio.includes("pide a tu administrador"));
+  assert.ok(!vacio.includes("Reintentar") && !vacio.includes("Cargando KPIs…"));
+
+  const lista = pintarPanel({ kpiCatalog: REGISTRY, catalogoEstado: "listo" });
+  assert.ok(!lista.includes("No hay KPIs para mostrar") && !lista.includes("Cargando KPIs…") && !lista.includes("Reintentar"));
+});
+
+test("sin pasar el estado (como antes), un catalogo con KPIs se pinta normal y uno vacio dice 'No hay KPIs'", () => {
+  assert.ok(!pintarPanel({ kpiCatalog: REGISTRY }).includes("No hay KPIs para mostrar"));
+  assert.ok(pintarPanel({ kpiCatalog: [] }).includes("No hay KPIs para mostrar"));
+});

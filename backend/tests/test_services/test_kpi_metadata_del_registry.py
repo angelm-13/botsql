@@ -186,16 +186,15 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class EtiquetaDeIncidenciasAbiertasTest(unittest.TestCase):
-    def test_se_llama_por_responsable_porque_es_id_user_no_quien_capturo(self):
-        # id_user es el usuario a cuyo nombre esta el vale (quien TIENE el
-        # material), no quien lo capturo. La clave no cambia: hay widgets y
-        # permisos que la referencian.
+class EtiquetaDeIncidenciasRegistradasTest(unittest.TestCase):
+    def test_dice_registradas_porque_cuenta_todas_sin_importar_el_estatus(self):
+        # El KPI cuenta las incidencias capturadas por empleado, abiertas o no (las de
+        # asistencias no tienen un "abierta/cerrada" con el mismo sentido). La clave no
+        # cambia: hay widgets y permisos que la referencian.
         kpi = KPI_POR_CLAVE["incidencias_abiertas_por_empleado"]
-        self.assertEqual("Incidencias abiertas por responsable", kpi.etiqueta)
-        self.assertIn("responsable", kpi.descripcion.lower())
-        self.assertNotIn("levanto", kpi.descripcion.lower())
-        self.assertNotIn("empleado", kpi.etiqueta.lower())
+        self.assertEqual("Incidencias registradas por empleado", kpi.etiqueta)
+        self.assertEqual("Incidencias capturadas por empleado, sin importar su estatus", kpi.descripcion)
+        self.assertNotIn("abiertas", kpi.etiqueta.lower())
 
 
 class EtiquetaDeDimensionTest(unittest.TestCase):

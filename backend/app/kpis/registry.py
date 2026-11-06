@@ -320,6 +320,8 @@ def vales_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, filtr
     fecha_col = func.date(NmIncidentProduct.due_date)
     condiciones = [
         NmIncidentProduct.deletion_date.is_(None),
+        # Solo lo que SALIO del almacen se reclama: una ENTRADA no es un prestamo (igual que los otros KPI de prestamos).
+        NmIncidentProduct.direction == SALIDA,
         or_(
             NmIncidentProduct.close_date.is_(None),
             NmIncidentProduct.close_date == CIERRE_SENTINELA,
@@ -853,15 +855,17 @@ def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimensi
     de la pantalla, no de este query.
 
     Dimension "producto". Sin alcance de proyecto: el saldo de almacen no le
-    pertenece a un proyecto de cliente.
+    pertenece a un proyecto de cliente. Un producto dado de baja (`deletion_date`) no cuenta.
     """
     productos = (filtros_dimension or {}).get("productos")
-    condiciones = []
+    # Un producto dado de baja ya no existe para el negocio aunque conserve saldo en `inventory_stock`.
+    condiciones = [Product.deletion_date.is_(None)]
     if productos:
         condiciones.append(InventoryStock.id_product.in_(productos))
 
     stmt = (
         select(InventoryStock.id_product, func.sum(InventoryStock.quantity))
+        .join(Product, Product.id_product == InventoryStock.id_product)
         .where(*condiciones)
         .group_by(InventoryStock.id_product)
         .order_by(InventoryStock.id_product)
@@ -926,6 +930,10 @@ def incidencias_abiertas_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     return session.execute(stmt).all()
 
 
+# Estatus de una incidencia/vale cancelado: "cancelada" (incidencias) y "cancelado" (vales, `CANCELADO`).
+ESTATUS_CANCELADO = ("cancelada", "cancelado")
+
+
 def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Foto: cuantas incidencias seguian sin cerrar en cada dia del rango.
 
@@ -962,11 +970,16 @@ def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimen
         select(cast(func.generate_series(fecha_inicio, fecha_fin, text("interval '1 day'")), Date).label("dia"))
         .subquery()
     )
+    # Una cancelada SIN cierre real (nulo o el centinela de Adser) no esta pendiente de nada: solo parecia
+    # "sin cerrar". Una cancelada CON fecha de cierre si estuvo pendiente hasta que se cancelo (historia).
+    cancelada = func.lower(func.coalesce(Incident.incident_status, "")).in_(ESTATUS_CANCELADO)
+    con_cierre_real = and_(Incident.close_date.isnot(None), Incident.close_date != CIERRE_SENTINELA)
     condicion_pendiente = and_(
         Incident.deletion_date.is_(None),
         no_es_checada(),
         Incident.incident_date.isnot(None),
         func.date(Incident.incident_date) <= dias.c.dia,
+        or_(~cancelada, con_cierre_real),
         or_(
             Incident.close_date.is_(None),
             Incident.close_date == CIERRE_SENTINELA,
@@ -1744,7 +1757,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Subtotal facturado (antes de impuesto), por empleado y por dia.",
+        descripcion="Subtotal facturado (antes de impuesto), por empleado y por día.",
     ),
     KpiDefinition(
         clave="egresos_por_empleado",
@@ -1757,7 +1770,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Facturas de compra capturadas, por empleado y por dia.",
+        descripcion="Facturas de compra capturadas, por empleado y por día.",
     ),
     KpiDefinition(
         clave="desarrollo_por_empleado",
@@ -1813,7 +1826,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Incidentes cancelados, por empleado y por dia de cancelacion.",
+        descripcion="Incidentes cancelados, por empleado y por día de cancelación.",
     ),
     KpiDefinition(
         clave="ordenes_laboratorio_entregadas_por_tecnico",
@@ -1827,7 +1840,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Ordenes de servicio entregadas, por tecnico.",
+        descripcion="Órdenes de servicio entregadas, por técnico.",
     ),
     KpiDefinition(
         clave="tiempo_promedio_reparacion_laboratorio_por_tecnico",
@@ -1841,7 +1854,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Dias promedio de reparacion, por tecnico.",
+        descripcion="Días promedio de reparación, por técnico.",
     ),
     KpiDefinition(
         clave="costo_promedio_reparacion_laboratorio_por_tecnico",
@@ -1855,7 +1868,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Costo promedio de reparacion, por tecnico.",
+        descripcion="Costo promedio de reparación, por técnico.",
     ),
     KpiDefinition(
         clave="documentos_vencidos_por_responsable",
@@ -1885,7 +1898,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="linea",
-        descripcion="Ventas facturadas de toda la empresa, por dia.",
+        descripcion="Ventas facturadas de toda la empresa, por día.",
     ),
     KpiDefinition(
         clave="egresos_totales",
@@ -1898,7 +1911,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="linea",
-        descripcion="Facturas de compra de toda la empresa, por dia.",
+        descripcion="Facturas de compra de toda la empresa, por día.",
     ),
     KpiDefinition(
         clave="material_prestado_por_responsable",
@@ -1913,7 +1926,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Prestamos de material iniciados, por responsable y por dia.",
+        descripcion="Préstamos de material iniciados, por responsable y por día.",
     ),
     KpiDefinition(
         clave="prestamos_vencidos_por_responsable",
@@ -1966,7 +1979,7 @@ KPI_REGISTRY = (
     # un proyecto de cliente, mismo motivo que sus vecinos de este modulo. --
     KpiDefinition(
         clave="incidencias_abiertas_por_empleado",
-        etiqueta="Incidencias abiertas por responsable",
+        etiqueta="Incidencias registradas por empleado",
         modulo="operaciones",
         dimensiones=("empleado",),
         etiqueta_dimension="Responsable",
@@ -1977,7 +1990,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("barras", "tabla"),
         grafica_default="barras",
-        descripcion="Incidencias/vales abiertos, por responsable: el usuario a cuyo nombre esta el material.",
+        descripcion="Incidencias capturadas por empleado, sin importar su estatus",
     ),
     KpiDefinition(
         clave="incidencias_pendientes",
@@ -1991,7 +2004,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=("numero",),
         grafica_default="numero",
-        descripcion="Foto de cuantas incidencias siguen sin cerrar hoy.",
+        descripcion="Foto de cuántas incidencias siguen sin cerrar hoy.",
     ),
     KpiDefinition(
         clave="incidencias_abiertas_vs_cerradas",
@@ -2009,7 +2022,7 @@ KPI_REGISTRY = (
         # categoria, no por posicion -- coral para "abierta" (llama la
         # atencion, hay que atenderla), verde para "cerrada" (resuelta, bien).
         colores_categoria={"abierta": "#ef6f5c", "cerrada": "#22b573"},
-        descripcion="Cuantas incidencias se abren y cuantas se cierran, por dia.",
+        descripcion="Cuántas incidencias se abren y cuántas se cierran, por día.",
     ),
     KpiDefinition(
         clave="material_por_estado",

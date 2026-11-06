@@ -8,8 +8,10 @@ no delatar que el tablero ajeno existe- antes de tocar el widget.
 
 from __future__ import annotations
 
+import json
+import math
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import delete, select
 
@@ -18,6 +20,7 @@ from app.models.kpi_dashboard_widget import KpiDashboardWidget
 from app.models.kpi_dashboard_widget_kpi import KpiDashboardWidgetKpi
 from app.models.kpi_definition import KpiDefinition
 from app.models.session import transaction_context
+from app.modules.plan import limite
 from app.services.base_service import CrudService
 from app.services.kpi_dashboard_service import KpiDashboardService
 from app.utils.auth import has_kpi_permission
@@ -100,6 +103,107 @@ def validar_titulo(valor) -> str | None:
     if _CODIGOS_DE_CONTROL.search(titulo) or _ETIQUETA_HTML.search(titulo):
         raise AppError('errors.invalid_field', 400, {'field': 'titulo'})
     return titulo
+
+
+# --- el resto de `parametros` --------------------------------------------------------------------------------------
+#
+# Lo que el editor del Dashboard guarda (`kpi/kpiParametros.js`, `armarParametros` y `parametrosConRangoRelativo` en
+# `kpi/kpiFechasFijas.js`) mas lo que escribe la plantilla (`scripts/seed_kpi_dashboard_template.py`). Una llave fuera de
+# esta lista es 400 -con una salvedad: en un UPDATE se toleran las llaves que el widget YA traia guardadas, porque el
+# editor (`parametrosConRangoRelativo`) las reenvia todas al convertir un rango a relativo-.
+CLAVES_DE_PARAMETROS = frozenset({
+    'fecha_inicio', 'fecha_fin', 'fecha_inicio_b', 'fecha_fin_b', 'rango_relativo', 'comparar_anterior',
+    'comparar_desfase_dias', 'empleados', 'id_teams', 'colores_kpi', 'agrupar_por', 'relleno', 'orientacion', 'titulo',
+    'umbral_bajo_stock', 'columnas', 'filas', 'orden_tabla',
+})
+# Un `parametros` real mide unos cientos de bytes; este tope solo corta lo que no es un widget.
+PARAMETROS_BYTES_MAX = 16 * 1024
+LISTA_DE_IDS_MAX = 500
+COLORES_MAX = 50
+RANGOS_RELATIVOS = ('hoy', '7_dias', '30_dias', '90_dias', 'este_mes', 'mes_anterior', 'este_anio', 'personalizado')
+AGRUPACIONES = ('entidad', 'periodo')
+DESFASE_MAX_DIAS = 366
+# El mismo tope de dias que `/kpi_snapshot/query` (`routes/kpi.py`): un widget que no se podria consultar no se guarda.
+RANGO_DIAS_MAX_POR_OMISION = 365
+_FECHA = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_COLOR = re.compile(r'^#[0-9a-fA-F]{6}$')
+
+
+def _falla(clave: str, motivo: str, **meta) -> None:
+    raise AppError('errors.invalid_field', 400, {'field': f'parametros.{clave}', 'reason': motivo, **meta})
+
+
+def _fecha_de(parametros: dict, clave: str):
+    """La fecha `AAAA-MM-DD` de `clave`, o `None` si no viene (ausente, nula o vacia: asi la deja el editor sin rango B)."""
+    valor = parametros.get(clave)
+    if valor is None or valor == '':
+        return None
+    if not isinstance(valor, str) or not _FECHA.match(valor):
+        _falla(clave, 'fecha_con_formato_aaaa_mm_dd')
+    try:
+        return date.fromisoformat(valor)
+    except ValueError:
+        _falla(clave, 'fecha_inexistente')
+
+
+def _entero(valor) -> bool:
+    return isinstance(valor, int) and not isinstance(valor, bool)
+
+
+def _id_valido(valor) -> bool:
+    if _entero(valor):
+        return valor > 0
+    return isinstance(valor, str) and valor.isascii() and valor.isdigit() and int(valor) > 0
+
+
+def _validar_rango_de_fechas(parametros: dict, sufijo: str) -> None:
+    inicio = _fecha_de(parametros, f'fecha_inicio{sufijo}')
+    fin = _fecha_de(parametros, f'fecha_fin{sufijo}')
+    if inicio is None or fin is None:
+        return
+    if fin < inicio:
+        _falla(f'fecha_fin{sufijo}', 'fin_antes_del_inicio')
+    dias_maximo = limite('kpi_rango_dias_max', RANGO_DIAS_MAX_POR_OMISION)
+    if (fin - inicio).days > dias_maximo:
+        raise AppError('errors.rango_excede_limite', 400, {'field': f'parametros.fecha_fin{sufijo}', 'dias_maximo': dias_maximo})
+
+
+def _validar_los_demas_parametros(parametros: dict, conocidas: set) -> None:
+    """Tipo y rango de cada llave que el editor guarda. `conocidas`: las que se validan (las toleradas de un update no)."""
+    for clave in ('rango_relativo',):
+        if clave in conocidas and parametros[clave] not in RANGOS_RELATIVOS:
+            _falla(clave, 'valor_no_permitido', allowed=list(RANGOS_RELATIVOS))
+    if 'agrupar_por' in conocidas and parametros['agrupar_por'] not in AGRUPACIONES:
+        _falla('agrupar_por', 'valor_no_permitido', allowed=list(AGRUPACIONES))
+    if 'comparar_anterior' in conocidas and not isinstance(parametros['comparar_anterior'], bool):
+        _falla('comparar_anterior', 'debe_ser_verdadero_o_falso')
+    if 'comparar_desfase_dias' in conocidas:
+        dias = parametros['comparar_desfase_dias']
+        if not _entero(dias) or not 1 <= dias <= DESFASE_MAX_DIAS:
+            _falla('comparar_desfase_dias', 'entero_entre_1_y_366')
+    for clave in ('empleados', 'id_teams'):
+        if clave in conocidas:
+            lista = parametros[clave]
+            if not isinstance(lista, list) or len(lista) > LISTA_DE_IDS_MAX:
+                _falla(clave, 'lista_de_ids', max_items=LISTA_DE_IDS_MAX)
+            if not all(_id_valido(item) for item in lista):
+                _falla(clave, 'ids_enteros_positivos')
+    if 'colores_kpi' in conocidas:
+        colores = parametros['colores_kpi']
+        if not isinstance(colores, dict) or len(colores) > COLORES_MAX:
+            _falla('colores_kpi', 'diccionario_de_colores', max_items=COLORES_MAX)
+        for id_kpi, color in colores.items():
+            if not _id_valido(id_kpi):
+                _falla('colores_kpi', 'llave_debe_ser_el_id_del_kpi')
+            if not isinstance(color, str) or not _COLOR.match(color):
+                _falla('colores_kpi', 'color_hexadecimal_de_6_digitos', example='#2a78d6')
+    if 'umbral_bajo_stock' in conocidas:
+        umbral = parametros['umbral_bajo_stock']
+        if isinstance(umbral, bool) or not isinstance(umbral, (int, float)) or not math.isfinite(umbral) or abs(umbral) > 1e12:
+            _falla('umbral_bajo_stock', 'numero_finito')
+    for clave in ('columnas', 'filas'):
+        if clave in conocidas and (not _entero(parametros[clave]) or parametros[clave] not in (1, 2)):
+            _falla(clave, 'uno_o_dos')
 
 
 class KpiDashboardWidgetService(CrudService):
@@ -242,11 +346,31 @@ class KpiDashboardWidgetService(CrudService):
         return tipo_grafica
 
     @staticmethod
-    def _validar_parametros(parametros) -> dict:
-        """Valida `parametros` y regresa lo que se guarda: una copia, con el titulo ya recortado (o sin la llave si esta vacio)."""
+    def _validar_parametros(parametros, existentes=()) -> dict:
+        """Valida `parametros` y regresa lo que se guarda: una copia, con el titulo ya recortado (o sin la llave si esta vacio).
+
+        Todo fallo es 400 (`errors.invalid_field`, `errors.field_too_long` o `errors.rango_excede_limite`) con `meta.field`
+        (`parametros.<llave>`) y `meta.reason`; nunca un 500. `existentes`: las llaves que el widget ya tenia guardadas
+        (solo en un update); se toleran aunque no esten en `CLAVES_DE_PARAMETROS` para no romper un widget viejo.
+        """
         if not isinstance(parametros, dict):
             raise AppError('errors.invalid_field', 400, {'field': 'parametros'})
         parametros = dict(parametros)
+        try:
+            tamano = len(json.dumps(parametros, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
+        except (TypeError, ValueError):
+            raise AppError('errors.invalid_field', 400, {'field': 'parametros', 'reason': 'no_es_json'})
+        if tamano > PARAMETROS_BYTES_MAX:
+            raise AppError('errors.field_too_long', 400, {'field': 'parametros', 'max_bytes': PARAMETROS_BYTES_MAX, 'actual_bytes': tamano})
+        desconocidas = sorted(set(parametros) - CLAVES_DE_PARAMETROS - set(existentes))
+        if desconocidas:
+            raise AppError('errors.invalid_field', 400, {
+                'field': 'parametros', 'reason': 'claves_desconocidas', 'unknown_keys': desconocidas,
+                'allowed': sorted(CLAVES_DE_PARAMETROS),
+            })
+        _validar_rango_de_fechas(parametros, '')
+        _validar_rango_de_fechas(parametros, '_b')
+        _validar_los_demas_parametros(parametros, set(parametros) & CLAVES_DE_PARAMETROS)
         if 'orden_tabla' in parametros:
             validar_orden_tabla(parametros['orden_tabla'])
         if 'relleno' in parametros:
@@ -343,13 +467,14 @@ class KpiDashboardWidgetService(CrudService):
         # CRUD generico.
         payload.pop('id_kpi_dashboard', None)
         payload.pop('id_kpi_dashboard_widget', None)
-        if payload.get('parametros') is not None:
-            payload['parametros'] = cls._validar_parametros(payload['parametros'])
         hay_lista_nueva = 'ids_kpi_definition' in payload
         ids_kpi_definition_crudo = payload.pop('ids_kpi_definition', None)
 
         with transaction_context() as session:
-            cls._widget_owned_or_404(session, id_kpi_dashboard_widget, actor_id)
+            widget = cls._widget_owned_or_404(session, id_kpi_dashboard_widget, actor_id)
+            # Se valida con el widget a la vista: las llaves que ya traia guardadas se toleran (ver `CLAVES_DE_PARAMETROS`).
+            if payload.get('parametros') is not None:
+                payload['parametros'] = cls._validar_parametros(payload['parametros'], existentes=set(widget.parametros or {}))
             ids_kpi_definition = (
                 cls._validar_kpis_o_falla(session, user_data, ids_kpi_definition_crudo)
                 if hay_lista_nueva else None

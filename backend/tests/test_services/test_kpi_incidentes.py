@@ -110,7 +110,7 @@ class KpiIncidentesTest(unittest.TestCase):
     def _vale(self, id_nm_incident_product, id_incident, due_date=None, close_date=None):
         return NmIncidentProduct(
             id_nm_incident_product=id_nm_incident_product, id_incident=id_incident, id_product=PRODUCT,
-            quantity=1, due_date=due_date, close_date=close_date, created_by=ADMIN_ID,
+            quantity=1, direction="salida", due_date=due_date, close_date=close_date, created_by=ADMIN_ID,
         )
 
     # --- vales_vencidos_por_responsable_query ---------------------------

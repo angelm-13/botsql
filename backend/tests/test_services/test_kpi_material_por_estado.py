@@ -20,6 +20,8 @@ EMPLEADO = 980
 INCIDENT_TYPE_NORMAL = 980
 INCIDENT_TYPE_DESTRUCCION = 981
 INCIDENT_TYPE_EXTRAVIADO = 982
+INCIDENT_TYPE_DANADO_SIN_ENIE = 983
+INCIDENT_TYPE_DESTRUCCION_ACENTO = 984
 LOCATION_TYPE = 980
 LOCATION = 980
 BRAND = 980
@@ -43,6 +45,8 @@ class MaterialPorEstadoQueryTest(unittest.TestCase):
             db.add(IncidentType(id_incident_type=INCIDENT_TYPE_NORMAL, incident_type_description="Vale normal", created_by=ADMIN_ID))
             db.add(IncidentType(id_incident_type=INCIDENT_TYPE_DESTRUCCION, incident_type_description="Destruccion", created_by=ADMIN_ID))
             db.add(IncidentType(id_incident_type=INCIDENT_TYPE_EXTRAVIADO, incident_type_description="Extraviado", created_by=ADMIN_ID))
+            db.add(IncidentType(id_incident_type=INCIDENT_TYPE_DANADO_SIN_ENIE, incident_type_description="Danado", created_by=ADMIN_ID))
+            db.add(IncidentType(id_incident_type=INCIDENT_TYPE_DESTRUCCION_ACENTO, incident_type_description="Destrucción", created_by=ADMIN_ID))
             db.add(LocationType(id_location_type=LOCATION_TYPE, location_type_description="KPI test", is_warehouse=True, created_by=ADMIN_ID))
             db.add(Brand(id_brand=BRAND, brand_description="KPI test", created_by=ADMIN_ID))
             db.add(ProductFamily(id_product_family=PRODUCT_FAMILY, product_family_description="KPI test", created_by=ADMIN_ID))
@@ -68,7 +72,8 @@ class MaterialPorEstadoQueryTest(unittest.TestCase):
         with transaction_context() as db:
             db.execute(delete(NmIncidentProduct).where(NmIncidentProduct.id_product == PRODUCT))
             db.execute(delete(Incident).where(Incident.id_incident_type.in_(
-                [INCIDENT_TYPE_NORMAL, INCIDENT_TYPE_DESTRUCCION, INCIDENT_TYPE_EXTRAVIADO])))
+                [INCIDENT_TYPE_NORMAL, INCIDENT_TYPE_DESTRUCCION, INCIDENT_TYPE_EXTRAVIADO,
+                 INCIDENT_TYPE_DANADO_SIN_ENIE, INCIDENT_TYPE_DESTRUCCION_ACENTO])))
             db.execute(delete(Product).where(Product.id_product == PRODUCT))
             db.execute(delete(Invoice).where(Invoice.id_invoice == INVOICE))
             db.execute(delete(Material).where(Material.id_material == MATERIAL))
@@ -78,7 +83,8 @@ class MaterialPorEstadoQueryTest(unittest.TestCase):
             db.execute(delete(Brand).where(Brand.id_brand == BRAND))
             db.execute(delete(LocationType).where(LocationType.id_location_type == LOCATION_TYPE))
             db.execute(delete(IncidentType).where(IncidentType.id_incident_type.in_(
-                [INCIDENT_TYPE_NORMAL, INCIDENT_TYPE_DESTRUCCION, INCIDENT_TYPE_EXTRAVIADO])))
+                [INCIDENT_TYPE_NORMAL, INCIDENT_TYPE_DESTRUCCION, INCIDENT_TYPE_EXTRAVIADO,
+                 INCIDENT_TYPE_DANADO_SIN_ENIE, INCIDENT_TYPE_DESTRUCCION_ACENTO])))
             db.execute(delete(User).where(User.id_user == EMPLEADO))
 
     def _incidente(self, id_incident, id_incident_type, incident_date):
@@ -173,6 +179,24 @@ class MaterialPorEstadoQueryTest(unittest.TestCase):
             filas = material_por_estado_query(db, date(2031, 9, 5), date(2031, 9, 5), {}, None)
 
         self.assertEqual([("Entrada", date(2031, 9, 5), 1)], [tuple(f) for f in filas])
+
+    def test_danado_sin_enie_y_destruccion_con_acento_dan_la_misma_llave_que_el_catalogo(self):
+        with transaction_context() as db:
+            db.add_all([
+                self._incidente(9804, INCIDENT_TYPE_DANADO_SIN_ENIE, datetime(2031, 9, 4)),
+                self._incidente(9805, INCIDENT_TYPE_DESTRUCCION_ACENTO, datetime(2031, 9, 4)),
+            ])
+            db.flush()
+            db.add_all([self._renglon(98004, 9804, "salida"), self._renglon(98005, 9805, "salida")])
+
+        with transaction_context() as db:
+            filas = material_por_estado_query(db, date(2031, 9, 4), date(2031, 9, 4), {}, None)
+
+        # Las llaves son las de `colores_categoria`: "Dañado" (con enie) y "Destruccion" (sin acento), no "Salida".
+        self.assertEqual(
+            [("Dañado", date(2031, 9, 4), 1), ("Destruccion", date(2031, 9, 4), 1)],
+            sorted([tuple(f) for f in filas]),
+        )
 
 
 if __name__ == "__main__":

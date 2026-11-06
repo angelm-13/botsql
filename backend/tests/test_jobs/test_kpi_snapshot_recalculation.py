@@ -235,7 +235,7 @@ class RecalculateKpiSnapshotsSinAlcanceDeProyectoTest(unittest.TestCase):
             db.flush()
             db.add(NmIncidentProduct(
                 id_nm_incident_product=VALE_JOB, id_incident=INCIDENT_JOB, id_product=PRODUCT_JOB,
-                quantity=1, due_date=ahora_negocio() - timedelta(days=1), created_by=ADMIN_ID,
+                quantity=1, direction="salida", due_date=ahora_negocio() - timedelta(days=1), created_by=ADMIN_ID,
             ))
 
     def tearDown(self):
