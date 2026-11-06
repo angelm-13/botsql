@@ -25,12 +25,12 @@ name: build-images
 
 on:
   push:
-    # Por ahora el despliegue se hace desde initAlan, no desde main
-    # (todavía no hay PR) — se deja "main" en la lista para que el
-    # día que se mergee, este mismo trigger siga funcionando sin
-    # tocar nada. Quitar "initAlan" cuando esa rama deje de ser la
-    # fuente de los despliegues.
-    branches: [main, initAlan]
+    # Las imagenes se construyen SOLO desde initAlan. `main` es lo certificado para clientes:
+    # recibe commits ya construidos (y merge commits de los PR de promocion), y el workflow
+    # `promover` toma de ghcr las imagenes que salieron de initAlan. Construir en main
+    # repetiria builds identicos y crearia tags de merge commits que nadie despliega.
+    # Para volver a construir desde main basta con anadirlo de nuevo a esta lista.
+    branches: [initAlan]
   # workflow_dispatch queda para cuando este archivo ya viva en main:
   # GitHub solo permite dispararlo a mano (CLI/API) desde OTRAS ramas
   # si el workflow ya existe en la rama default — hoy, con initAlan

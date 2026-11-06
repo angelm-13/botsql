@@ -25,3 +25,7 @@
 
 # Imagenes de contenedor.
 /infra/docker/               @AlanPerez2414 @tanyaimt
+
+# Scripts que se instalan en el servidor. promover.sh corre como comando forzado de una llave
+# SSH con permisos de administrador del cluster: un cambio aqui es un cambio de seguridad.
+/infra/scripts/              @AlanPerez2414 @tanyaimt
