@@ -338,13 +338,13 @@ export default function ProjectManagementPage() {
       setBusyId(null);
     }
   }
-  // Cambiar el estatus de una tarea (taller) es capacidad de Gerente/Jefe de
-  // taller/administrador -- ver seed de `entity_permission` para "task"
-  // (`scope_update`): Supervisor solo tiene lectura. El backend ya lo exige
-  // (`require_entity_permission('task', 'update')` en /task/<id>/transition),
-  // esto solo evita ofrecerle el control a quien de todas formas recibiria
-  // un 403.
-  const canChangeTaskStatus = mode !== "supervisor";
+  // Cambiar el estatus de una tarea lo decide el Gestor: `task` -> Actualizar
+  // (`scope_update`) distinto de "Sin acceso". El backend ya lo exige
+  // (`require_entity_permission('task', 'update')` en /task/<id>/transition); esto solo
+  // evita ofrecerle el control a quien de todas formas recibiria un 403. Ya no depende
+  // del modo de la pantalla (antes `mode !== "supervisor"` lo ocultaba a Supervisores).
+  const taskPermission = permissions.find((item) => item.entity_name === "task");
+  const canChangeTaskStatus = privileged || Number(taskPermission?.scope_update || 0) !== 0;
   const filtered = items;
 
   async function loadData(nextPage = page, nextPerPage = perPage) {
