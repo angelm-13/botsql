@@ -44,6 +44,7 @@ GRANDES = {
     "customer_supplier": 25, "ticket": 40, "task": 40, "inventory_stock": 60,
     "restaurant_order": 50, "restaurant_order_item": 120, "payroll_detail": 30,
     "movement": 50, "logistics_trip": 30, "user": 20,
+    "proyect": 40, "purchase_order": 30, "document": 30,
 }
 
 NOMBRES = ["Ana", "Luis", "Carlos", "María", "José", "Laura", "Pedro", "Sofía", "Miguel",
@@ -58,6 +59,36 @@ PRODUCTOS = ["Ventana corrediza", "Puerta de aluminio", "Vidrio templado 6mm", "
              "Riel superior", "Jaladera acero", "Cristal laminado", "Tornillo inox", "Burlete"]
 CIUDADES = ["Monterrey", "Guadalajara", "Ciudad de México", "Puebla", "Querétaro", "León", "Mérida"]
 ESTADOS = ["activo", "pendiente", "completado", "cancelado", "en proceso"]
+HERRAMIENTAS = ["DESARMADOR PLANO", "DESARMADOR DE CRUZ", "DESARMADOR PLANO LARGO", "MARTILLO DE BOLA",
+                "LLAVE ESPAÑOLA 1/2", "PINZAS DE PRESION", "TALADRO INALAMBRICO", "ESMERILADORA 4 1/2",
+                "FLEXOMETRO 5M", "NIVEL DE BURBUJA", "CINCEL PLANO", "ARNES DE SEGURIDAD", "CASCO",
+                "GUANTES DE CARNAZA", "DADO 3/8", "EXTENSION ELECTRICA", "ANDAMIO GRANDE", "SIERRA CIRCULAR"]
+
+# Los valores que de verdad usa el sistema. Sin esto, un estatus sin CHECK se llena con palabras
+# inventadas ("activo") y el BI no encuentra nada ("vales abiertos" daba 0). Un valor repetido pesa mas
+# (casi todos los vales estan cerrados; hay algunos productos agotados...). Si la tabla tiene un CHECK,
+# manda el CHECK.
+VALORES = {
+    ("incident", "incident_status"): ["cerrada"] * 5 + ["abierta"] * 3 + ["borrador", "cancelado", "en_espera", "en_transito"],
+    ("proyect", "proyect_status"): ["draft", "authorized", "in_progress", "in_progress", "waiting_material", "blocked",
+                                    "completed", "completed", "collected", "denied"],
+    ("task", "task_status"): ["pendiente", "pendiente", "en_proceso", "terminada", "terminada"],
+    ("invoice", "invoice_status"): ["pendiente", "pendiente", "captura", "timbrada", "timbrada", "cancelada"],
+    ("product", "product_status"): ["ENTRADA"] * 6 + ["SALIDA"] * 2 + ["DAÑADO", "EXTRAVIADO", "DESTRUCCION"],
+    ("nm_incident_product", "direction"): ["salida", "salida", "entrada"],
+    ("proyect", "priority"): ["alta", "media", "baja"],
+    ("document", "status"): ["issued", "issued", "draft"],
+    ("incident_type", "incident_type_description"): ["Prestamo Material", "Reparacion", "Destruccion", "Dañado",
+                                                     "Extraviado", "Jornada", "Comida"],
+    ("material", "material_description"): HERRAMIENTAS,
+    ("product", "descripcion"): HERRAMIENTAS,
+    ("brand", "brand_description"): ["TRUPER", "URREA", "DEWALT", "MAKITA", "STANLEY", "PRETUL", "BOSCH", "MILWAUKEE"],
+    ("product_family", "product_family_description"): ["DADO", "LLAVE", "DESARMADOR", "MARTILLO", "PINZA", "TALADRO",
+                                                       "ARNES", "BANCO", "BOLSA", "CINCEL"],
+    ("location", "location_description"): ["B1", "B1-P1", "B1-P2-D", "B2", "Almacen general", "Taller"],
+}
+# Probabilidad de NULL en columnas donde el nulo significa algo (sin devolver, sin prioridad, sin costo).
+PROB_NULO = {("nm_incident_product", "close_date"): .45, ("proyect", "priority"): .3, ("proyect", "total_cost"): .4}
 
 
 class Col:
@@ -230,7 +261,8 @@ class Generador:
                                   "balance", "saldo", "salary", "salario", "importe", "monto", "paid")):
             v = round(r.uniform(150, 45000), 2)
         elif any(k in c for k in ("qty", "quantity", "cantidad", "stock", "existencia", "units")):
-            v = r.randint(1, 150)
+            # Algunos productos agotados (cantidad 0): sin ellos no se puede probar "productos agotados".
+            v = 0 if (tabla == "product" and c == "cantidad" and r.random() < .08) else r.randint(1, 150)
         elif any(k in c for k in ("year", "anio")):
             v = self.hoy.year
         elif c.startswith("month") or c.endswith("month"):
@@ -299,17 +331,34 @@ class Generador:
                     self.motivo = f"padre vacio: {ft}"
                     return None
                 continue
+            if nom == "deletion_date":
+                # ~4 % dadas de baja: lo justo para probar el filtro, no para esconder casi todo
+                # (antes se llenaba el 95 % y el BI veia 2 productos de 80).
+                baja = dt.datetime.combine(self.hoy - dt.timedelta(days=self.rng.randint(1, 90)), dt.time(12, 0))
+                valores[nom] = None if self.rng.random() < .96 else (baja.date() if col.udt == "date" else baja)
+                continue
+            if nom == "created_by" and tabla != "user":
+                # El dueno de la fila es un usuario que existe: con un numero al azar ninguna fila era de
+                # nadie y no se podia probar "Propios" (el alcance filtra por created_by).
+                duenos = self.valores_padre("user", "id_user")
+                if duenos:
+                    valores[nom] = self.rng.choice(duenos)
+                    continue
             permitidos = None
             for ck in self.checks[tabla]:
                 permitidos = valores_de_check(ck, nom) or permitidos
             if permitidos and col.udt in ("varchar", "text", "bpchar"):
                 valores[nom] = self.rng.choice(permitidos)
                 continue
+            if (tabla, nom) in VALORES and col.udt in ("varchar", "text", "bpchar"):
+                v = self.rng.choice(VALORES[(tabla, nom)])
+                valores[nom] = f"{v} {n}"[:col.largo or 200] if nom in self.uniques[tabla] else v
+                continue
             if col.tiene_defecto and (col.nulo or intento == 0) and nom.lower() not in (
                     "creation_date", "created_at") and not re.search(r"date|fecha|time", nom.lower()):
                 if self.rng.random() < .8:
                     continue                       # que el defecto de la base decida
-            if col.nulo and self.rng.random() < (.05 if intento == 0 else .5):
+            if col.nulo and self.rng.random() < (PROB_NULO.get((tabla, nom), .05) if intento == 0 else .5):
                 valores[nom] = None
                 continue
             if nom in self.pks.get(tabla, []):
@@ -321,6 +370,21 @@ class Generador:
                 self.motivo = f"sin generador para {nom} ({col.udt})"
                 return None
             valores[nom] = v
+        # Reglas CHECK que un generador por tipo no puede adivinar.
+        if "weekday" in valores:                                   # 0 a 6
+            valores["weekday"] = self.rng.randint(0, 6)
+        if tabla in ("work_schedule_day", "availability_rule"):    # hora de inicio antes que la de fin
+            valores["start_time"], valores["end_time"] = dt.time(8, 0), dt.time(self.rng.randint(15, 19), 0)
+        if tabla == "document_relation":                           # exactamente UN padre lleno
+            padres = ("id_customer_supplier", "id_employee", "id_laboratory_equipment", "id_laboratory_service_order")
+            llenos = [c for c in padres if valores.get(c) is not None]
+            if not llenos:
+                self.motivo = "document_relation sin ningun padre con filas"
+                return None
+            elegido = self.rng.choice(llenos)
+            for c in padres:
+                if c != elegido:
+                    valores[c] = None
         # consistencia basica de importes
         if "subtotal" in valores and "total" in valores and valores["subtotal"] is not None \
                 and isinstance(valores["subtotal"], (int, float, decimal.Decimal)):
@@ -361,7 +425,7 @@ class Generador:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--filas", type=int, default=12, help="filas por tabla (las grandes usan mas)")
+    ap.add_argument("--filas", type=int, default=25, help="filas por tabla (las grandes usan mas)")
     ap.add_argument("--semilla", type=int, default=42)
     ap.add_argument("--solo", default="", help="tablas separadas por coma")
     ap.add_argument("--yes", action="store_true", help="confirma que es una base de pruebas")
@@ -375,18 +439,31 @@ def main():
     solo = {t.strip() for t in args.solo.split(",") if t.strip()}
     orden = [t for t in orden_topologico(g.tablas, g.columnas, g.fks)
              if t not in SALTAR and (not solo or t in solo)]
-    vacias, resumen = [], []
+    total, motivos = 0, {}
+    if "user" in orden:          # primero los usuarios: despues se reparten como duenos (created_by) de las demas filas
+        total += g.poblar("user", GRANDES.get("user", args.filas))[0]
+    # Varias pasadas: una tabla cuyo padre aun no tenia filas (ciclos, FK anulables) se completa en la
+    # siguiente. Se para cuando una pasada ya no agrega nada.
+    for pasada in range(1, 4):
+        nuevas = 0
+        for tabla in orden:
+            ok, errores = g.poblar(tabla, GRANDES.get(tabla, args.filas))
+            nuevas += ok
+            if ok:
+                print(f"[pasada {pasada}] {tabla:42s} +{ok}", flush=True)
+            motivos[tabla] = dict(list(errores.items())[:2])
+        total += nuevas
+        con.commit()
+        if not nuevas:
+            break
+    vacias = []
     for tabla in orden:
-        objetivo = GRANDES.get(tabla, args.filas)
-        ok, errores = g.poblar(tabla, objetivo)
-        resumen.append((tabla, ok))
-        if ok == 0:
-            vacias.append((tabla, dict(list(errores.items())[:2])))
-        print(f"{tabla:42s} +{ok}", flush=True)
-    con.commit()
-    print(f"\nListo: {sum(o for _, o in resumen)} filas en {sum(1 for _, o in resumen if o)} tablas.")
+        cur.execute(f'select count(*) from public."{tabla}"')
+        if cur.fetchone()[0] == 0:
+            vacias.append((tabla, motivos.get(tabla)))
+    print(f"\nListo: {total} filas nuevas; {len(orden) - len(vacias)} de {len(orden)} tablas con datos.")
     if vacias:
-        print("\nTablas sin filas nuevas:")
+        print("\nTablas que siguen vacias:")
         for t, e in vacias:
             print(f"  {t}: {e}")
 
