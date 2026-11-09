@@ -218,12 +218,31 @@ def _tipo_corto(tipo: str) -> str:
     return t.lower()[:10] or "?"
 
 
-def _linea(r) -> str:
+_NOMBRE = re.compile(r"(?:_description|description|descripcion|name|nombre|title)$")
+
+
+def _columna_nombre(destino) -> str | None:
+    """La columna que dice como se llama una fila de `destino` (material_description, brand_description...).
+
+    El usuario habla de "el material desarmador", no de `id_material = 17`: el modelo necesita saber
+    contra que columna del destino comparar el texto. Se prefiere la que lleva el nombre de la tabla.
+    """
+    if destino is None:
+        return None
+    candidatas = [c.nombre for c in destino.columnas if _NOMBRE.search(c.nombre.lower())]
+    propia = [n for n in candidatas if n.lower().startswith(destino.nombre.lower())]
+    return (propia or candidatas or [None])[0]
+
+
+def _linea(r, por_nombre: dict | None = None) -> str:
     """Una tabla por linea: 'tabla(col tipo, col tipo PK, id_x FK->tabla)'.
 
     Cuatro veces menos tokens que CREATE TABLE completo. En CPU sin GPU el
     modelo procesa unos 10 tokens por segundo del prompt, asi que cada columna
     de mas son segundos de espera para el usuario.
+
+    Con `por_nombre` (relaciones por nombre en minusculas) cada FK dice ademas cual es la columna con
+    el nombre del destino: `id_material int FK>material (nombre: material_description)`.
     """
     partes = []
     for c in r.columnas:
@@ -232,6 +251,9 @@ def _linea(r) -> str:
             p += " PK"
         if c.fk:
             p += f" FK>{str(c.fk).split('.')[0]}"
+            nombre = _columna_nombre((por_nombre or {}).get(_destino_fk(c.fk, por_nombre or {})))
+            if nombre:
+                p += f" (nombre: {nombre})"
         partes.append(p)
     return f"{r.nombre_completo}({', '.join(partes)})"
 
@@ -251,7 +273,8 @@ def ddl_para_pregunta(esquema, pregunta: str) -> str:
     """El esquema que se inyecta al prompt: tablas relevantes + vecinas reducidas."""
     elegidas, vecinas, _ = _seleccionar(esquema, pregunta)
     mostradas = _sin_ruido(elegidas) + tuple(_reducida(r) for r in _sin_ruido(vecinas))
-    cuerpo = "\n".join(_linea(r) for r in mostradas)
+    por_nombre = {r.nombre.lower(): r for r in esquema.relaciones}
+    cuerpo = "\n".join(_linea(r, por_nombre) for r in mostradas)
     ddl = _NOTA_BORRADO + cuerpo
     # El indice con el nombre de las demas tablas se quito: eran ~1,300 tokens
     # por pregunta (2 minutos de CPU) y el modelo ya sabe que solo ve las de arriba.

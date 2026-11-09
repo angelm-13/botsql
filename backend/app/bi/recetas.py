@@ -131,6 +131,33 @@ def _por_columna(ent):
 # Existencias: la regla de "agotado" es cantidad = 0 (la misma consulta de oro del conjunto de validacion).
 _EXIST = "FROM product WHERE deletion_date IS NULL"
 
+# Lo que el usuario llama material/marca/familia/ubicacion de un producto -> (tabla, columna de product,
+# llave de la tabla, columna con el nombre). En product la marca es `id_marca` y la familia `id_familia`
+# (en material son id_brand e id_product_family): por eso el modelo las confundia.
+_DIMENSIONES = {
+    "material": ("material", "id_material", "id_material", "material_description"),
+    "marca": ("brand", "id_marca", "id_brand", "brand_description"),
+    "familia": ("product_family", "id_familia", "id_product_family", "product_family_description"),
+    "ubicacion": ("location", "id_location", "id_location", "location_description"),
+}
+_DIM_FRASE = (r"^{inicio} (?:como |con |de |del |de la |en la |en el |en )?(?:el |la )?(?:id )?"
+              r"(?P<dim>" + "|".join(_DIMENSIONES) + r") [\"'“”]?(?P<v>[a-z0-9][a-z0-9 ]{{1,38}}?)[\"'“”]?$")
+
+
+def _productos_por_dimension(m, contar):
+    tabla, fk, pk, nombre = _DIMENSIONES[m.group("dim")]
+    palabras = [w for w in re.sub(r"[^a-z0-9 ]", "", m.group("v")).split() if w not in ("de", "del", "la", "el", "por")]
+    if not palabras:
+        raise _SinReceta
+    patron = "%".join(palabras).upper()
+    union = f"FROM product p JOIN {tabla} t ON t.{pk} = p.{fk} WHERE p.deletion_date IS NULL AND t.{nombre} ILIKE '%{patron}%'"
+    titulo = f"Productos con {m.group('dim')} {m.group('v').strip()}"
+    if contar:
+        return _d(f"SELECT COUNT(*) AS total_productos {union}", titulo, "kpi_card", y="total_productos",
+                  etiqueta="Productos", explicacion=f"Productos cuyo {m.group('dim')} (campo {fk}) contiene ese texto.")
+    return _d(f"SELECT p.product_code AS codigo, p.descripcion AS producto, p.cantidad AS existencias, t.{nombre} AS {m.group('dim')} {union} ORDER BY p.descripcion",
+              titulo, "table", explicacion=f"Productos cuyo {m.group('dim')} (campo {fk}) contiene ese texto.")
+
 
 RECETAS: list[tuple[re.Pattern, Callable]] = [
     # "dashboard general de operaciones": `buscar` ya le quita el "dashboard" del principio.
@@ -311,6 +338,15 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
      lambda m: _d("SELECT COUNT(*) AS pendientes FROM nm_incident_product WHERE deletion_date IS NULL AND close_date IS NULL",
                   "Herramientas pendientes de devolver", "kpi_card", y="pendientes", etiqueta="Pendientes",
                   explicacion="Renglones de vales que aun no se devuelven.")),
+
+    # "cuantos productos tienen como ID Material 'desarmador'": el nombre vive en la tabla del catalogo
+    # (JOIN) y esta en mayusculas y mas largo que lo que se dice, asi que se compara con ILIKE, no con =.
+    # El valor se limita a [a-z0-9 ] (sin comillas), asi que entra al SQL sin riesgo de inyeccion.
+    (re.compile(_DIM_FRASE.format(inicio=r"cuantos productos (?:tienen|son|hay|estan)")),
+     lambda m: _productos_por_dimension(m, contar=True)),
+
+    (re.compile(_DIM_FRASE.format(inicio=r"(?:que |cuales )?productos (?:tienen|son|hay|estan)")),
+     lambda m: _productos_por_dimension(m, contar=False)),
 
     (re.compile(r"^(?:cuantos )?materiales (?:hay )?por marca$"),
      lambda m: _d("SELECT b.brand_description AS marca, COUNT(*) AS total_materiales FROM material m "
