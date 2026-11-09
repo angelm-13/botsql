@@ -128,8 +128,10 @@ def test_las_frases_nuevas_las_resuelve_una_receta(pregunta):
 
 @pytest.mark.parametrize("pregunta", [
     # Ambiguas: "activo", "valor", "total facturado" (¿incluye canceladas?) las define el negocio, no una receta.
-    "proyectos activos", "valor del inventario", "total facturado", "facturado este mes", "usuarios activos",
-    "proyectos por cliente", "facturas pendientes de pago", "herramientas prestadas",
+    # ("total facturado" y "proyectos por cliente" salieron de esta lista en la segunda ronda: son preguntas reales
+    # y repetidas de la bitacora, con la misma definicion que las recetas que ya existian.)
+    "proyectos activos", "valor del inventario", "facturado este mes", "usuarios activos",
+    "facturas pendientes de pago", "herramientas prestadas",
 ])
 def test_lo_ambiguo_sigue_yendo_al_modelo(pregunta):
     assert recetas.buscar(pregunta) is None

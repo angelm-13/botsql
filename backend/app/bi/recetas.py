@@ -69,7 +69,8 @@ _ESTATUS = {
         "autorizados": "authorized", "entregados": "delivered", "bloqueados": "blocked",
         "borrador": "draft", "denegados": "denied", "rechazados": "denied",
         "completados": "completed", "terminados": "completed", "en proceso": "in_progress",
-        "esperando material": "waiting_material", "en espera de material": "waiting_material"}),
+        "esperando material": "waiting_material", "en espera de material": "waiting_material",
+        "recolectados": "collected"}),
     "tareas": ("task", "task_status", {
         "pendientes": "pendiente", "en proceso": "en_proceso", "terminadas": "terminada",
         "terminados": "terminada"}),
@@ -79,6 +80,10 @@ _ESTATUS = {
 }
 _ESTATUS["incidencias"] = (_ESTATUS["vales"][0], _ESTATUS["vales"][1], {
     k.replace("os", "as"): v for k, v in _ESTATUS["vales"][2].items()} | _ESTATUS["vales"][2])
+# Solo los estatus que existen en los datos reales; el resto sigue al modelo (`_SinReceta`).
+_ESTATUS["ordenes de compra"] = ("purchase_order", "order_status", {
+    "autorizadas": "authorized", "pendientes de autorizacion": "pending_authorization",
+    "por autorizar": "pending_authorization"})
 
 
 def _tablero(titulo, *partes):
@@ -96,7 +101,8 @@ def _por_estatus(m):
     tabla, col, mapa = _ESTATUS[m.group("ent")]
     est = m.group("est").strip()
     # "en proceso" / "proceso", "en borrador" / "borrador": el "en" no cambia el estatus.
-    valor = mapa.get(est) or mapa.get(re.sub(r"^en ", "", est)) or mapa.get("en " + est)
+    # Tambien singular ("denegado" -> "denegados"): el mapa se escribio en plural.
+    valor = next((mapa[k] for k in (est, re.sub(r"^en ", "", est), "en " + est, est + "s", est + "es") if k in mapa), None)
     if valor is None:
         raise _SinReceta
     return _d(f"SELECT COUNT(*) AS total FROM {tabla} WHERE {col} = '{valor}' AND deletion_date IS NULL",
@@ -107,29 +113,50 @@ def _por_estatus(m):
 # Totales y desgloses que no dependen de interpretar nada: nombre que se dice -> (tabla, columna de
 # estatus o None). "vales" e "incidencias" son la misma tabla.
 _CONTABLES = {
-    "productos": ("product", None), "articulos": ("product", None), "materiales": ("material", None),
+    "productos": ("product", "product_status"), "articulos": ("product", None), "materiales": ("material", None),
     "vales": ("incident", "incident_status"), "incidencias": ("incident", "incident_status"),
     "proyectos": ("proyect", "proyect_status"), "tareas": ("task", "task_status"),
     "facturas": ("invoice", "invoice_status"), "usuarios": ('"user"', None),
+    # Salen de las preguntas reales de la bitacora (bi_query_log) que fallaban o iban al modelo.
+    "ordenes de compra": ("purchase_order", "order_status"), "documentos": ("document", "status"),
+    "familias de producto": ("product_family", None), "familias": ("product_family", None),
+    "marcas de herramientas": ("brand", None), "marcas": ("brand", None), "departamentos": ("department", None),
+    "clientes y proveedores": ("customer_supplier", None),
+    "renglones de vale": ("nm_incident_product", None), "renglones de vales": ("nm_incident_product", None),
+    "tipos de vale": ("incident_type", None), "tipos de incidencia": ("incident_type", None),
 }
-_CONT = "|".join(_CONTABLES)
+# Las frases largas primero ("familias de producto" antes que "familias"): la alternancia toma la primera que cabe.
+_CONT = "|".join(sorted(_CONTABLES, key=len, reverse=True))
+_CONT_ESTATUS = "|".join(sorted((e for e, (_, c) in _CONTABLES.items() if c), key=len, reverse=True))
 _COLA = r"(?: hay| tenemos| existen| actualmente| ahorita| hoy)*"
 
 
+def _alias(ent):
+    return re.sub(r"\W+", "_", ent)
+
+
 def _total(ent):
-    return _d(f"SELECT COUNT(*) AS total_{ent} FROM {_CONTABLES[ent][0]} WHERE deletion_date IS NULL",
-              f"{ent.capitalize()} registrados", "kpi_card", y=f"total_{ent}", etiqueta=ent.capitalize())
+    return _d(f"SELECT COUNT(*) AS total_{_alias(ent)} FROM {_CONTABLES[ent][0]} WHERE deletion_date IS NULL",
+              f"{ent.capitalize()} registrados", "kpi_card", y=f"total_{_alias(ent)}", etiqueta=ent.capitalize())
 
 
 def _por_columna(ent):
     tabla, col = _CONTABLES[ent]
-    return _d(f"SELECT {col} AS estatus, COUNT(*) AS total_{ent} FROM {tabla} "
-              f"WHERE deletion_date IS NULL GROUP BY {col} ORDER BY total_{ent} DESC",
-              f"{ent.capitalize()} por estatus", "bar", "estatus", f"total_{ent}")
+    return _d(f"SELECT {col} AS estatus, COUNT(*) AS total_{_alias(ent)} FROM {tabla} "
+              f"WHERE deletion_date IS NULL GROUP BY {col} ORDER BY total_{_alias(ent)} DESC",
+              f"{ent.capitalize()} por estatus", "bar", "estatus", f"total_{_alias(ent)}")
 
 
 # Existencias: la regla de "agotado" es cantidad = 0 (la misma consulta de oro del conjunto de validacion).
 _EXIST = "FROM product WHERE deletion_date IS NULL"
+
+# Estatus de producto: se guarda en mayusculas y, a veces, con n con tilde (valores reales de la base).
+_ESTATUS_PRODUCTO = {"extraviados": "EXTRAVIADO", "danados": "DAÑADO", "destruidos": "DESTRUCCION",
+                     "en entrada": "ENTRADA", "entrada": "ENTRADA", "en salida": "SALIDA", "salida": "SALIDA"}
+
+# Periodos de "se crearon este ...": lo que se dice -> argumento de date_trunc.
+_PERIODO = {"este mes": "month", "en el mes": "month", "este anio": "year", "este ano": "year", "en el anio": "year",
+            "en el ano": "year", "esta semana": "week", "hoy": "day"}
 
 # Lo que el usuario llama material/marca/familia/ubicacion de un producto -> (tabla, columna de product,
 # llave de la tabla, columna con el nombre). En product la marca es `id_marca` y la familia `id_familia`
@@ -144,12 +171,17 @@ _DIM_FRASE = (r"^{inicio} (?:como |con |de |del |de la |en la |en el |en )?(?:el
               r"(?P<dim>" + "|".join(_DIMENSIONES) + r") [\"'“”]?(?P<v>[a-z0-9][a-z0-9 ]{{1,38}}?)[\"'“”]?$")
 
 
-def _productos_por_dimension(m, contar):
-    tabla, fk, pk, nombre = _DIMENSIONES[m.group("dim")]
-    palabras = [w for w in re.sub(r"[^a-z0-9 ]", "", m.group("v")).split() if w not in ("de", "del", "la", "el", "por")]
+def _comodin(valor):
+    """'desarmador de cruz' -> 'DESARMADOR%CRUZ' para un ILIKE; solo [a-z0-9 ], asi que no hay inyeccion."""
+    palabras = [w for w in re.sub(r"[^a-z0-9 ]", "", valor).split() if w not in ("de", "del", "la", "el", "por")]
     if not palabras:
         raise _SinReceta
-    patron = "%".join(palabras).upper()
+    return "%".join(palabras).upper()
+
+
+def _productos_por_dimension(m, contar):
+    tabla, fk, pk, nombre = _DIMENSIONES[m.group("dim")]
+    patron = _comodin(m.group("v"))
     union = f"FROM product p JOIN {tabla} t ON t.{pk} = p.{fk} WHERE p.deletion_date IS NULL AND t.{nombre} ILIKE '%{patron}%'"
     titulo = f"Productos con {m.group('dim')} {m.group('v').strip()}"
     if contar:
@@ -193,7 +225,7 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                   "Top %d productos por existencias" % _n(m, 8), "bar", "producto", "existencias",
                   explicacion="Productos con mayor cantidad en existencia.")),
 
-    (re.compile(r"^(cuantas |cuantos )?(?:incidencias|vales) (hay )?por tipo$"),
+    (re.compile(r"^(cuantas |cuantos )?(?:incidencias|vales) (hay )?(?:por|de cada) tipo$"),
      lambda m: _d("SELECT t.incident_type_description AS tipo, COUNT(*) AS incidencias FROM incident n "
                   "JOIN incident_type t ON t.id_incident_type = n.id_incident_type "
                   "WHERE n.deletion_date IS NULL GROUP BY t.incident_type_description "
@@ -222,7 +254,7 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                   "WHERE i.deletion_date IS NULL GROUP BY c.name ORDER BY total_facturado DESC NULLS LAST LIMIT %d"
                   % _n(m, 10), "Total facturado por cliente", "bar", "cliente", "total_facturado")),
 
-    (re.compile(r"^(facturas|facturacion|total facturado) por mes( en el ultimo ano)?$|^facturas emitidas por mes.*$"),
+    (re.compile(r"^(facturas|facturacion|total facturado) por mes( en el ultimo ano)?$|^facturas emitidas por mes.*$|^cuanto se ha facturado por mes$"),
      lambda m: _d("SELECT date_trunc('month', date_emision) AS mes, SUM(total) AS total FROM invoice "
                   "WHERE deletion_date IS NULL GROUP BY 1 ORDER BY 1 LIMIT 24",
                   "Facturacion por mes", "line", "mes", "total")),
@@ -305,12 +337,13 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                 rf"|^(?:total|numero) de (?P<ent2>{_CONT})(?: registrad[oa]s)?$"),
      lambda m: _total(m.group("ent") or m.group("ent2"))),
 
-    (re.compile(r"^(?:cuantos |cuantas )?(?P<ent>vales|incidencias|tareas|facturas|proyectos) (?:hay )?por (?:estatus|estado)$"),
+    (re.compile(rf"^(?:cuantos |cuantas )?(?P<ent>{_CONT_ESTATUS}) (?:hay )?por (?:estatus|estado)$"),
      lambda m: _por_columna(m.group("ent"))),
 
     # "vales abiertos", "cuantos vales abiertos hay", "tareas pendientes": un estatus desconocido
     # sigue al modelo (`_SinReceta`).
-    (re.compile(rf"^(?:cuantos |cuantas )?(?P<ent>proyectos|tareas|vales|incidencias) (?:estan |se encuentran )?(?P<est>[a-z ]{{3,25}}?){_COLA}$"),
+    (re.compile(rf"^(?:cuantos |cuantas )?(?P<ent>proyectos|tareas|vales|incidencias|ordenes de compra) (?:estan |se encuentran |se tienen |tienen |son )?"
+                rf"(?:de estado |en estado |con estado |como )?(?P<est>[a-z ]{{3,27}}?){_COLA}$"),
      lambda m: _por_estatus(m)),
 
     (re.compile(r"^cuantos productos (?:estan |hay |tenemos )?(?:agotados|sin existencias?|sin stock|con existencias? en cero|con cero existencias?)" + _COLA + r"$"
@@ -347,6 +380,159 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
 
     (re.compile(_DIM_FRASE.format(inicio=r"(?:que |cuales )?productos (?:tienen|son|hay|estan)")),
      lambda m: _productos_por_dimension(m, contar=False)),
+
+    # --- Segunda ronda: preguntas reales de la bitacora que fallaban (JSON invalido) o tardaban minutos.
+    (re.compile(r"^cuantos productos (?:estan |hay )?(?P<est>extraviados|danados|destruidos|en entrada|entrada|en salida|salida)" + _COLA + r"$"),
+     lambda m: _d(f"SELECT COUNT(*) AS total_productos {_EXIST} AND product_status = '{_ESTATUS_PRODUCTO[m.group('est')]}'",
+                  "Productos %s" % m.group("est"), "kpi_card", y="total_productos", etiqueta="Productos",
+                  explicacion="Productos con ese estatus guardado (%s)." % _ESTATUS_PRODUCTO[m.group("est")])),
+
+    (re.compile(r"^(?:cual es el |que )?tipo de (?:vale|incidencia) (?:es )?(?:el )?mas (?:frecuente|comun|usado)$"),
+     lambda m: _d("SELECT t.incident_type_description AS tipo, COUNT(*) AS total FROM incident n "
+                  "JOIN incident_type t ON t.id_incident_type = n.id_incident_type WHERE n.deletion_date IS NULL "
+                  "GROUP BY t.incident_type_description ORDER BY total DESC LIMIT 1",
+                  "Tipo de vale mas frecuente", "table")),
+
+    # Vales creados en un periodo. `cuantos` y `cuantas`: la receta anterior solo aceptaba "cuantas".
+    (re.compile(r"^cuant[oa]s (?:incidencias|vales) (?:se )?(?:registraron|hay|hubo|se crearon|se han creado|se han registrado|se hicieron) (?P<per>"
+                + "|".join(_PERIODO) + r")$"),
+     lambda m: _d(f"SELECT COUNT(*) AS total_periodo FROM incident WHERE deletion_date IS NULL "
+                  f"AND incident_date >= date_trunc('{_PERIODO[m.group('per')]}', now())",
+                  "Vales %s" % m.group("per"), "kpi_card", y="total_periodo", etiqueta="Vales")),
+
+    (re.compile(r"^(?:top )?(?:las |los )?(?P<n>\d{1,2}) marcas con mas productos$"),
+     lambda m: _d("SELECT b.brand_description AS marca, COUNT(*) AS total_productos FROM product p "
+                  "JOIN brand b ON b.id_brand = p.id_marca WHERE p.deletion_date IS NULL "
+                  "GROUP BY b.brand_description ORDER BY total_productos DESC LIMIT %d" % _n(m, 10),
+                  "Top %d marcas con mas productos" % _n(m, 10), "bar", "marca", "total_productos")),
+
+    (re.compile(r"^(?:que |cuales )?productos (?:tienen |hay con )?(?:menos de|menos que|por debajo de) (?P<n>\d{1,6}) existencias?$"),
+     lambda m: _d(f"SELECT product_code AS codigo, descripcion AS producto, cantidad AS existencias {_EXIST} "
+                  f"AND cantidad < {int(m.group('n'))} ORDER BY cantidad, descripcion",
+                  "Productos con menos de %s existencias" % m.group("n"), "table")),
+
+    (re.compile(r"^cuantos productos tienen (?:menos de|menos que|por debajo de) (?P<n>\d{1,6}) existencias?$"),
+     lambda m: _d(f"SELECT COUNT(*) AS total_productos {_EXIST} AND cantidad < {int(m.group('n'))}",
+                  "Productos con menos de %s existencias" % m.group("n"), "kpi_card", y="total_productos", etiqueta="Productos")),
+
+    (re.compile(r"^(?:cual es el )?proyecto (?:con|de) mayor costo(?: total)?$"),
+     lambda m: _d("SELECT title AS proyecto, total_cost AS costo_total FROM proyect WHERE deletion_date IS NULL "
+                  "ORDER BY total_cost DESC NULLS LAST LIMIT 1", "Proyecto de mayor costo", "table")),
+
+    (re.compile(r"^(?:cual es la )?factura (?:de|con) mayor (?:importe|monto|total)$"),
+     lambda m: _d("SELECT folio, total, date_emision AS emision FROM invoice WHERE deletion_date IS NULL "
+                  "ORDER BY total DESC NULLS LAST LIMIT 1", "Factura de mayor importe", "table")),
+
+    # Misma definicion que "total facturado por cliente": todas las facturas vigentes.
+    (re.compile(r"^(?:cual es el |cuanto es el )?total facturado$|^cuanto se ha facturado(?: en total)?$"),
+     lambda m: _d("SELECT SUM(total) AS total_facturado FROM invoice WHERE deletion_date IS NULL",
+                  "Total facturado", "kpi_card", y="total_facturado", etiqueta="Facturado",
+                  explicacion="Suma del total de todas las facturas vigentes, sin importar su estatus.")),
+
+    (re.compile(r"^(?:cuantas )?tareas (?:tiene cada proyecto|por proyecto|hay por proyecto)$"),
+     lambda m: _d("SELECT p.title AS proyecto, COUNT(t.id_task) AS total_tareas FROM proyect p "
+                  "LEFT JOIN task t ON t.id_proyect = p.id_proyect AND t.deletion_date IS NULL "
+                  "WHERE p.deletion_date IS NULL GROUP BY p.id_proyect, p.title ORDER BY total_tareas DESC",
+                  "Tareas por proyecto", "bar", "proyecto", "total_tareas")),
+
+    (re.compile(r"^(?:cuantos )?proyectos (?:tiene cada cliente|por cliente|hay por cliente)$"),
+     lambda m: _d("SELECT c.name AS cliente, COUNT(*) AS total_proyectos FROM proyect p "
+                  "JOIN customer_supplier c ON c.id_customer_supplier = p.id_customer_supplier "
+                  "WHERE p.deletion_date IS NULL GROUP BY c.name ORDER BY total_proyectos DESC",
+                  "Proyectos por cliente", "bar", "cliente", "total_proyectos")),
+
+    # --- Segunda ronda (b): lo que seguia sin receta en la bitacora real.
+    (re.compile(r"^cuantos (?:usuarios|personas) no son empleados$"),
+     lambda m: _d('SELECT COUNT(*) AS total_no_empleados FROM "user" WHERE deletion_date IS NULL '
+                  "AND (is_employee = false OR is_employee IS NULL)",
+                  "Usuarios que no son empleados", "kpi_card", y="total_no_empleados", etiqueta="No empleados")),
+
+    # El rol se busca por nombre ("supervisor", "jefe de taller"), igual que material o marca.
+    (re.compile(r"^cuantos usuarios (?:tienen|son|hay con) (?:el )?(?:rol|perfil|permiso) (?:de |como )?(?P<v>[a-z][a-z ]{1,38}?)$"),
+     lambda m: _d('SELECT COUNT(*) AS total_usuarios FROM "user" u JOIN permission p ON p.id_permission = u.id_permission '
+                  "WHERE u.deletion_date IS NULL AND p.permission_description ILIKE '%%%s%%'" % _comodin(m.group("v")),
+                  "Usuarios con rol %s" % m.group("v").strip(), "kpi_card", y="total_usuarios", etiqueta="Usuarios")),
+
+    (re.compile(r"^cuantos renglones de vales? (?:son |hay )?(?:de )?(?P<d>entrada|salida)$"),
+     lambda m: _d("SELECT COUNT(*) AS total_renglones FROM nm_incident_product WHERE deletion_date IS NULL "
+                  f"AND direction = '{m.group('d')}'", "Renglones de vale de %s" % m.group("d"), "kpi_card",
+                  y="total_renglones", etiqueta="Renglones")),
+
+    (re.compile(r"^cuantas herramientas (?:ya )?(?:fueron |han sido |estan )?devueltas$"),
+     lambda m: _d("SELECT COUNT(*) AS devueltas FROM nm_incident_product WHERE deletion_date IS NULL AND close_date IS NOT NULL",
+                  "Herramientas devueltas", "kpi_card", y="devueltas", etiqueta="Devueltas",
+                  explicacion="Renglones de vales ya cerrados (con fecha de devolucion).")),
+
+    (re.compile(r"^cuantos clientes distintos tienen proyectos$"),
+     lambda m: _d("SELECT COUNT(DISTINCT id_customer_supplier) AS clientes_con_proyectos FROM proyect WHERE deletion_date IS NULL",
+                  "Clientes con proyectos", "kpi_card", y="clientes_con_proyectos", etiqueta="Clientes")),
+
+    (re.compile(r"^(?:cual es el )?cliente con mas proyectos$"),
+     lambda m: _d("SELECT c.name AS cliente, COUNT(*) AS total_proyectos FROM proyect p "
+                  "JOIN customer_supplier c ON c.id_customer_supplier = p.id_customer_supplier "
+                  "WHERE p.deletion_date IS NULL GROUP BY c.name ORDER BY total_proyectos DESC LIMIT 1",
+                  "Cliente con mas proyectos", "table")),
+
+    (re.compile(r"^(?:cual es el )?costo total de (?:todos )?los proyectos$"),
+     lambda m: _d("SELECT SUM(total_cost) AS costo_total FROM proyect WHERE deletion_date IS NULL",
+                  "Costo total de los proyectos", "kpi_card", y="costo_total", etiqueta="Costo total",
+                  explicacion="Suma del costo de los proyectos que ya lo tienen capturado.")),
+
+    (re.compile(r"^(?:cual es el )?importe promedio de las facturas$"),
+     lambda m: _d("SELECT AVG(total) AS importe_promedio FROM invoice WHERE deletion_date IS NULL",
+                  "Importe promedio de las facturas", "kpi_card", y="importe_promedio", etiqueta="Promedio")),
+
+    (re.compile(r"^(?:cuantas )?facturas (?:hay )?por moneda$"),
+     lambda m: _d("SELECT currency AS moneda, COUNT(*) AS total_facturas FROM invoice WHERE deletion_date IS NULL "
+                  "GROUP BY currency ORDER BY total_facturas DESC", "Facturas por moneda", "bar", "moneda", "total_facturas")),
+
+    (re.compile(r"^cuantas facturas (?:se )?(?:emitieron|han emitido|hay|hubo) (?P<per>" + "|".join(_PERIODO) + r")$"),
+     lambda m: _d(f"SELECT COUNT(*) AS total_periodo FROM invoice WHERE deletion_date IS NULL "
+                  f"AND date_emision >= date_trunc('{_PERIODO[m.group('per')]}', now())",
+                  "Facturas %s" % m.group("per"), "kpi_card", y="total_periodo", etiqueta="Facturas")),
+
+    (re.compile(r"^(?:cual es )?la suma de las existencias(?: de todos los productos)?$"),
+     lambda m: _d("SELECT SUM(cantidad) AS total_existencias FROM product WHERE deletion_date IS NULL",
+                  "Total de existencias", "kpi_card", y="total_existencias", etiqueta="Existencias")),
+
+    (re.compile(r"^cuantas marcas tienen productos(?: registrados)?$"),
+     lambda m: _d(f"SELECT COUNT(DISTINCT id_marca) AS marcas_con_productos {_EXIST} AND id_marca IS NOT NULL",
+                  "Marcas con productos", "kpi_card", y="marcas_con_productos", etiqueta="Marcas")),
+
+    (re.compile(r"^cuantos (?:vales|incidencias) (?:se )?(?:crearon|registraron|hubo|hay) en los ultimos (?P<d>\d{1,3}) dias$"),
+     lambda m: _d("SELECT COUNT(*) AS total_periodo FROM incident WHERE deletion_date IS NULL "
+                  f"AND incident_date >= now() - interval '{int(m.group('d'))} days'",
+                  "Vales de los ultimos %s dias" % m.group("d"), "kpi_card", y="total_periodo", etiqueta="Vales")),
+
+    (re.compile(r"^(?:top )?(?P<n>\d{1,2}) ultimos vales(?: emitidos| creados)?$"),
+     lambda m: _d("SELECT id_incident AS vale, incident_date AS fecha, incident_status AS estatus, external_folio AS folio "
+                  "FROM incident WHERE deletion_date IS NULL ORDER BY incident_date DESC NULLS LAST LIMIT %d" % _n(m, 10),
+                  "Ultimos %d vales" % _n(m, 10), "table")),
+
+    (re.compile(r"^tabla (?:de|con)(?: los| todos los| todos)* (?:nombres de )?(?:todos )?(?:los )?(?P<ent>clientes|proyectos)$"),
+     lambda m: _d("SELECT name AS cliente FROM customer_supplier WHERE deletion_date IS NULL ORDER BY name", "Clientes", "table")
+     if m.group("ent") == "clientes" else
+     _d("SELECT title AS proyecto, proyect_status AS estatus FROM proyect WHERE deletion_date IS NULL ORDER BY title",
+        "Proyectos", "table")),
+
+    (re.compile(r"^(?:que |cuales )?tipos de tarea (?:hay|existen)$"),
+     lambda m: _d("SELECT task_type_description AS tipo FROM task_type WHERE deletion_date IS NULL ORDER BY 1",
+                  "Tipos de tarea", "table")),
+
+    (re.compile(r"^(?:cuantos )?proyectos (?:hay )?por prioridad$"),
+     lambda m: _d("SELECT priority AS prioridad, COUNT(*) AS total_proyectos FROM proyect WHERE deletion_date IS NULL "
+                  "GROUP BY priority ORDER BY total_proyectos DESC", "Proyectos por prioridad", "bar", "prioridad", "total_proyectos")),
+
+    # Ordenes de compra: "monto total" es ambiguo (cotizado o autorizado; total_amount esta vacio), asi
+    # que se muestran los dos, no se escoge uno en silencio. "Lo autorizado" si es una sola cifra.
+    (re.compile(r"^(?:cual es el )?monto total de las ordenes de compra$"),
+     lambda m: _d("SELECT SUM(quoted_total) AS cotizado, SUM(authorized_total) AS autorizado FROM purchase_order "
+                  "WHERE deletion_date IS NULL", "Monto de las ordenes de compra", "table",
+                  explicacion="Total cotizado y total autorizado de las ordenes de compra vigentes.")),
+
+    (re.compile(r"^cuanto suma lo autorizado en ordenes de compra$|^(?:cual es )?el monto autorizado de las ordenes de compra$"),
+     lambda m: _d("SELECT SUM(authorized_total) AS total_autorizado FROM purchase_order WHERE deletion_date IS NULL",
+                  "Total autorizado en ordenes de compra", "kpi_card", y="total_autorizado", etiqueta="Autorizado")),
 
     (re.compile(r"^(?:cuantos )?materiales (?:hay )?por marca$"),
      lambda m: _d("SELECT b.brand_description AS marca, COUNT(*) AS total_materiales FROM material m "
