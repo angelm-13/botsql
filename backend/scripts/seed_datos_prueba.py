@@ -34,6 +34,8 @@ SALTAR = {
     "bi_department_permission", "kpi_definition", "user_mfa",
     "password_reset_token", "public_api_key", "pac_config", "event_log",
     "document_category", "schema_migration", "alembic_version",
+    # Marca de migraciones de una sola vez y bitacora del modulo BI: no son datos de negocio.
+    "migration_once", "bi_query_log",
 }
 # Tablas que merecen mas volumen: son las que se preguntan en un dashboard.
 GRANDES = {

@@ -95,8 +95,16 @@ def crear_blueprint(
     @bp.post("/query")
     def consultar():
         """El endpoint del contrato: recibe {"prompt": "..."} y devuelve datos."""
-        cuerpo = request.get_json(silent=True) or {}
-        pregunta = (cuerpo.get("prompt") or cuerpo.get("pregunta") or "").strip()
+        cuerpo = request.get_json(silent=True)
+        if not isinstance(cuerpo, dict):  # una lista o un numero no es un cuerpo valido
+            cuerpo = {}
+        pregunta = cuerpo.get("prompt") or cuerpo.get("pregunta") or ""
+        if not isinstance(pregunta, str):
+            return jsonify({
+                "ok": False,
+                "error": {"tipo": "peticion_invalida", "mensaje": "La pregunta debe ser texto."},
+            }), 400
+        pregunta = pregunta.strip()
 
         if len(pregunta) > 1000:
             return jsonify({
