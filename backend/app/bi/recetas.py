@@ -94,12 +94,42 @@ class _SinReceta(Exception):
 
 def _por_estatus(m):
     tabla, col, mapa = _ESTATUS[m.group("ent")]
-    valor = mapa.get(m.group("est").strip())
+    est = m.group("est").strip()
+    # "en proceso" / "proceso", "en borrador" / "borrador": el "en" no cambia el estatus.
+    valor = mapa.get(est) or mapa.get(re.sub(r"^en ", "", est)) or mapa.get("en " + est)
     if valor is None:
         raise _SinReceta
     return _d(f"SELECT COUNT(*) AS total FROM {tabla} WHERE {col} = '{valor}' AND deletion_date IS NULL",
               f"{m.group('ent').capitalize()} {m.group('est').strip()}", "kpi_card", y="total",
               etiqueta=m.group("ent").capitalize())
+
+
+# Totales y desgloses que no dependen de interpretar nada: nombre que se dice -> (tabla, columna de
+# estatus o None). "vales" e "incidencias" son la misma tabla.
+_CONTABLES = {
+    "productos": ("product", None), "articulos": ("product", None), "materiales": ("material", None),
+    "vales": ("incident", "incident_status"), "incidencias": ("incident", "incident_status"),
+    "proyectos": ("proyect", "proyect_status"), "tareas": ("task", "task_status"),
+    "facturas": ("invoice", "invoice_status"), "usuarios": ('"user"', None),
+}
+_CONT = "|".join(_CONTABLES)
+_COLA = r"(?: hay| tenemos| existen| actualmente| ahorita| hoy)*"
+
+
+def _total(ent):
+    return _d(f"SELECT COUNT(*) AS total_{ent} FROM {_CONTABLES[ent][0]} WHERE deletion_date IS NULL",
+              f"{ent.capitalize()} registrados", "kpi_card", y=f"total_{ent}", etiqueta=ent.capitalize())
+
+
+def _por_columna(ent):
+    tabla, col = _CONTABLES[ent]
+    return _d(f"SELECT {col} AS estatus, COUNT(*) AS total_{ent} FROM {tabla} "
+              f"WHERE deletion_date IS NULL GROUP BY {col} ORDER BY total_{ent} DESC",
+              f"{ent.capitalize()} por estatus", "bar", "estatus", f"total_{ent}")
+
+
+# Existencias: la regla de "agotado" es cantidad = 0 (la misma consulta de oro del conjunto de validacion).
+_EXIST = "FROM product WHERE deletion_date IS NULL"
 
 
 RECETAS: list[tuple[re.Pattern, Callable]] = [
@@ -136,7 +166,7 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                   "Top %d productos por existencias" % _n(m, 8), "bar", "producto", "existencias",
                   explicacion="Productos con mayor cantidad en existencia.")),
 
-    (re.compile(r"^(cuantas )?incidencias (hay )?por tipo$|^incidencias por tipo$"),
+    (re.compile(r"^(cuantas |cuantos )?(?:incidencias|vales) (hay )?por tipo$"),
      lambda m: _d("SELECT t.incident_type_description AS tipo, COUNT(*) AS incidencias FROM incident n "
                   "JOIN incident_type t ON t.id_incident_type = n.id_incident_type "
                   "WHERE n.deletion_date IS NULL GROUP BY t.incident_type_description "
@@ -153,7 +183,7 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                   "WHERE deletion_date IS NULL GROUP BY proyect_status ORDER BY total_proyectos DESC",
                   "Proyectos por estatus", "bar", "estatus", "total_proyectos")),
 
-    (re.compile(rf"^(que )?(empleados|usuarios|responsables) (tienen|con) mas incidencias$|^(cuantas )?incidencias (hay )?por (responsable|usuario|empleado)$|^top {N} (empleados|usuarios) con mas incidencias$"),
+    (re.compile(rf"^(que )?(empleados|usuarios|responsables) (tienen|con) mas incidencias$|^(cuantas |cuantos )?(?:incidencias|vales) (hay )?por (responsable|usuario|empleado)$|^top {N} (empleados|usuarios) con mas incidencias$"),
      lambda m: _d('SELECT u.full_name AS empleado, COUNT(*) AS incidencias FROM incident n '
                   'JOIN "user" u ON u.id_user = n.id_user WHERE n.deletion_date IS NULL '
                   "GROUP BY u.full_name ORDER BY incidencias DESC" + _tope(m),
@@ -201,7 +231,7 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                   "JOIN product p ON p.id_product = n.id_product WHERE n.id_incident = %d "
                   "AND n.deletion_date IS NULL GROUP BY p.descripcion ORDER BY cantidad DESC LIMIT 10"
                   % int(m.group("v")), "Herramientas del vale %s" % m.group("v"), "bar", "herramienta", "cantidad")),
-    (re.compile(r"^(cuantos )?productos (hay )?por marca$"),
+    (re.compile(r"^(cuantos )?productos (hay )?por marca$|^marcas con mas productos$"),
      lambda m: _d("SELECT b.brand_description AS marca, COUNT(*) AS total_productos FROM product p "
                   "JOIN brand b ON b.id_brand = p.id_marca WHERE p.deletion_date IS NULL "
                   "GROUP BY b.brand_description ORDER BY total_productos DESC",
@@ -242,6 +272,51 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
     # que se dice (`delivered`, `en_proceso`), y un modelo chico lo adivina mal.
     (re.compile(r"^(?:cuantos|cuantas) (?P<ent>proyectos|tareas|vales|incidencias) (estan |hay |se encuentran )?(?:en )?(?P<est>[a-z ]{3,25})$"),
      lambda m: _por_estatus(m)),
+
+    # --- Ampliacion: formas naturales de preguntar lo mismo. Todas al final: las anteriores ganan.
+    (re.compile(rf"^(?:cuantos|cuantas) (?P<ent>{_CONT}) (?:hay|existen|tenemos|tiene el sistema)(?: registrad[oa]s)?(?: en total| en el sistema)?$"
+                rf"|^(?:total|numero) de (?P<ent2>{_CONT})(?: registrad[oa]s)?$"),
+     lambda m: _total(m.group("ent") or m.group("ent2"))),
+
+    (re.compile(r"^(?:cuantos |cuantas )?(?P<ent>vales|incidencias|tareas|facturas|proyectos) (?:hay )?por (?:estatus|estado)$"),
+     lambda m: _por_columna(m.group("ent"))),
+
+    # "vales abiertos", "cuantos vales abiertos hay", "tareas pendientes": un estatus desconocido
+    # sigue al modelo (`_SinReceta`).
+    (re.compile(rf"^(?:cuantos |cuantas )?(?P<ent>proyectos|tareas|vales|incidencias) (?:estan |se encuentran )?(?P<est>[a-z ]{{3,25}}?){_COLA}$"),
+     lambda m: _por_estatus(m)),
+
+    (re.compile(r"^cuantos productos (?:estan |hay |tenemos )?(?:agotados|sin existencias?|sin stock|con existencias? en cero|con cero existencias?)" + _COLA + r"$"
+                r"|^cuantos productos tienen (?:existencias? |stock )?(?:en )?cero$"),
+     lambda m: _d(f"SELECT COUNT(*) AS total_agotados {_EXIST} AND cantidad = 0",
+                  "Productos agotados", "kpi_card", y="total_agotados", etiqueta="Agotados",
+                  explicacion="Productos con existencia en cero.")),
+
+    (re.compile(r"^(?:cuales son los |dame los |muestrame los |lista de )?productos (?:agotados|sin existencias?|sin stock|con existencias? en cero)$"),
+     lambda m: _d(f"SELECT product_code AS codigo, descripcion AS producto, cantidad AS existencias {_EXIST} "
+                  "AND cantidad = 0 ORDER BY descripcion",
+                  "Productos agotados", "table", explicacion="Productos con existencia en cero.")),
+
+    (re.compile(r"^(?:cual es el |que )?producto con (?P<mm>mas|mayor|menos|menor) existencias?$"),
+     lambda m: _d(f"SELECT descripcion AS producto, cantidad AS existencias {_EXIST} ORDER BY cantidad "
+                  + ("DESC" if m.group("mm") in ("mas", "mayor") else "ASC") + " NULLS LAST LIMIT 1",
+                  "Producto con %s existencias" % ("mas" if m.group("mm") in ("mas", "mayor") else "menos"), "table")),
+
+    (re.compile(r"^(?:top )?(?:los |las )?(?P<n>\d{1,2}) productos con (?:menos|menor) existencias?$|^productos con menos existencias?$"),
+     lambda m: _d(f"SELECT descripcion AS producto, cantidad AS existencias {_EXIST} ORDER BY cantidad ASC NULLS LAST LIMIT %d"
+                  % _n(m, 10), "Top %d productos con menos existencias" % _n(m, 10), "bar", "producto", "existencias")),
+
+    # Renglones de vales aun sin devolver (consulta de oro v12).
+    (re.compile(r"^cuantas herramientas (?:estan )?pendientes de devolver" + _COLA + r"$"),
+     lambda m: _d("SELECT COUNT(*) AS pendientes FROM nm_incident_product WHERE deletion_date IS NULL AND close_date IS NULL",
+                  "Herramientas pendientes de devolver", "kpi_card", y="pendientes", etiqueta="Pendientes",
+                  explicacion="Renglones de vales que aun no se devuelven.")),
+
+    (re.compile(r"^(?:cuantos )?materiales (?:hay )?por marca$"),
+     lambda m: _d("SELECT b.brand_description AS marca, COUNT(*) AS total_materiales FROM material m "
+                  "JOIN brand b ON b.id_brand = m.id_brand WHERE m.deletion_date IS NULL "
+                  "GROUP BY b.brand_description ORDER BY total_materiales DESC",
+                  "Materiales por marca", "bar", "marca", "total_materiales")),
 
 ]
 

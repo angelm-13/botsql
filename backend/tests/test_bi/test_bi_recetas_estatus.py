@@ -30,4 +30,6 @@ def test_vales_de_un_tipo_usa_el_catalogo_y_por_responsable_no_recorta():
 
 def test_vales_de_cada_tipo_no_se_toma_como_un_tipo_llamado_cada():
     assert recetas.buscar("cuantos vales hay de cada tipo") is None
-    assert recetas.buscar("cuantos vales hay por tipo") is None
+    # "por tipo" es el desglose por tipo (GROUP BY), nunca un filtro por un tipo llamado "por tipo".
+    por_tipo = recetas.buscar("cuantos vales hay por tipo")
+    assert "GROUP BY" in por_tipo and "ILIKE" not in por_tipo
