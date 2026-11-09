@@ -89,3 +89,23 @@ def test_un_cte_con_nombre_de_tabla_restringida_no_tapa_el_filtro():
     # con Todos no hay filtro que tapar
     q = "WITH invoice AS (SELECT * FROM invoice) SELECT count(*) FROM invoice"
     assert acotar_sql(q, acc(4), ESQ) == q
+
+
+# --- La columna duena no se esconde por no tener fila de permiso ----------------------------------
+# Hallazgo: en una instalacion nueva el catalogo `field` trae `created_by` pero la matriz de campos del
+# gestor no le da fila; BI la daba por negada (por nombre, en TODAS las tablas) y un Supervisor con
+# alcance "Propios" ya no podia consultar nada (alcance_no_aplicable).
+
+@pytest.mark.parametrize("nombre,ct,negada", [
+    ("created_by", None, False),   # sin fila: es de sistema, no se esconde (antes: se escondia)
+    ("leader", None, False),       # la otra columna duena (proyectos)
+    ("created_by", 6, False),      # fila con el bit de lectura (2)
+    ("created_by", 4, True),       # una fila que la niega de forma explicita SI manda
+    ("amount", None, True),        # un campo normal sin fila: no esta concedido
+    ("amount", 4, True),           # sin el bit de lectura
+    ("amount", 2, False),
+    ("title", 7, False),
+])
+def test_la_columna_duena_solo_se_niega_de_forma_explicita(nombre, ct, negada):
+    from app.bi.acceso import _negada
+    assert _negada(nombre, ct) is negada

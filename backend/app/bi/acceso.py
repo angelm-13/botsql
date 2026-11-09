@@ -36,6 +36,17 @@ SOLO_ADMIN = {
 # Ademas de `created_by`, quien tambien es dueno de la fila (misma regla que
 # project_management_service: el lider ve su proyecto aunque no lo haya creado).
 DUENO_ADICIONAL = {"proyect": "leader"}
+# Las columnas que dicen de quien es una fila. Son de sistema: casi nunca tienen fila en la matriz de
+# campos del gestor, y sin ellas un rol limitado a "Propios" no se puede acotar (se rechazaba todo).
+COLUMNAS_DUENAS = frozenset({"created_by", *DUENO_ADICIONAL.values()})
+
+
+def _negada(nombre: str, ct: int | None) -> bool:
+    """¿Se esconde la columna `nombre` al rol? Sin fila o sin el bit de lectura; la columna duena solo
+    si una fila la niega de forma explicita (sin fila, no: no es un campo que el gestor configure)."""
+    if ct is None and nombre in COLUMNAS_DUENAS:
+        return False
+    return ct is None or not (ct & FIELD_READ_BIT)
 _TTL_S = 60
 
 
@@ -174,7 +185,7 @@ def _calcular(id_permission: int) -> Acceso:
                     if nombre.startswith("id_"):
                         continue
                     ct = permisos.get(f.id_field)
-                    if ct is None or not (ct & FIELD_READ_BIT):
+                    if _negada(nombre, ct):
                         negadas.add(nombre)
 
     return Acceso(f"rol-{id_permission}", False, frozenset(tablas),
