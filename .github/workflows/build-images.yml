@@ -25,12 +25,12 @@ name: build-images
 
 on:
   push:
-    # Por ahora el despliegue se hace desde initAlan, no desde main
-    # (todavía no hay PR) — se deja "main" en la lista para que el
-    # día que se mergee, este mismo trigger siga funcionando sin
-    # tocar nada. Quitar "initAlan" cuando esa rama deje de ser la
-    # fuente de los despliegues.
-    branches: [main, initAlan]
+    # Las imagenes se construyen SOLO desde initAlan. `main` es lo certificado para clientes:
+    # recibe commits ya construidos (y merge commits de los PR de promocion), y el workflow
+    # `promover` toma de ghcr las imagenes que salieron de initAlan. Construir en main
+    # repetiria builds identicos y crearia tags de merge commits que nadie despliega.
+    # Para volver a construir desde main basta con anadirlo de nuevo a esta lista.
+    branches: [initAlan]
   # workflow_dispatch queda para cuando este archivo ya viva en main:
   # GitHub solo permite dispararlo a mano (CLI/API) desde OTRAS ramas
   # si el workflow ya existe en la rama default — hoy, con initAlan
@@ -147,6 +147,12 @@ jobs:
   # el servidor por SSH.
   deploy-tyakxa-dev:
     needs: [backend-and-worker, frontend-por-cliente]
+    # Solo desde initAlan. El workflow tambien corre en push a main (para construir las
+    # imagenes), pero main NO despliega a dev: este job commitea el tag nuevo de vuelta a
+    # la rama que lo disparo (git push origin HEAD:${GITHUB_REF_NAME}) y no debe tocar main.
+    # Sin funcion de estado, GitHub lo envuelve en success(): sigue exigiendo que las
+    # construcciones previas hayan salido bien.
+    if: github.ref == 'refs/heads/initAlan'
     concurrency:
       group: deploy-tyakxa-dev-${{ github.ref }}
     runs-on: ubuntu-latest

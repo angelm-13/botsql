@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.models.session import engine, transaction_context
 from app.services.warehouse_voucher_service import CIERRE_SENTINELA
+from app.utils.tiempo import ahora_negocio
 
 # Mismo criterio que test_kpi_ventas_por_empleado.py: se corre solo contra
 # PostgreSQL real y reutiliza el bootstrap de siempre (customer_supplier=1,
@@ -41,7 +42,7 @@ MATERIAL = 970
 INVOICE = 970
 PRODUCT = 970
 
-AHORA = datetime.now()
+AHORA = ahora_negocio()
 HOY = AHORA.date()
 
 
@@ -109,7 +110,7 @@ class KpiIncidentesTest(unittest.TestCase):
     def _vale(self, id_nm_incident_product, id_incident, due_date=None, close_date=None):
         return NmIncidentProduct(
             id_nm_incident_product=id_nm_incident_product, id_incident=id_incident, id_product=PRODUCT,
-            quantity=1, due_date=due_date, close_date=close_date, created_by=ADMIN_ID,
+            quantity=1, direction="salida", due_date=due_date, close_date=close_date, created_by=ADMIN_ID,
         )
 
     # --- vales_vencidos_por_responsable_query ---------------------------

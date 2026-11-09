@@ -8,12 +8,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.jobs.celery_app import celery
 from app.jobs.task_helpers import result_ok
 from app.kpis.frecuencia import KPIS_FRECUENTES, MODULOS_FRECUENTES, rango_de_las_claves_frecuentes
+from app.kpis.modulos.restaurante import proyectos_con_restaurante
 from app.kpis.registry import DIMENSION_JSON_KEY, KPI_REGISTRY
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.proyect import Proyect
 from app.models.session import transaction_context
-from app.utils.tiempo import ahora_negocio
+from app.utils.tiempo import ahora_negocio, hoy_negocio
 
 # Ventana de 7 dias (hoy incluido) para que una factura corregida un par de
 # dias despues tambien se refleje, no solo el dia exacto en que se calculo.
@@ -44,6 +45,7 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
         select(Proyect.id_proyect).where(Proyect.deletion_date.is_(None))
     ).all()
 
+    con_restaurante = None  # se calcula la primera vez que un KPI de restaurante lo pide
     for kpi in KPI_REGISTRY:
         if kpi.modo != "snapshot":
             # Un KPI "vivo" (ver KpiDefinition.modo en app/kpis/registry.py)
@@ -82,6 +84,13 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
         # numero de proyectos activos. Se corrige aqui, calculando una sola
         # vez y sin escribir `id_proyect` en el snapshot para estos KPIs.
         proyectos_a_iterar = proyectos_activos if kpi.alcance_proyecto else [None]
+        if kpi.modulo == "restaurante":
+            # Solo los proyectos que SON un restaurante: sus KPIs de "ahora" (mesas, pedidos, cuentas) devuelven
+            # filas en cero aunque no haya datos, y sin este filtro cada proyecto de cualquier otro modulo las
+            # recibia. Un proyecto sin restaurante queda sin fila ("sin datos"), no con ceros.
+            if con_restaurante is None:
+                con_restaurante = proyectos_con_restaurante(session)
+            proyectos_a_iterar = [p for p in proyectos_a_iterar if p in con_restaurante]
 
         for id_proyect in proyectos_a_iterar:
             filas = kpi.query_builder(session, fecha_inicio, fecha_fin, {}, id_proyect)
@@ -121,9 +130,18 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
     return filas_escritas
 
 
+def recalcular_kpi_snapshots_de_claves(session, fecha_inicio: date, fecha_fin: date, claves) -> int:
+    """Recalcula SOLO los KPIs de `claves` en el rango dado, sobre la sesion que ya trae quien llama.
+
+    La usa el recalculo bajo demanda de un tablero (`kpi_recalculo_service`): necesita la misma transaccion para
+    tomar el candado y escribir. Los KPIs "vivos" se saltan igual que en el job. Devuelve las filas escritas.
+    """
+    return _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio, fecha_fin, claves=tuple(claves))
+
+
 @celery.task(name="app.jobs.tasks_kpis.recalculate_kpi_snapshots")
 def recalculate_kpi_snapshots() -> dict:
-    fecha_fin = date.today()
+    fecha_fin = hoy_negocio()
     fecha_inicio = fecha_fin - timedelta(days=VENTANA_DIAS - 1)
 
     with transaction_context() as session:

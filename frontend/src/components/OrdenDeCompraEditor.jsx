@@ -9,7 +9,19 @@ import { CANTIDAD_MAXIMA, UNIDADES, descripcionSospechosa } from "../utils/descr
 import { dinero, totalDeRenglones } from "../utils/ordenDeCompra";
 import { useI18n } from "../i18n";
 import { CLASES_DE_ARTICULO } from "../utils/clasesDeProducto";
+import { UNIDADES_DE_TARIFA, costoDeRenta, periodosDeRenta } from "../utils/rentaDeMaquinaria";
 import "../styles/ordenes-de-compra.css";
+import "../styles/renta-maquinaria.css";
+
+const fechaCorta = (texto) => (texto
+  ? new Date(`${String(texto).slice(0, 10)}T00:00:00`).toLocaleDateString("es-MX") : "—");
+
+/** El costo unitario que cuenta: el capturado, o en una renta tarifa x periodos. */
+function conCosto(r) {
+  if (r.line_kind !== "rental") return r;
+  const costo = costoDeRenta(r.rental_rate, r.rental_start, r.rental_end, r.rental_rate_unit);
+  return { ...r, unit_cost: costo === null ? "" : String(costo) };
+}
 
 const LIBRE_VACIO = { description: "", quantity: "1", unit: "", unit_cost: "", item_class: "" };
 
@@ -31,6 +43,11 @@ function desdeRenglon(l) {
     quantity: String(l.quantity),
     unit_cost: l.unit_cost === null || l.unit_cost === undefined ? "" : String(l.unit_cost),
     proyecto: etiquetaDeProyecto(l.project),
+    line_kind: l.line_kind || "purchase",
+    rental_start: l.rental_start || "",
+    rental_end: l.rental_end || "",
+    rental_rate: l.rental_rate === null || l.rental_rate === undefined ? "" : String(l.rental_rate),
+    rental_rate_unit: l.rental_rate_unit || "day",
   };
 }
 
@@ -43,8 +60,9 @@ function desdeRenglon(l) {
  * esten en otra orden; lo demas el servidor lo rechaza igual. Compras tambien puede
  * agregar un renglon por su cuenta (reponer almacen), que queda marcado como tal.
  *
- * El proveedor se escoge de los dados de alta: quien compra no puede pagarle a quien
- * nadie registro.
+ * El proveedor se escribe a mano; se sugieren los dados de alta y, si el nombre
+ * coincide con uno, el servidor liga la orden a el (y compara el RFC de su factura).
+ * Todo va en pesos (MXN): no se pregunta la moneda.
  */
 export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCancelar }) {
   const { t } = useI18n();
@@ -53,9 +71,10 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
   const [proveedores, setProveedores] = useState([]);
   const [disponibles, setDisponibles] = useState([]);
   const [form, setForm] = useState(() => ({
-    id_customer_supplier: orden?.id_customer_supplier ? String(orden.id_customer_supplier) : "",
+    supplier_name: orden?.supplier?.name || orden?.supplier_name || "",
     description: orden?.description || "",
     expected_date: orden?.expected_date || "",
+    // Las ordenes viejas en otra moneda la conservan; las nuevas van en pesos.
     currency: orden?.currency || "MXN",
   }));
   const [renglones, setRenglones] = useState(() => (orden?.lines || []).map(desdeRenglon));
@@ -92,6 +111,8 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
               cantidad: p.quantity,
               id_proyect: p.id_proyect,
               proyecto: etiquetaDeProyecto(p),
+              renta: g.need_kind === "rental"
+                ? { rental_start: g.rental_start, rental_end: g.rental_end } : null,
             });
           }
         }
@@ -105,7 +126,7 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
     () => new Set(renglones.map((r) => r.id_proyect_material_need).filter(Boolean)),
     [renglones]);
   const porAgregar = disponibles.filter((d) => !yaEstan.has(d.id));
-  const total = totalDeRenglones(renglones);
+  const total = totalDeRenglones(renglones.map(conCosto));
 
   const agregarNecesidad = useCallback((d) => {
     setRenglones((actuales) => (actuales.some((r) => r.id_proyect_material_need === d.id)
@@ -115,6 +136,10 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
         id_material: d.id_material, description: d.nombre, unit: d.unidad,
         quantity: String(d.cantidad), maxQuantity: d.cantidad, unit_cost: "",
         proyecto: d.proyecto,
+        ...(d.renta ? {
+          line_kind: "rental", rental_start: d.renta.rental_start, rental_end: d.renta.rental_end,
+          rental_rate: "", rental_rate_unit: "day",
+        } : { line_kind: "purchase" }),
       }]));
   }, []);
 
@@ -152,12 +177,18 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
 
   function cuerpo() {
     return {
-      id_customer_supplier: form.id_customer_supplier,
+      supplier_name: form.supplier_name.trim(),
       description: form.description,
       expected_date: form.expected_date || null,
       currency: form.currency,
       lines: renglones.map((r) => {
-        const base = {
+        // En una renta el costo lo calcula el servidor con la tarifa y el periodo.
+        const base = r.line_kind === "rental" ? {
+          quantity: r.quantity, line_kind: "rental",
+          rental_rate: r.rental_rate === "" ? null : r.rental_rate,
+          rental_rate_unit: r.rental_rate_unit, rental_start: r.rental_start,
+          rental_end: r.rental_end,
+        } : {
           quantity: r.quantity, unit_cost: r.unit_cost === "" ? null : r.unit_cost,
           item_class: r.item_class || null,
         };
@@ -189,9 +220,15 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
     }
   }
 
-  const sinProveedor = !form.id_customer_supplier;
+  const sinProveedor = form.supplier_name.trim().length < 2;
   const sinRenglones = renglones.length === 0;
   const sinCostos = total === null;
+  // Lo que falta para poder enviarla, dicho en voz alta (el boton solo se apaga).
+  const faltantes = [
+    sinProveedor && t("order.missing_supplier", "escribir el proveedor"),
+    sinRenglones && t("order.missing_lines", "agregar al menos un renglón"),
+    !sinRenglones && sinCostos && t("order.missing_costs", "capturar el costo de cada renglón"),
+  ].filter(Boolean);
 
   return (
     <div className="oc-editor">
@@ -204,32 +241,22 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
       <div className="oc-form-grid">
         <label>
           <span>{t("order.supplier", "Proveedor")}</span>
-          <select value={form.id_customer_supplier}
-                  onChange={(e) => setForm({ ...form, id_customer_supplier: e.target.value })}>
-            <option value="">{t("order.choose_supplier", "Elige un proveedor")}</option>
-            {proveedores.map((p) => (
-              <option key={p.id_customer_supplier} value={p.id_customer_supplier}>
-                {p.name}{p.tax_id ? ` · ${p.tax_id}` : ""}
-              </option>
-            ))}
-          </select>
-          {proveedores.length === 0 && (
-            <small className="muted">
-              {t("order.no_suppliers", "No hay proveedores dados de alta. Pide que se registre en Clientes y proveedores (tipo proveedor).")}
-            </small>
-          )}
+          <input type="text" maxLength={200} list="oc-proveedores" autoComplete="off"
+                 value={form.supplier_name}
+                 placeholder={t("order.supplier_placeholder", "Ej. Ferretería El Clavo")}
+                 onChange={(e) => setForm({ ...form, supplier_name: e.target.value })} />
+          {/* Los dados de alta salen como sugerencia; se puede escribir cualquiera. */}
+          <datalist id="oc-proveedores">
+            {proveedores.map((p) => <option key={p.id_customer_supplier} value={p.name} />)}
+          </datalist>
+          <small className="muted">
+            {t("order.supplier_hint", "Escríbelo como aparece en su factura o ticket.")}
+          </small>
         </label>
         <label>
           <span>{t("order.expected_date", "Se espera el")}</span>
           <input type="date" value={form.expected_date}
                  onChange={(e) => setForm({ ...form, expected_date: e.target.value })} />
-        </label>
-        <label>
-          <span>{t("order.currency", "Moneda")}</span>
-          <select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
-            <option value="MXN">MXN</option>
-            <option value="USD">USD</option>
-          </select>
         </label>
         <label className="oc-campo-ancho">
           <span>{t("order.description", "Para qué es")}</span>
@@ -258,12 +285,24 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
             </thead>
             <tbody>
               {renglones.map((r) => {
-                const subtotal = r.unit_cost === "" ? null : Number(r.quantity) * Number(r.unit_cost);
+                const esRenta = r.line_kind === "rental";
+                const costo = conCosto(r).unit_cost;
+                const subtotal = costo === "" ? null : Number(r.quantity) * Number(costo);
+                const periodos = esRenta
+                  ? periodosDeRenta(r.rental_start, r.rental_end, r.rental_rate_unit) : null;
                 return (
                   <tr key={r.key}>
                     <td>
                       <strong>{r.description}</strong>
                       {r.unit && <span className="muted"> · {r.unit}</span>}
+                      {esRenta && (
+                        <>
+                          {" "}<span className="renta-marca">{t("rental.badge", "Renta")}</span>
+                          <small className="muted" style={{ display: "block" }}>
+                            {fechaCorta(r.rental_start)} → {fechaCorta(r.rental_end)}
+                          </small>
+                        </>
+                      )}
                       {!r.id_proyect_material_need && (
                         <span className="oc-etiqueta oc-etiqueta-propio">
                           {t("order.own_line", "agregado por Compras")}
@@ -272,13 +311,15 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
                     </td>
                     <td>{r.proyecto || <span className="muted">—</span>}</td>
                     <td>
-                      <select value={r.item_class} aria-label={t("item_class.label", "Clase")}
-                              onChange={(e) => cambiarRenglon(r.key, "item_class", e.target.value)}>
-                        <option value="">—</option>
-                        {CLASES_DE_ARTICULO.map((c) => (
-                          <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
-                        ))}
-                      </select>
+                      {esRenta ? <span className="muted">—</span> : (
+                        <select value={r.item_class} aria-label={t("item_class.label", "Clase")}
+                                onChange={(e) => cambiarRenglon(r.key, "item_class", e.target.value)}>
+                          <option value="">—</option>
+                          {CLASES_DE_ARTICULO.map((c) => (
+                            <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td>
                       <input type="number" min="1" max={r.maxQuantity || CANTIDAD_MAXIMA} step="1"
@@ -286,9 +327,29 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
                              onChange={(e) => cambiarRenglon(r.key, "quantity", e.target.value)} />
                     </td>
                     <td>
-                      <input type="number" min="0" step="0.01" className="oc-numero oc-numero-ancho"
-                             value={r.unit_cost} placeholder="0.00"
-                             onChange={(e) => cambiarRenglon(r.key, "unit_cost", e.target.value)} />
+                      {esRenta ? (
+                        <div className="oc-tarifa">
+                          <input type="number" min="0" step="0.01" className="oc-numero oc-numero-ancho"
+                                 value={r.rental_rate} placeholder="0.00"
+                                 aria-label={t("rental.rate", "Tarifa")}
+                                 onChange={(e) => cambiarRenglon(r.key, "rental_rate", e.target.value)} />
+                          <select value={r.rental_rate_unit} aria-label={t("rental.rate_unit", "Por")}
+                                  onChange={(e) => cambiarRenglon(r.key, "rental_rate_unit", e.target.value)}>
+                            {UNIDADES_DE_TARIFA.map((u) => (
+                              <option key={u} value={u}>{t(`rental.per_${u}`, u)}</option>
+                            ))}
+                          </select>
+                          {periodos !== null && (
+                            <small className="muted">
+                              × {periodos} {t(`rental.unit_${r.rental_rate_unit}`, r.rental_rate_unit)}
+                            </small>
+                          )}
+                        </div>
+                      ) : (
+                        <input type="number" min="0" step="0.01" className="oc-numero oc-numero-ancho"
+                               value={r.unit_cost} placeholder="0.00"
+                               onChange={(e) => cambiarRenglon(r.key, "unit_cost", e.target.value)} />
+                      )}
                     </td>
                     <td className="mono">{subtotal === null || Number.isNaN(subtotal)
                       ? <span className="muted">—</span> : dinero(subtotal, form.currency)}</td>
@@ -326,6 +387,7 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
               <li key={d.id}>
                 <span>
                   <strong>{d.nombre}</strong>
+                  {d.renta && <> <span className="renta-marca">{t("rental.badge", "Renta")}</span></>}
                   {d.unidad && <span className="muted"> · {d.unidad}</span>}
                   <small className="muted"> {d.proyecto} · {d.cantidad}</small>
                 </span>
@@ -395,6 +457,11 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
           {t("common.cancel", "Cancelar")}
         </button>
       </div>
+      <p className={`oc-ayuda ${faltantes.length ? "oc-faltan" : "muted"}`}>
+        {faltantes.length
+          ? `${t("order.missing_to_send", "Para enviarla a autorización falta:")} ${faltantes.join(", ")}.`
+          : t("order.ready_to_send", "Lista para enviar. También puedes guardarla como borrador y terminarla después.")}
+      </p>
     </div>
   );
 }

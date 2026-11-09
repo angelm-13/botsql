@@ -85,21 +85,33 @@ const navItems = [
   { path: "/activity-log", key: "menu.daily_activity_log", label: "Bitácora diaria", entityName: "daily_activity_log", group: "Operaciones", groupIcon: "operations", location: "sidebar", order: 78 },
   { path: "/nm_survey_user", key: "menu.nm_survey_user" },
   { path: "/nm_template_task", key: "menu.nm_template_task" },
-  { path: "/payroll_concept", key: "menu.payroll_concept" },
-  { path: "/payroll_detail", key: "menu.payroll_detail" },
-  { path: "/payroll_movement", key: "menu.payroll_movement" },
-  { path: "/payroll_period", key: "menu.payroll_period" },
+  // Recursos humanos en el orden en que se usa (revision de usabilidad, 2026-11-05):
+  // 70x preparar, 71x dia a dia, 72x nomina de cada periodo, 73x salidas.
+  { path: "/payroll_concept", key: "menu.payroll_concept", order: 704 },
+  { path: "/payroll_detail", key: "menu.payroll_detail", order: 722 },
+  { path: "/payroll_movement", key: "menu.payroll_movement", order: 723 },
+  { path: "/payroll_period", key: "menu.payroll_period", order: 721 },
   // payroll_parameter esta sembrada "hidden" (no tiene pantalla generica); esta
   // pantalla propia se declara en la barra, como /activity-log.
-  { path: "/payroll_settings", key: "menu.payroll_settings", label: "Cifras oficiales", entityName: "payroll_parameter", group: "Recursos humanos", location: "sidebar", order: 705 },
+  { path: "/payroll_settings", key: "menu.payroll_settings", label: "Cifras oficiales", entityName: "payroll_parameter", group: "Recursos humanos", location: "sidebar", order: 701 },
   // work_schedule tambien esta sembrada "hidden": pantalla propia en la barra.
-  { path: "/work_schedules", key: "menu.work_schedules", label: "Horarios", entityName: "work_schedule", group: "Recursos humanos", location: "sidebar", order: 706 },
+  { path: "/work_schedules", key: "menu.work_schedules", label: "Horarios", entityName: "work_schedule", group: "Recursos humanos", location: "sidebar", order: 702 },
+  // payroll_group igual: sembrada "hidden", pantalla propia en la barra.
+  { path: "/payroll_groups", key: "menu.payroll_groups", label: "Grupos de pago", entityName: "payroll_group", group: "Recursos humanos", location: "sidebar", order: 703 },
+  // employee_termination igual: sembrada "hidden", pantalla propia en la barra.
+  { path: "/terminations", key: "menu.terminations", label: "Bajas", entityName: "employee_termination", group: "Recursos humanos", location: "sidebar", order: 731 },
+  // Capacidad payroll_simulator del Gestor (por omision solo Administrator).
+  { path: "/payroll_simulator", key: "menu.payroll_simulator", label: "Simulador de nómina", entityName: "payroll_simulator", group: "Recursos humanos", location: "sidebar", order: 724 },
+  // Capacidad attendance_report del Gestor (por omision solo Administrator).
+  // Capacidad rh_setup del Gestor: primera entrada de RH, dice por donde empezar.
+  { path: "/rh_setup", key: "menu.rh_setup", label: "Primeros pasos de RH", entityName: "rh_setup", group: "Recursos humanos", location: "sidebar", order: 700 },
+  { path: "/attendance_report", key: "menu.attendance_report", label: "Reporte de asistencia", entityName: "attendance_report", group: "Recursos humanos", location: "sidebar", order: 712 },
   // employee_leave igual: sembrada "hidden", pantalla propia en la barra.
-  // Autoservicio, como /mfa-setup: cualquier usuario la ve; el backend solo le
-  // muestra lo suyo (o lo de su equipo si es jefe).
-  { path: "/my_leaves", key: "menu.my_leaves", label: "Mis vacaciones", group: "Recursos humanos", location: "sidebar", order: 708 },
-  { path: "/employee_leaves", key: "menu.employee_leaves", label: "Vacaciones y permisos", entityName: "employee_leave", group: "Recursos humanos", location: "sidebar", order: 707 },
-  { path: "/kronos", key: "menu.kronos", label: "Asistencias", entityName: "payroll_period" },
+  // Autoservicio: la guarda la capacidad `my_leaves`, que el Gestor concede o
+  // quita por rol. El backend solo le muestra lo suyo (o lo de su equipo si es jefe).
+  { path: "/my_leaves", key: "menu.my_leaves", label: "Mis vacaciones", entityName: "my_leaves", group: "Recursos humanos", location: "sidebar", order: 714 },
+  { path: "/employee_leaves", key: "menu.employee_leaves", label: "Vacaciones y permisos", entityName: "employee_leave", group: "Recursos humanos", location: "sidebar", order: 713 },
+  { path: "/kronos", key: "menu.kronos", label: "Asistencias", entityName: "payroll_period", order: 711 },
   { path: "/kronos/device", key: "menu.kronos_device", label: "Conexión al dispositivo", entityName: "kronos_device" },
   { path: "/restaurant/waiter", key: "menu.restaurant_waiter", label: "Meseros", entityName: "restaurant_waiter" },
   { path: "/restaurant/cashier", key: "menu.restaurant_cashier", label: "Caja", entityName: "restaurant_cashier" },
@@ -325,7 +337,7 @@ export default function Shell() {
   }
 
   function canSeeNavItem(item) {
-    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password" || item.path === "/my_leaves") return true;
+    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password") return true;
     if (technicalPaths.includes(item.path)) return isBootstrapAdmin;
     if (isBootstrapAdmin) return true;
     if (!rolePermissionsLoaded) return false;

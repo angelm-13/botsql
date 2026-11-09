@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, etiquetasDeDimension, buildPieData, buildSeriesData,
-  colorDeKpi, colorEfectivoDeKpi, etiquetasDeSnapshots, formatConUnidad, labelForDimension, ordenarPorCategorias,
+  colorDeKpi, colorDePersona, colorEfectivoDeKpi, etiquetasDeSnapshots, formatConUnidad, labelForDimension, ordenarPorCategorias,
 } from "./kpiDatos.js";
 import {
   agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
@@ -22,8 +22,8 @@ import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
 } from "./kpiSelector.js";
 import {
-  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
-  tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
+  admiteOrientacion, admiteRelleno, agruparPorEfectivo, armarParametros, motivoSinOrientacion, orientacionEfectiva, columnasDeWidget, debeAgruparPorPeriodo, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  rellenoEfectivo, tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
 } from "./kpiParametros.js";
 import {
   fechaLocalIso, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
@@ -72,7 +72,9 @@ test("widget viejo de barras (un KPI, fechas absolutas): mismos datos que antes"
   assert.equal(props.series.length, 1);
   assert.equal(props.series[0].clave, "a");
   assert.equal(props.series[0].color, colorDeKpi(3));
-  assert.equal(props.colorPorFila, null);
+  // KPI por persona: cada barra lleva el color de SU persona; la serie conserva el del KPI (leyenda, comparacion).
+  assert.deepEqual(props.datos.map((fila) => props.colorPorFila(fila)), [colorDePersona(5), colorDePersona(7)]);
+  assert.equal(props.conPatrones, false);
 });
 
 test("barras con comparacion: serie B con el MISMO color y menos opacidad", () => {
@@ -257,7 +259,8 @@ test("dona: categorias fijas con su color, abiertas con la paleta y 'Otros' al f
   });
   assert.equal(abierta.datos.length, CATEGORICAL.length + 1);
   assert.deepEqual(abierta.datos.at(-1), { categoria: "Otros", valor: (100 - 9) + (100 - 10), color: COLOR_OTHERS });
-  assert.equal(abierta.datos[0].color, CATEGORICAL[0]);
+  // Dimension "persona": el color es el de cada persona (por su id), no el de su posicion.
+  assert.deepEqual(abierta.datos.slice(0, 3).map((d) => d.color), [colorDePersona(1), colorDePersona(2), colorDePersona(3)]);
 });
 
 // --- categorias ORDINALES: prestamos_abiertos_por_antiguedad ---------------------------------------
@@ -398,7 +401,7 @@ const BORRADOR = {
   tipoGrafica: "barras", idsKpiSeleccionados: ["3", "4"],
   fechaInicio: "2026-08-01", fechaFin: "2026-08-31",
   comparar: true, fechaInicioB: "2026-07-01", fechaFinB: "2026-07-31",
-  empleadosSeleccionados: ["5", "7"], departamentosSeleccionados: ["2"],
+  empleadosSeleccionados: ["5", "7"],
   coloresKpi: { 3: "#111111", 99: "#222222" }, agruparPor: "periodo", umbralBajoStock: "12",
   rangoRelativo: "personalizado",
 };
@@ -407,13 +410,131 @@ test("armarParametros: lo mismo que guardaba el editor antes (numeros, colores v
   assert.deepEqual(armarParametros(BORRADOR, { tieneBajoStock: true }), {
     fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31",
     fecha_inicio_b: "2026-07-01", fecha_fin_b: "2026-07-31",
-    empleados: [5, 7], id_departments: [2],
+    empleados: [5, 7],
     colores_kpi: { 3: "#111111" }, // el 99 ya no esta seleccionado: no se guarda huerfano
     agrupar_por: "periodo", umbral_bajo_stock: 12,
   });
   // Sin bajo stock el umbral no se guarda; sin comparar no hay rango B.
-  const simple = armarParametros({ ...BORRADOR, comparar: false, agruparPor: "entidad", empleadosSeleccionados: [], departamentosSeleccionados: [], coloresKpi: {} }, {});
+  const simple = armarParametros({ ...BORRADOR, comparar: false, agruparPor: "entidad", empleadosSeleccionados: [], coloresKpi: {} }, {});
   assert.deepEqual(simple, { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31" });
+});
+
+// --- KPI global en barras/linea/area: la serie es por dia -------------------------------------------------------------
+const GLOBAL = { id_kpi_definition: 337, clave: "clientes_nuevos", dimensiones: ["global"] };
+const POR_PERSONA = { id_kpi_definition: 3, clave: "x", dimensiones: ["empleado"] };
+
+test("debeAgruparPorPeriodo: solo un KPI global en barras, linea o area; ni el numero, la dona, la tabla ni uno con desglose", () => {
+  for (const tipo of ["barras", "linea", "area"]) assert.equal(debeAgruparPorPeriodo(tipo, [GLOBAL]), true, tipo);
+  for (const tipo of ["numero", "dona", "tabla"]) assert.equal(debeAgruparPorPeriodo(tipo, [GLOBAL]), false, tipo);
+  assert.equal(debeAgruparPorPeriodo("barras", [POR_PERSONA]), false);
+  assert.equal(debeAgruparPorPeriodo("barras", [GLOBAL, POR_PERSONA]), false);
+  assert.equal(debeAgruparPorPeriodo("barras", []), false);
+  assert.equal(debeAgruparPorPeriodo("barras", [undefined]), false, "un KPI que no esta en el catalogo no fuerza nada");
+});
+
+test("agruparPorEfectivo (camino de LECTURA): un widget global ya guardado sin agrupar_por se consulta por periodo", () => {
+  assert.equal(agruparPorEfectivo({ fecha_inicio: "2026-08-05" }, "barras", [GLOBAL]), "periodo");
+  assert.equal(agruparPorEfectivo(undefined, "linea", [GLOBAL]), "periodo");
+  assert.equal(agruparPorEfectivo({}, "barras", [POR_PERSONA]), "entidad");
+  assert.equal(agruparPorEfectivo({ agrupar_por: "periodo" }, "barras", [POR_PERSONA]), "periodo", "lo guardado se respeta");
+});
+
+test("armarParametros (camino de GUARDADO): un KPI global en barras guarda agrupar_por=periodo aunque el borrador diga entidad", () => {
+  const borrador = { ...BORRADOR, tipoGrafica: "barras", idsKpiSeleccionados: ["337"], comparar: false, empleadosSeleccionados: [], coloresKpi: {}, agruparPor: "entidad" };
+  assert.equal(armarParametros(borrador, { kpiInfos: [GLOBAL] }).agrupar_por, "periodo");
+  assert.equal(armarParametros(borrador, { kpiInfos: [POR_PERSONA] }).agrupar_por, undefined);
+  assert.equal(armarParametros({ ...borrador, tipoGrafica: "numero" }, { kpiInfos: [GLOBAL] }).agrupar_por, undefined);
+  assert.equal(widgetDeBorrador(borrador, { kpiInfos: [GLOBAL] }).parametros.agrupar_por, "periodo");
+});
+
+// --- relleno (solido | textura) -----------------------------------------------------------------------------------------
+const ESTADO_RELLENO = { id_kpi_definition: 341, clave: "tareas_por_estado", dimensiones: ["estado"], unidad: "numero" };
+
+test("admiteRelleno: barras o dona con UN KPI que desglosa; no un global, varios KPIs, linea, area, numero ni tabla", () => {
+  for (const tipo of ["barras", "dona"]) {
+    assert.equal(admiteRelleno(tipo, [ESTADO_RELLENO]), true, tipo);
+    assert.equal(admiteRelleno(tipo, [POR_PERSONA]), true, tipo);
+    assert.equal(admiteRelleno(tipo, [GLOBAL]), false, `${tipo} global`);
+  }
+  assert.equal(admiteRelleno("barras", [ESTADO_RELLENO, POR_PERSONA]), false, "varios KPIs: cada serie lleva el color de su KPI");
+  for (const tipo of ["linea", "area", "numero", "tabla"]) assert.equal(admiteRelleno(tipo, [ESTADO_RELLENO]), false, tipo);
+  assert.equal(admiteRelleno("barras", []), false);
+  assert.equal(admiteRelleno("barras", [undefined]), false);
+});
+
+test("rellenoEfectivo: solo 'textura' guardada y admitida es textura; sin la llave, o con basura, es solido", () => {
+  assert.equal(rellenoEfectivo({ relleno: "textura" }, "barras", [ESTADO_RELLENO]), "textura");
+  assert.equal(rellenoEfectivo({ relleno: "solido" }, "barras", [ESTADO_RELLENO]), "solido");
+  assert.equal(rellenoEfectivo({}, "barras", [ESTADO_RELLENO]), "solido", "widget guardado antes de la opcion");
+  assert.equal(rellenoEfectivo(undefined, "dona", [ESTADO_RELLENO]), "solido");
+  assert.equal(rellenoEfectivo({ relleno: "rayas" }, "dona", [ESTADO_RELLENO]), "solido");
+  assert.equal(rellenoEfectivo({ relleno: "textura" }, "linea", [ESTADO_RELLENO]), "solido", "un tipo que no lo admite");
+});
+
+test("armarParametros guarda relleno=textura solo si se eligio y el grafico lo admite; solido no deja la llave", () => {
+  const borrador = { ...BORRADOR, tipoGrafica: "dona", idsKpiSeleccionados: ["341"], comparar: false, empleadosSeleccionados: [], coloresKpi: {}, agruparPor: "entidad" };
+  assert.equal(armarParametros({ ...borrador, relleno: "textura" }, { kpiInfos: [ESTADO_RELLENO] }).relleno, "textura");
+  assert.equal("relleno" in armarParametros({ ...borrador, relleno: "solido" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal("relleno" in armarParametros(borrador, { kpiInfos: [ESTADO_RELLENO] }), false, "borrador sin la llave");
+  assert.equal("relleno" in armarParametros({ ...borrador, relleno: "textura", tipoGrafica: "linea" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal("relleno" in armarParametros({ ...borrador, relleno: "textura", tipoGrafica: "barras", idsKpiSeleccionados: ["337"] }, { kpiInfos: [GLOBAL] }), false);
+  assert.equal(widgetDeBorrador({ ...borrador, relleno: "textura" }, { kpiInfos: [ESTADO_RELLENO] }).parametros.relleno, "textura");
+});
+
+test("estadoDeWidget relee el relleno: editar y guardar un widget con texturas no lo pierde", () => {
+  const widget = { id_kpi_dashboard_widget: 7, tipo_grafica: "dona", ids_kpi_definition: [341], parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02", relleno: "textura" } };
+  const estado = estadoDeWidget(widget, [ESTADO_RELLENO]);
+  assert.equal(estado.relleno, "textura");
+  assert.equal(armarParametros(estado, { kpiInfos: [ESTADO_RELLENO] }).relleno, "textura", "ida y vuelta");
+  const viejo = estadoDeWidget({ ...widget, parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02" } }, [ESTADO_RELLENO]);
+  assert.equal(viejo.relleno, "solido", "un widget guardado antes de la opcion abre en solido");
+  assert.equal(estadoDeWidget({ ...widget, parametros: { ...widget.parametros, relleno: "basura" } }, [ESTADO_RELLENO]).relleno, "solido");
+});
+
+// --- orientacion (auto | horizontal | vertical) ------------------------------------------------------------------------
+test("motivoSinOrientacion: solo barras con KPIs que desglosan y sin agrupar por periodo; global y periodo dicen por que no", () => {
+  assert.equal(motivoSinOrientacion("barras", [ESTADO_RELLENO], "entidad"), null);
+  assert.equal(motivoSinOrientacion("barras", [POR_PERSONA, ESTADO_RELLENO], "entidad"), null, "varios KPIs: el horizontal multiserie se elige");
+  assert.equal(motivoSinOrientacion("barras", [GLOBAL], "periodo"), "global");
+  assert.equal(motivoSinOrientacion("barras", [GLOBAL, POR_PERSONA], "entidad"), "global");
+  assert.equal(motivoSinOrientacion("barras", [ESTADO_RELLENO], "periodo"), "periodo");
+  for (const tipo of ["dona", "linea", "area", "numero", "tabla"]) assert.equal(motivoSinOrientacion(tipo, [ESTADO_RELLENO], "entidad"), "no_aplica", tipo);
+  assert.equal(motivoSinOrientacion("barras", [], "entidad"), "no_aplica");
+  assert.equal(admiteOrientacion("barras", [ESTADO_RELLENO], "entidad"), true);
+  assert.equal(admiteOrientacion("barras", [GLOBAL], "periodo"), false);
+});
+
+test("orientacionEfectiva: lo guardado si el grafico lo admite; sin la llave, con basura o sin admitirlo es auto", () => {
+  assert.equal(orientacionEfectiva({ orientacion: "horizontal" }, "barras", [ESTADO_RELLENO]), "horizontal");
+  assert.equal(orientacionEfectiva({ orientacion: "vertical" }, "barras", [ESTADO_RELLENO, POR_PERSONA]), "vertical");
+  assert.equal(orientacionEfectiva({}, "barras", [ESTADO_RELLENO]), "auto", "widget guardado antes de la opcion");
+  assert.equal(orientacionEfectiva(undefined, "barras", [ESTADO_RELLENO]), "auto");
+  assert.equal(orientacionEfectiva({ orientacion: "diagonal" }, "barras", [ESTADO_RELLENO]), "auto");
+  assert.equal(orientacionEfectiva({ orientacion: "auto" }, "barras", [ESTADO_RELLENO]), "auto");
+  assert.equal(orientacionEfectiva({ orientacion: "horizontal", agrupar_por: "periodo" }, "barras", [ESTADO_RELLENO]), "auto", "por periodo no hay horizontal");
+  assert.equal(orientacionEfectiva({ orientacion: "horizontal" }, "barras", [GLOBAL]), "auto", "un KPI global se agrupa por periodo");
+  assert.equal(orientacionEfectiva({ orientacion: "horizontal" }, "dona", [ESTADO_RELLENO]), "auto");
+});
+
+test("armarParametros guarda la orientacion solo si es horizontal o vertical y el grafico la admite; auto no deja la llave", () => {
+  const borrador = { ...BORRADOR, tipoGrafica: "barras", idsKpiSeleccionados: ["341"], comparar: false, empleadosSeleccionados: [], coloresKpi: {}, agruparPor: "entidad" };
+  assert.equal(armarParametros({ ...borrador, orientacion: "horizontal" }, { kpiInfos: [ESTADO_RELLENO] }).orientacion, "horizontal");
+  assert.equal(armarParametros({ ...borrador, orientacion: "vertical" }, { kpiInfos: [ESTADO_RELLENO] }).orientacion, "vertical");
+  assert.equal("orientacion" in armarParametros({ ...borrador, orientacion: "auto" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal("orientacion" in armarParametros(borrador, { kpiInfos: [ESTADO_RELLENO] }), false, "borrador sin la llave");
+  assert.equal("orientacion" in armarParametros({ ...borrador, orientacion: "horizontal", agruparPor: "periodo" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal("orientacion" in armarParametros({ ...borrador, orientacion: "horizontal", idsKpiSeleccionados: ["337"] }, { kpiInfos: [GLOBAL] }), false);
+  assert.equal("orientacion" in armarParametros({ ...borrador, orientacion: "horizontal", tipoGrafica: "dona" }, { kpiInfos: [ESTADO_RELLENO] }), false);
+  assert.equal(widgetDeBorrador({ ...borrador, orientacion: "horizontal" }, { kpiInfos: [ESTADO_RELLENO] }).parametros.orientacion, "horizontal");
+});
+
+test("estadoDeWidget relee la orientacion: editar y guardar un widget horizontal no la pierde; uno viejo abre en auto", () => {
+  const widget = { id_kpi_dashboard_widget: 9, tipo_grafica: "barras", ids_kpi_definition: [341], parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02", orientacion: "horizontal" } };
+  const estado = estadoDeWidget(widget, [ESTADO_RELLENO]);
+  assert.equal(estado.orientacion, "horizontal");
+  assert.equal(armarParametros(estado, { kpiInfos: [ESTADO_RELLENO] }).orientacion, "horizontal", "ida y vuelta");
+  assert.equal(estadoDeWidget({ ...widget, parametros: { fecha_inicio: "2026-10-04", fecha_fin: "2026-11-02" } }, [ESTADO_RELLENO]).orientacion, "auto");
+  assert.equal(estadoDeWidget({ ...widget, parametros: { ...widget.parametros, orientacion: "basura" } }, [ESTADO_RELLENO]).orientacion, "auto");
 });
 
 test("armarParametros: una tabla (KPI vivo) no guarda periodo ni filtros", () => {
@@ -470,7 +591,7 @@ const WIDGETS_VIEJOS = [
     id_kpi_dashboard_widget: 2, tipo_grafica: "linea", ids_kpi_definition: [3, 4],
     parametros: {
       fecha_inicio: "2026-06-01", fecha_fin: "2026-06-30", fecha_inicio_b: "2026-05-01", fecha_fin_b: "2026-05-31",
-      empleados: [5, 7], id_departments: [2], colores_kpi: { 3: "#2a78d6", 4: "#eb6834" }, agrupar_por: "periodo",
+      empleados: [5, 7], colores_kpi: { 3: "#2a78d6", 4: "#eb6834" }, agrupar_por: "periodo",
     },
   },
   { id_kpi_dashboard_widget: 3, tipo_grafica: "numero", ids_kpi_definition: [1], parametros: { fecha_inicio: "2026-09-01", fecha_fin: "2026-09-15", umbral_bajo_stock: 10 } },
@@ -1004,4 +1125,38 @@ test("masonry: una tarjeta ocupa las filas de 4px que mide, mas el hueco de abaj
     const ocupado = filasQueOcupa(alto) * 4 - 16;
     assert.ok(ocupado >= alto && ocupado - alto < 4, `alto ${alto} -> ${ocupado}`);
   }
+});
+
+// --- dimension: solo se combinan KPIs con el mismo desglose ------------------
+const POR_ESTADO = { id_kpi_definition: 20, clave: "incidencias_abiertas_vs_cerradas", unidad: "numero", modo: "snapshot", dimensiones: ["estado"] };
+const POR_RESPONSABLE = { id_kpi_definition: 21, clave: "incidencias_abiertas_por_empleado", unidad: "numero", modo: "snapshot", dimensiones: ["empleado"] };
+const OTRO_POR_RESPONSABLE = { id_kpi_definition: 22, clave: "cancelaciones_por_empleado", unidad: "numero", modo: "snapshot", dimensiones: ["empleado"] };
+const GLOBAL_A = { id_kpi_definition: 23, clave: "ingresos_totales", unidad: "numero", modo: "snapshot", dimensiones: ["global"] };
+const GLOBAL_B = { id_kpi_definition: 24, clave: "egresos_totales", unidad: "numero", modo: "snapshot", dimensiones: ["global"] };
+
+test("un KPI por estado y uno por responsable NO se combinan (mezclarian 'Cerrada' con nombres de personas)", () => {
+  assert.equal(motivoParaNoCombinar([POR_ESTADO], POR_RESPONSABLE), "dimension");
+  assert.equal(motivoParaNoCombinar([POR_RESPONSABLE], POR_ESTADO), "dimension");
+  assert.equal(motivoParaNoCombinar([POR_RESPONSABLE, OTRO_POR_RESPONSABLE], POR_ESTADO), "dimension");
+});
+
+test("mismo desglose si se combina; los globales entre si tambien, pero no con otro desglose", () => {
+  assert.equal(motivoParaNoCombinar([POR_RESPONSABLE], OTRO_POR_RESPONSABLE), null);
+  assert.equal(motivoParaNoCombinar([GLOBAL_A], GLOBAL_B), null);
+  assert.equal(motivoParaNoCombinar([GLOBAL_A], POR_RESPONSABLE), "dimension");
+});
+
+test("una fila sin dimension declarada no se bloquea por desglose, y la unidad sigue mandando primero", () => {
+  assert.equal(motivoParaNoCombinar([POR_RESPONSABLE], { ...OTRO_POR_RESPONSABLE, dimensiones: undefined }), null);
+  assert.equal(motivoParaNoCombinar([PORCENTAJE], POR_RESPONSABLE), "unidad");
+});
+
+test("un widget viejo con desgloses mezclados se detecta, pero no se le cambia nada", () => {
+  assert.equal(mezclaDimensiones([POR_ESTADO, POR_RESPONSABLE]), true);
+  assert.equal(mezclaDimensiones([POR_RESPONSABLE, OTRO_POR_RESPONSABLE]), false);
+  assert.equal(mezclaDimensiones([POR_RESPONSABLE, { ...OTRO_POR_RESPONSABLE, dimensiones: undefined }]), false);
+  const viejo = { id_kpi_dashboard_widget: 9, tipo_grafica: "barras", ids_kpi_definition: [20, 21], parametros: { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31" } };
+  const estado = estadoDeWidget(viejo, [POR_ESTADO, POR_RESPONSABLE], HOY);
+  assert.deepEqual(estado.idsKpiSeleccionados, ["20", "21"]);
+  assert.deepEqual(armarParametros(estado, { hoy: HOY }), viejo.parametros);
 });

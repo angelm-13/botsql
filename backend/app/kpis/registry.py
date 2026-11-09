@@ -47,6 +47,8 @@ from app.services.warehouse_voucher_service import (
     CIERRE_SENTINELA, SALIDA, TIPOS_DE_BAJA, _estado_del_renglon, _vales_de_baja,
 )
 from app.modules.registry import MODULO_POR_CLAVE
+from app.utils.tiempo import ahora_negocio, hoy_negocio
+from app.kpis.criterios import no_es_checada
 from app.kpis.dimensiones import CATALOGO as CATALOGO_DE_DIMENSIONES, DIMENSION_POR_CLAVE as CATALOGO_POR_CLAVE
 
 # Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
@@ -101,7 +103,12 @@ UNIDADES = ("numero", "porcentaje", "moneda", "dias", "piezas", "minutos")
 # en vez de en la de su `modulo`, pero su modulo no cambia: licencias (`modulo_habilitado`), permisos, el job y el
 # PDF siguen leyendo `modulo`. Vocabulario cerrado, igual que las demas listas de aqui: un `grupo` mal escrito
 # dejaria al KPI en una pestana que el frontend no conoce, y revienta al importar.
-GRUPOS_DE_SELECTOR = ("asistencias",)
+#
+# "crm" es la unica que SI se llama como un modulo real (`crm`, el de los clientes) y es a proposito: la pestana CRM
+# junta los KPIs de clientes (`modulo="crm"`, que ya salen en ella por su modulo) con los de proyectos y tareas
+# (`modulo="operaciones"`, `grupo="crm"`), que en el Gestor de roles se ven bajo CRM. Como la clave de la pestana es
+# la misma, el selector las junta en una sola en vez de partirlas.
+GRUPOS_DE_SELECTOR = ("asistencias", "crm")
 
 # Vocabulario cerrado de dimensiones: las claves del catalogo de
 # `app/kpis/dimensiones.py` (las cinco de siempre, en su orden, y despues las de
@@ -309,10 +316,12 @@ def vales_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, filtr
       una vez por proyecto activo) y `actor_project` se ignora aqui a
       proposito.
     """
-    ahora = datetime.now()
+    ahora = ahora_negocio()
     fecha_col = func.date(NmIncidentProduct.due_date)
     condiciones = [
         NmIncidentProduct.deletion_date.is_(None),
+        # Solo lo que SALIO del almacen se reclama: una ENTRADA no es un prestamo (igual que los otros KPI de prestamos).
+        NmIncidentProduct.direction == SALIDA,
         or_(
             NmIncidentProduct.close_date.is_(None),
             NmIncidentProduct.close_date == CIERRE_SENTINELA,
@@ -392,6 +401,7 @@ def incidentes_resueltos_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     fecha_col = func.date(Incident.incident_date)
     condiciones = [
         Incident.deletion_date.is_(None),
+        no_es_checada(),
         Incident.incident_date.isnot(None),
         fecha_col >= fecha_inicio,
         fecha_col <= fecha_fin,
@@ -453,6 +463,7 @@ def cancelaciones_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_d
     fecha_col = func.date(Incident.close_date)
     condiciones = [
         Incident.deletion_date.is_(None),
+        no_es_checada(),
         Incident.incident_status == "cancelada",
         Incident.close_date.isnot(None),
         Incident.close_date != CIERRE_SENTINELA,
@@ -606,7 +617,7 @@ def documentos_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, 
     * Vigencia: `deletion_date IS NULL`, `status == "signed"` (ver
       `DOCUMENT_EXPIRABLE_STATUS`).
     * Vencido: `expiration_date` (columna `Date`, no `DateTime`) < HOY real
-      (`date.today()`), evaluado siempre contra el momento real -- mismo
+      (`hoy_negocio()`, el dia en la zona del negocio), evaluado siempre contra el momento real -- mismo
       criterio que `vales_vencidos_por_responsable_query`: un documento
       vencido hace 3 dias sigue vencido hoy, sin importar que dia se
       recalcule.
@@ -616,7 +627,7 @@ def documentos_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, 
     * Alcance: `Document.id_proyect` existe (columna real, NOT NULL) --
       este KPI SI tiene alcance por proyecto.
     """
-    hoy = date.today()
+    hoy = hoy_negocio()
     condiciones = [
         Document.deletion_date.is_(None),
         Document.status == DOCUMENT_EXPIRABLE_STATUS,
@@ -763,7 +774,7 @@ def prestamos_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, f
     Sin alcance de proyecto, mismo motivo que
     `material_prestado_por_responsable_query`.
     """
-    ahora = datetime.now()
+    ahora = ahora_negocio()
     fecha_col = func.date(InventoryAsset.due_date)
     condiciones = [
         InventoryAsset.deletion_date.is_(None),
@@ -844,15 +855,17 @@ def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimensi
     de la pantalla, no de este query.
 
     Dimension "producto". Sin alcance de proyecto: el saldo de almacen no le
-    pertenece a un proyecto de cliente.
+    pertenece a un proyecto de cliente. Un producto dado de baja (`deletion_date`) no cuenta.
     """
     productos = (filtros_dimension or {}).get("productos")
-    condiciones = []
+    # Un producto dado de baja ya no existe para el negocio aunque conserve saldo en `inventory_stock`.
+    condiciones = [Product.deletion_date.is_(None)]
     if productos:
         condiciones.append(InventoryStock.id_product.in_(productos))
 
     stmt = (
         select(InventoryStock.id_product, func.sum(InventoryStock.quantity))
+        .join(Product, Product.id_product == InventoryStock.id_product)
         .where(*condiciones)
         .group_by(InventoryStock.id_product)
         .order_by(InventoryStock.id_product)
@@ -898,6 +911,7 @@ def incidencias_abiertas_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     fecha_col = func.date(Incident.incident_date)
     condiciones = [
         Incident.deletion_date.is_(None),
+        no_es_checada(),
         Incident.incident_date.isnot(None),
         fecha_col >= fecha_inicio,
         fecha_col <= fecha_fin,
@@ -914,6 +928,10 @@ def incidencias_abiertas_por_empleado_query(session, fecha_inicio, fecha_fin, fi
         .order_by(Incident.id_user, fecha_col)
     )
     return session.execute(stmt).all()
+
+
+# Estatus de una incidencia/vale cancelado: "cancelada" (incidencias) y "cancelado" (vales, `CANCELADO`).
+ESTATUS_CANCELADO = ("cancelada", "cancelado")
 
 
 def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
@@ -952,10 +970,16 @@ def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimen
         select(cast(func.generate_series(fecha_inicio, fecha_fin, text("interval '1 day'")), Date).label("dia"))
         .subquery()
     )
+    # Una cancelada SIN cierre real (nulo o el centinela de Adser) no esta pendiente de nada: solo parecia
+    # "sin cerrar". Una cancelada CON fecha de cierre si estuvo pendiente hasta que se cancelo (historia).
+    cancelada = func.lower(func.coalesce(Incident.incident_status, "")).in_(ESTATUS_CANCELADO)
+    con_cierre_real = and_(Incident.close_date.isnot(None), Incident.close_date != CIERRE_SENTINELA)
     condicion_pendiente = and_(
         Incident.deletion_date.is_(None),
+        no_es_checada(),
         Incident.incident_date.isnot(None),
         func.date(Incident.incident_date) <= dias.c.dia,
+        or_(~cancelada, con_cierre_real),
         or_(
             Incident.close_date.is_(None),
             Incident.close_date == CIERRE_SENTINELA,
@@ -1226,6 +1250,7 @@ def incidencias_abiertas_vs_cerradas_query(session, fecha_inicio, fecha_fin, fil
         select(literal("abierta").label("estado"), fecha_apertura.label("fecha"), func.count())
         .where(
             Incident.deletion_date.is_(None),
+            no_es_checada(),
             Incident.incident_date.isnot(None),
             fecha_apertura >= fecha_inicio,
             fecha_apertura <= fecha_fin,
@@ -1237,6 +1262,7 @@ def incidencias_abiertas_vs_cerradas_query(session, fecha_inicio, fecha_fin, fil
         select(literal("cerrada").label("estado"), fecha_cierre.label("fecha"), func.count())
         .where(
             Incident.deletion_date.is_(None),
+            no_es_checada(),
             Incident.close_date.isnot(None),
             Incident.close_date != CIERRE_SENTINELA,
             fecha_cierre >= fecha_inicio,
@@ -1503,7 +1529,7 @@ def material_prestado_actual_query(session, *, limit, offset, actor_project=None
     nivel SQL), `total` es el conteo de TODO lo que cumple los filtros, sin paginar (para que el
     frontend pueda mostrar "1-25 de 143").
     """
-    hoy = date.today()
+    hoy = hoy_negocio()
     condiciones = _condiciones_de_prestamo(hoy, id_user=id_user, id_user_ambito=id_user_ambito, q=q)
     articulo, _fecha, _dias = _expresiones_de_prestamo(hoy)
 
@@ -1553,7 +1579,7 @@ def material_prestado_actual_resumen_query(session, *, total, id_user=None, id_u
     Con la pagina son 3 consultas en total, constantes: no crecen con los renglones ni con los
     responsables. Solo UNA (la de `resumen` por responsable) evita la busqueda de texto.
     """
-    hoy = date.today()
+    hoy = hoy_negocio()
     en_el_ambito = _condiciones_de_prestamo(hoy, id_user_ambito=id_user_ambito)
     filtradas = _condiciones_de_prestamo(hoy, id_user=id_user, id_user_ambito=id_user_ambito, q=q)
     articulo, _fecha, _dias = _expresiones_de_prestamo(hoy)
@@ -1731,7 +1757,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Subtotal facturado (antes de impuesto), por empleado y por dia.",
+        descripcion="Subtotal facturado (antes de impuesto), por empleado y por día.",
     ),
     KpiDefinition(
         clave="egresos_por_empleado",
@@ -1744,7 +1770,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Facturas de compra capturadas, por empleado y por dia.",
+        descripcion="Facturas de compra capturadas, por empleado y por día.",
     ),
     KpiDefinition(
         clave="desarrollo_por_empleado",
@@ -1800,7 +1826,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Incidentes cancelados, por empleado y por dia de cancelacion.",
+        descripcion="Incidentes cancelados, por empleado y por día de cancelación.",
     ),
     KpiDefinition(
         clave="ordenes_laboratorio_entregadas_por_tecnico",
@@ -1814,7 +1840,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Ordenes de servicio entregadas, por tecnico.",
+        descripcion="Órdenes de servicio entregadas, por técnico.",
     ),
     KpiDefinition(
         clave="tiempo_promedio_reparacion_laboratorio_por_tecnico",
@@ -1828,7 +1854,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Dias promedio de reparacion, por tecnico.",
+        descripcion="Días promedio de reparación, por técnico.",
     ),
     KpiDefinition(
         clave="costo_promedio_reparacion_laboratorio_por_tecnico",
@@ -1842,7 +1868,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Costo promedio de reparacion, por tecnico.",
+        descripcion="Costo promedio de reparación, por técnico.",
     ),
     KpiDefinition(
         clave="documentos_vencidos_por_responsable",
@@ -1872,7 +1898,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="linea",
-        descripcion="Ventas facturadas de toda la empresa, por dia.",
+        descripcion="Ventas facturadas de toda la empresa, por día.",
     ),
     KpiDefinition(
         clave="egresos_totales",
@@ -1885,7 +1911,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="linea",
-        descripcion="Facturas de compra de toda la empresa, por dia.",
+        descripcion="Facturas de compra de toda la empresa, por día.",
     ),
     KpiDefinition(
         clave="material_prestado_por_responsable",
@@ -1900,7 +1926,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
-        descripcion="Prestamos de material iniciados, por responsable y por dia.",
+        descripcion="Préstamos de material iniciados, por responsable y por día.",
     ),
     KpiDefinition(
         clave="prestamos_vencidos_por_responsable",
@@ -1953,7 +1979,7 @@ KPI_REGISTRY = (
     # un proyecto de cliente, mismo motivo que sus vecinos de este modulo. --
     KpiDefinition(
         clave="incidencias_abiertas_por_empleado",
-        etiqueta="Incidencias abiertas por responsable",
+        etiqueta="Incidencias registradas por empleado",
         modulo="operaciones",
         dimensiones=("empleado",),
         etiqueta_dimension="Responsable",
@@ -1964,7 +1990,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("barras", "tabla"),
         grafica_default="barras",
-        descripcion="Incidencias/vales abiertos, por responsable: el usuario a cuyo nombre esta el material.",
+        descripcion="Incidencias capturadas por empleado, sin importar su estatus",
     ),
     KpiDefinition(
         clave="incidencias_pendientes",
@@ -1978,7 +2004,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=("numero",),
         grafica_default="numero",
-        descripcion="Foto de cuantas incidencias siguen sin cerrar hoy.",
+        descripcion="Foto de cuántas incidencias siguen sin cerrar hoy.",
     ),
     KpiDefinition(
         clave="incidencias_abiertas_vs_cerradas",
@@ -1996,7 +2022,7 @@ KPI_REGISTRY = (
         # categoria, no por posicion -- coral para "abierta" (llama la
         # atencion, hay que atenderla), verde para "cerrada" (resuelta, bien).
         colores_categoria={"abierta": "#ef6f5c", "cerrada": "#22b573"},
-        descripcion="Cuantas incidencias se abren y cuantas se cierran, por dia.",
+        descripcion="Cuántas incidencias se abren y cuántas se cierran, por día.",
     ),
     KpiDefinition(
         clave="material_por_estado",
@@ -2100,8 +2126,9 @@ KPI_REGISTRY = (
 # definida `KpiDefinition`, porque cada archivo la pide dentro de `definiciones()`.
 from app.kpis.modulos import checadas as _checadas  # noqa: E402
 from app.kpis.modulos import restaurante as _restaurante  # noqa: E402
+from app.kpis.modulos import crm as _crm  # noqa: E402
 
-KPI_REGISTRY = KPI_REGISTRY + _restaurante.definiciones() + _checadas.definiciones()
+KPI_REGISTRY = KPI_REGISTRY + _restaurante.definiciones() + _checadas.definiciones() + _crm.definiciones()
 
 
 # `id_kpi_definition` en `kpi_snapshot`/las rutas es un entero de BD -- este

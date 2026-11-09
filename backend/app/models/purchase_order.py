@@ -50,6 +50,9 @@ ORDER_STATUSES = (
     "partially_received", "received", "closed", "cancelled",
 )
 PAYMENT_METHODS = ("cash", "transfer", "card", "credit", "check", "other")
+# Un renglon se compra o se renta. La renta cobra por periodo (dia, semana, mes).
+LINE_KINDS = ("purchase", "rental")
+RENTAL_RATE_UNITS = ("day", "week", "month")
 VOUCHER_KINDS = ("quote", "invoice", "receipt", "payment_proof")
 
 
@@ -84,8 +87,11 @@ class PurchaseOrder(_Serializable, Base):
     id_purchase_order: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # El numero con el que se conoce la orden: OC-2026-00012.
     folio: Mapped[str] = mapped_column(String(30), nullable=False, unique=True)
-    id_customer_supplier: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customer_supplier.id_customer_supplier"), nullable=False, index=True)
+    # El proveedor se escribe a mano (`supplier_name`); si coincide con uno dado de
+    # alta, la orden queda ademas ligada a el y se compara el RFC de su factura.
+    id_customer_supplier: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("customer_supplier.id_customer_supplier"), nullable=True, index=True)
+    supplier_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     order_status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="draft", server_default=text("'draft'"))
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
@@ -141,6 +147,14 @@ class PurchaseOrderLine(_Serializable, Base):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_purchase_order_line_quantity"),
         CheckConstraint("quantity_received >= 0", name="ck_purchase_order_line_received"),
+        CheckConstraint("line_kind IN ('purchase', 'rental')", name="ck_purchase_order_line_kind"),
+        CheckConstraint(
+            "(line_kind = 'rental' AND rental_start IS NOT NULL AND rental_end IS NOT NULL "
+            "AND rental_end >= rental_start) OR (line_kind = 'purchase' AND rental_start IS NULL)",
+            name="ck_purchase_order_line_rental_period"),
+        CheckConstraint(
+            "rental_rate_unit IS NULL OR rental_rate_unit IN ('day', 'week', 'month')",
+            name="ck_purchase_order_line_rate_unit"),
     )
 
     id_purchase_order_line: Mapped[int] = mapped_column(
@@ -164,6 +178,31 @@ class PurchaseOrderLine(_Serializable, Base):
     item_class: Mapped[str | None] = mapped_column(String(20), nullable=True)
     quantity_received: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0"))
+
+    # --- renta de maquinaria (solo con line_kind = 'rental') ---------------------
+    # Una renta no entra al almacen: la maquinaria no es de la empresa. Su ciclo es
+    # llega a obra -> (prorroga) -> se devuelve al proveedor. `unit_cost` sigue siendo
+    # el costo de UNA unidad por todo el periodo (tarifa x periodos), asi los totales,
+    # el presupuesto y la autorizacion no cambian de regla.
+    line_kind: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="purchase", server_default=text("'purchase'"))
+    rental_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Hasta cuando esta contratada. Una prorroga aprobada la recorre.
+    rental_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rental_rate: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    rental_rate_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    rental_arrived_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rental_arrived_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rental_returned_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rental_returned_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rental_return_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Prorroga pedida y aun sin decidir: hasta cuando y por que.
+    rental_extension_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rental_extension_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    rental_extension_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Ultimo dia en que se aviso del vencimiento: el job no repite el mismo aviso.
+    rental_reminder_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
     created_by: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default=text("1"))
     creation_date: Mapped[datetime] = mapped_column(
@@ -192,8 +231,9 @@ class PurchaseVoucher(_Serializable, Base):
         Integer, primary_key=True, autoincrement=True)
     id_purchase_order: Mapped[int] = mapped_column(
         Integer, ForeignKey("purchase_order.id_purchase_order"), nullable=False, index=True)
-    # Del proveedor de la orden, copiado: el folio es unico POR PROVEEDOR.
-    id_customer_supplier: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Del proveedor de la orden, copiado: el folio es unico POR PROVEEDOR. Vacio si la
+    # orden lleva un proveedor escrito a mano, sin alta.
+    id_customer_supplier: Mapped[int | None] = mapped_column(Integer, nullable=True)
     kind: Mapped[str] = mapped_column(String(14), nullable=False)
     folio: Mapped[str | None] = mapped_column(String(60), nullable=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)

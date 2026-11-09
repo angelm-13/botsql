@@ -1,5 +1,5 @@
 import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllUser, createUser, updateUser, deleteUser, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getPermissionOptions, getAllProyect, getAllStatus } from "../api";
@@ -7,12 +7,13 @@ import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
+import NominaDelPerfil from "../components/NominaDelPerfil.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { formatearFechaHora } from "../utils/fechas";
 import { useDialogo } from "../dialogo/useDialogo.js";
 
-const emptyForm = { date_born: "", date_start: "", email: "", first_name: "", id_permission: "", full_name: "", id_proyect: "", last_name_father: "", last_name_mother: "", national_id: "", password: "", principal_phone: "", secundary_phone: "", ssn: "", supervisor: "", base_salary: "", hire_date: "", id_status: "", tax_id: "", title: "", user_type: "", username: "", puesto: "", is_employee: false, accepts_marketing: false };
+const emptyForm = { date_born: "", date_start: "", email: "", first_name: "", id_permission: "", full_name: "", id_proyect: "", last_name_father: "", last_name_mother: "", national_id: "", password: "", principal_phone: "", secundary_phone: "", ssn: "", supervisor: "", base_salary: "", hire_date: "", id_status: "", tax_id: "", title: "", user_type: "", username: "", puesto: "", is_employee: false, accepts_marketing: false, receive_email_notifications: true };
 const validationRules = allValidationRules["user"] || {};
 const ENTITY_KEY = "user";
 const ACTION_CREATE = 1;
@@ -67,6 +68,8 @@ export default function UserPage() {
   const [proyectOptions, setProyectOptions] = useState([]);
   const [userOptions, setUserOptions] = useState([]);
   const [statusOptions, setStatusOptions] = useState([]);
+  // Horario, grupo de pago y sueldo del empleado: se guardan despues del usuario.
+  const nominaRef = useRef(null);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -273,8 +276,14 @@ export default function UserPage() {
     try {
       if (editingId && !canUpdate) return;
       if (!editingId && !canCreate) return;
+      let idGuardado = editingId;
       if (editingId) await updateUser(editingId, submitPayload);
-      else await createUser(submitPayload);
+      else idGuardado = (await createUser(submitPayload))?.id_user ?? null;
+      if (idGuardado && submitPayload.is_employee) {
+        // Si falla, el usuario ya quedo creado: el siguiente Guardar lo edita, no lo duplica.
+        try { await nominaRef.current?.guardar(idGuardado); }
+        catch (error) { if (!editingId) setEditingId(idGuardado); throw error; }
+      }
       setFormData(emptyForm); setEditingId(null); await loadData();
     } catch (error) {
       const meta = error.payload?.meta || null;
@@ -352,6 +361,9 @@ export default function UserPage() {
     }
     return String(value);
   }
+
+  // El estado de la instalacion inicial se llama "active": se muestra en espanol.
+  const etiquetaDeEstado = (valor) => t(`user_status.${valor}`, valor);
 
   function getOptionLabel(item, entityName = "") {
     if (!item) return "";
@@ -582,6 +594,8 @@ export default function UserPage() {
           <label className="field">
             <span>{t("fields.user.base_salary")}</span>
             <input name="base_salary" type="number" value={formData.base_salary ?? ""} onChange={handleChange} placeholder={t("fields.user.base_salary")} aria-invalid={Boolean(fieldErrors["base_salary"])} {...inputPropsForField("base_salary", validationRules["base_salary"], "number")} />
+            {/* Dos sueldos en el mismo perfil confundian: este solo es respaldo. */}
+            <small className="muted">{t("user_payroll.base_salary_hint")}</small>
             {fieldErrors["base_salary"] && <span className="field-error">{formatFieldError("base_salary")}</span>}
           </label>
           )}
@@ -599,7 +613,7 @@ export default function UserPage() {
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
               {statusOptions.map((item) => (
                 <option key={item.id_status ?? item.id ?? JSON.stringify(item)} value={item.id_status ?? item.id ?? ""}>
-                  {getOptionLabel(item, "status")}
+                  {etiquetaDeEstado(getOptionLabel(item, "status"))}
                 </option>
               ))}
             </select>
@@ -656,6 +670,13 @@ export default function UserPage() {
             <input name="is_employee" type="checkbox" checked={Boolean(formData.is_employee)} onChange={handleChange} />
           </label>
           )}
+          {canSeeField("receive_email_notifications") && (
+          <label className="field checkbox-field">
+            <span>{t("fields.user.receive_email_notifications", "Recibir avisos por correo")}</span>
+            <input name="receive_email_notifications" type="checkbox" checked={formData.receive_email_notifications !== false} onChange={handleChange} />
+            <small className="muted">{t("user_payroll.email_notifications_hint")}</small>
+          </label>
+          )}
           {canSeeField("accepts_marketing") && (
           <label className="field checkbox-field">
             <span>{t("fields.user.accepts_marketing")}</span>
@@ -664,6 +685,7 @@ export default function UserPage() {
           </label>
           )}
         </div>
+        {formData.is_employee && <NominaDelPerfil ref={nominaRef} idUser={editingId} />}
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>

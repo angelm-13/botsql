@@ -73,6 +73,18 @@ class TestPdfNoDescargaNada(unittest.TestCase):
             import weasyprint  # noqa: F401
         except Exception as exc:  # falta el motor de PDF o el modulo de documentos
             self.skipTest("sin motor de PDF: %s" % exc)
+        # Estas pruebas leen UPLOAD_ROOT del entorno. Antes solo pasaban donde esa variable
+        # ya existia (el contenedor real la trae del .env); en un CI limpio daban KeyError,
+        # y en entornos sin motor de PDF se saltaban sin que nadie lo notara. Se define aqui,
+        # con una carpeta propia, igual que TestLogoSeguro.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name).resolve() / "uploads"
+        root.mkdir()
+        (root / "logo.png").write_bytes(b"png")
+        patcher = mock.patch.dict(os.environ, {"UPLOAD_ROOT": str(root)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_the_pdf_engine_does_not_request_an_internal_url(self):
         from documents.service import DocumentService

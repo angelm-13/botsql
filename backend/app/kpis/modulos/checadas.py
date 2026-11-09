@@ -527,7 +527,7 @@ def definiciones():
         ),
         KpiDefinition(
             clave="horas_trabajadas_por_empleado",
-            etiqueta="Tiempo trabajado por empleado",
+            etiqueta="Tiempo trabajado por empleado (minutos)",
             modulo="operaciones",
             grupo="asistencias",
             dimensiones=("empleado",),

@@ -51,7 +51,7 @@ Responsabilidades:
 | Dominio/persistencia | `backend/app/models/` | 119 entidades SQLAlchemy y sesiones transaccionales. |
 | GraphQL | `backend/app/graphql/` | Schema, queries, mutations, tipos, filtros e inputs; actualmente no se registra en `create_app`. |
 | Documentos | `documents-reports/` | Manifiesto, Jinja2, HTML, XML y PDF con WeasyPrint. |
-| Procesamiento asincrono | `backend/app/tasks/`, `celery_worker.py` | KPI, documentos pendientes y sincronizacion SCM. |
+| Procesamiento asincrono | `backend/app/jobs/`, `celery_worker.py` | KPI, auditorias, inventario, CRM, citas y vales de almacen (ver seccion 8). |
 | Datos | `database/` | Inicializacion, semillas y migraciones SQL. |
 | Operacion | `infra/`, `maintenance/` | Contenedores, Nginx, respaldos, restauracion y salud. |
 
@@ -822,15 +822,18 @@ tienen CD automatizado — ver sección 10, punto 9).
 
 ## 8. Tareas asincronas
 
-`backend/app/tasks/erp_tasks.py` declara:
+Las tareas viven en `backend/app/jobs/tasks_*.py` (entity, erp, crm, scm, documents,
+maintenance, stamping, appointments, kpis y warehouse) y la aplicacion Celery es
+`app/jobs/celery_app.py`, configurada por `app/config/celery_config.py`. El horario de las
+tareas periodicas esta en `app/jobs/beat_schedule.py` (por ejemplo, el recalculo de snapshots
+de KPI nocturno y el frecuente, la auditoria de entidades, el inventario cada hora, los
+segmentos de CRM, las notificaciones de citas y los avisos de vales vencidos).
 
-| Tarea | Proposito |
-|---|---|
-| `erp.recalculate_kpis` | Recalculo extensible de indicadores. |
-| `erp.generate_pending_documents` | Generacion de documentos pendientes. |
-| `erp.sync_scm_stock` | Sincronizacion de existencias SCM. |
-
-Celery Worker consume RabbitMQ y Celery Beat agenda ejecuciones periodicas.
+Celery Worker y Celery Beat se arrancan con `celery -A celery_worker.celery` (ver
+`docker-compose.yml` y `k8s/base/backend.yaml`); `celery_worker.py` importa
+`app.jobs.celery_app` y le agrega `BEAT_SCHEDULE`. Worker consume RabbitMQ y Beat agenda
+las ejecuciones periodicas. (Antes este apartado describia `app/tasks/erp_tasks.py`, un
+modulo con tres tareas de relleno que ningun worker cargaba; se retiro.)
 
 ## 9. Pruebas y validacion
 

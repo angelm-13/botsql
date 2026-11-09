@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { FileText, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
   createEmployeeLeave, deleteEmployeeLeave, getAllEmployeeLeave, getAttendanceEmployeeOptions,
   getEmployeeLeaveBalances, getMyPermissions, updateEmployeeLeave,
 } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import HojaDeIncapacidad from "../components/HojaDeIncapacidad.jsx";
+import { useDialogo } from "../dialogo/useDialogo.js";
 import "../styles/kronos.css";
 
 // Vacaciones, permisos e incapacidades. Un dia dentro de una ausencia no es
@@ -29,6 +31,7 @@ function actorGuardado() {
 
 export default function EmployeeLeavesPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const traducir = useRef(t);
   traducir.current = t;
   const [view, setView] = useState("leaves");
@@ -40,6 +43,7 @@ export default function EmployeeLeavesPage() {
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState(null);
+  const [hoja, setHoja] = useState(null);
 
   const actor = useMemo(actorGuardado, []);
   const privilegiado = Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
@@ -103,7 +107,7 @@ export default function EmployeeLeavesPage() {
   }
 
   async function borrar(a) {
-    if (!window.confirm(t("employee_leaves.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("employee_leaves.confirm_delete")))) return;
     setError("");
     setNotice("");
     try {
@@ -130,6 +134,7 @@ export default function EmployeeLeavesPage() {
       </PageHeader>
       <div className="kronos-tabs" role="tablist">{pestana("leaves")}{pestana("balances")}</div>
       {error && <div className="alert error" role="alert">{error}</div>}
+      {hoja && <HojaDeIncapacidad key={hoja} idAusencia={hoja} alCerrar={() => setHoja(null)} />}
       {notice && <div className="alert success" role="status">{notice}</div>}
 
       {view === "leaves" && (
@@ -184,6 +189,7 @@ export default function EmployeeLeavesPage() {
                   <td><small>{a.notes || "—"}</small></td>
                   <td>{t(`my_leaves.status_${a.leave_status || "approved"}`)}</td>
                   <td className="row-actions">
+                    {a.leave_type === "disability" && <button type="button" title={t("leave_sheet.title")} aria-label={`${t("leave_sheet.title")} ${a.start_date}`} onClick={() => setHoja(a.id_employee_leave)}><FileText size={15} /></button>}
                     {puede("scope_update") && <button type="button" title={t("common.edit")} onClick={() => setForm({ ...a, notes: a.notes || "", disability_type: a.disability_type || "" })}><Pencil size={15} /></button>}
                     {puede("scope_delete") && <button type="button" title={t("common.delete")} onClick={() => borrar(a)}><Trash2 size={15} /></button>}
                   </td>
@@ -201,7 +207,7 @@ export default function EmployeeLeavesPage() {
           </div>
           <p className="muted">{t("employee_leaves.balances_hint")}</p>
           <table>
-            <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.hire_date")}</th><th>{t("employee_leaves.service_years")}</th><th>{t("employee_leaves.service_year")}</th><th>{t("employee_leaves.entitled")}</th><th>{t("employee_leaves.taken")}</th><th>{t("my_leaves.pending")}</th><th>{t("employee_leaves.available")}</th></tr></thead>
+            <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.hire_date")}</th><th>{t("employee_leaves.service_years")}</th><th>{t("employee_leaves.service_year")}</th><th>{t("employee_leaves.entitled")}</th><th>{t("employee_leaves.taken")}</th><th>{t("my_leaves.pending")}</th><th>{t("employee_leaves.available")}</th><th>{t("employee_leaves.expiring")}</th></tr></thead>
             <tbody>{saldos.length ? saldos.map((s) => (
               <tr key={s.id_user}>
                 <td><strong>{s.full_name || `#${s.id_user}`}</strong></td>
@@ -211,9 +217,10 @@ export default function EmployeeLeavesPage() {
                 <td>{s.entitled}</td>
                 <td>{s.taken}</td>
                 <td>{s.pending || 0}</td>
-                <td><strong>{s.available}</strong></td>
+                <td><strong>{s.available}</strong>{s.advanced > 0 && <small className="muted"> · {t("employee_leaves.advanced")}: {s.advanced}</small>}</td>
+                <td><small>{(s.expiring || []).map((v) => `${v.days} ${t("employee_leaves.days_until")} ${v.expires_on}`).join(" · ") || "—"}</small></td>
               </tr>
-            )) : <tr><td colSpan="8" className="kronos-empty">{t("employee_leaves.no_employees")}</td></tr>}</tbody>
+            )) : <tr><td colSpan="9" className="kronos-empty">{t("employee_leaves.no_employees")}</td></tr>}</tbody>
           </table>
         </div>
       )}

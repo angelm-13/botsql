@@ -74,17 +74,33 @@ def bootstrap_admin_username() -> str:
     return (os.getenv("BOOTSTRAP_ADMIN_USERNAME") or "admin1").strip() or "admin1"
 
 
-def bootstrap_admin_password() -> str:
+def bootstrap_admin_password(estricto: bool = True) -> str:
     clave = os.getenv("BOOTSTRAP_ADMIN_PASSWORD")
     if clave:
         return clave
     # La contrasena de reserva existe solo para desarrollo: en produccion un
     # administrador con "test password" es una puerta abierta.
     from app.utils.startup_guard import is_production
-    if is_production():
+    if estricto and is_production():
         raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD no esta definida: en produccion no se "
                            "crea el administrador inicial con una contrasena de ejemplo.")
     return DEFAULT_BOOTSTRAP_PASSWORD
+
+
+def exigir_clave_de_bootstrap_fuerte() -> None:
+    """En produccion, el administrador inicial no se crea (ni se le repone la
+    clave) con una contrasena ausente, de ejemplo o corta.
+
+    Solo se llama cuando de verdad se escribe una contrasena. Una instalacion
+    que ya tiene su administrador arranca igual aunque la variable falte: antes
+    se exigia en cada arranque y un Secret sin ella tumbaba el backend sin que
+    eso protegiera nada.
+    """
+    from app.utils.startup_guard import bootstrap_admin_is_weak, is_production
+    if is_production() and bootstrap_admin_is_weak():
+        raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD no esta definida o es debil (menos de 12 "
+                           "caracteres o de ejemplo): en produccion no se crea el administrador "
+                           "inicial asi.")
 
 
 def bootstrap_admin_email() -> str:
@@ -97,6 +113,8 @@ def bootstrap_admin_email() -> str:
 # trajera BOOTSTRAP_ADMIN_PASSWORD, porque "ya hay hash" parecia un cambio hecho
 # por una persona (visto en comala-prod, 2026-10-12).
 DEFAULT_BOOTSTRAP_PASSWORD = "test password"
+# Hash de la contrasena POR DEFECTO del usuario Bootstrap/admin1: es conocido a proposito para el arranque, no un secreto filtrado. Pendiente comprobar en cada ambiente que admin1 ya no lo use (password_hash_needs_reset).
+# nosemgrep: generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash
 SEEDED_DEFAULT_HASH = "$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6"
 
 
@@ -212,7 +230,7 @@ def init_database():
         # Try to seed bootstrap admin if enabled and user table exists.
         admin_mfa = admin_mfa_enabled()
         bootstrap_username = bootstrap_admin_username()
-        bootstrap_password = bootstrap_admin_password()
+        bootstrap_password = bootstrap_admin_password(estricto=False)
         bootstrap_email = bootstrap_admin_email()
         if not bootstrap_admin_enabled():
             print("ℹ️  Bootstrap admin disabled by BOOTSTRAP_ADMIN_ENABLED=false")
@@ -280,7 +298,9 @@ def init_database():
                 except Exception as e:
                     print(f"⚠️  Proyect table insert: {e}")
                 
+                exigir_clave_de_bootstrap_fuerte()
                 # Hash the password - bcrypt hash of "test password"
+                # nosemgrep: generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash
                 # Fixed hash: $2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6
                 password = bootstrap_password
                 hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
@@ -442,6 +462,7 @@ def init_database():
                             password_hash_needs_reset(value, bootstrap_password) for value in current
                         )
                         if needs_password:
+                            exigir_clave_de_bootstrap_fuerte()
                             hashed = bcrypt.hashpw(bootstrap_password.encode(), bcrypt.gensalt(rounds=12)).decode()
                             pwd_updates = ", ".join(f"{c} = :hashed" for c in password_columns)
                             with engine.begin() as conn:

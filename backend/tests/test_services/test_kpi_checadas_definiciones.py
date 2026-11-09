@@ -26,6 +26,12 @@ class DefinicionesDeChecadasTest(unittest.TestCase):
         self.assertEqual(1, fuente.count("Incident.latitude"), "el criterio no se repite en cada consulta")
         self.assertIn("es_checada()", inspect.getsource(checadas.checadas_vigentes))
 
+    def test_el_tiempo_trabajado_dice_en_su_etiqueta_la_unidad_que_suma(self):
+        # La clave dice "horas" pero el KPI suma minutos: la etiqueta, que es lo que lee quien arma el tablero, lo aclara.
+        kpi = KPI_POR_CLAVE["horas_trabajadas_por_empleado"]
+        self.assertEqual("minutos", kpi.unidad)
+        self.assertIn("(minutos)", kpi.etiqueta)
+
     def test_los_kpis_de_foto_son_de_operaciones_por_equipo_y_solo_barras(self):
         for clave in self.CLAVES_DE_FOTO:
             kpi = KPI_POR_CLAVE[clave]
@@ -87,7 +93,7 @@ class DefinicionDeEnTurnoPorEmpleadoTest(unittest.TestCase):
 
     def test_solo_este_kpi_de_checadas_oculta_ceros(self):
         # Los equipos en cero SI se pintan (un parque sin nadie es un dato); solo la foto por persona los oculta.
-        con_ceros_ocultos = [k.clave for k in KPI_POR_CLAVE.values() if k.ocultar_ceros]
+        con_ceros_ocultos = [k.clave for k in KPI_POR_CLAVE.values() if k.ocultar_ceros and k.grupo == "asistencias"]
         self.assertEqual(["checadas_en_turno_por_empleado"], con_ceros_ocultos)
 
 

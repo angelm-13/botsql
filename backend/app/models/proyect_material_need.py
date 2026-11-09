@@ -28,6 +28,16 @@ Pide "20 discos de corte", no "comprar 20 discos". De donde sale -existencia,
 compra o renta- se decide despues, y lo decide quien compra. Aqui no hay
 modalidad.
 
+Renta de maquinaria (2026-11-04, pedido de Adser)
+------------------------------------------------
+Una obra a veces ocupa maquinaria que la empresa no tiene (plataforma, retro,
+generador grande) y hay que rentarla. Se pide en esta misma lista con
+`need_kind = 'rental'` y el periodo en que se ocupa (`rental_start` a
+`rental_end`); Compras la cubre con una orden igual que una compra, y la renta
+vive en el renglon de la orden (llego a obra, prorroga, devuelta). La necesidad
+de renta nace confirmada (`review_result = 'buy'`): quien la pide ya dijo que se
+renta, no hay catalogo contra el cual revisarla.
+
 Puede pedir mas de lo que hay
 -----------------------------
 A diferencia del prevale, que es recoger material fisico y por eso no pasa de la
@@ -55,6 +65,9 @@ NEED_STATUSES = ("open", "cancelled")
 #   returned -> no se entiende o falta algo; vuelve al supervisor con un motivo
 REVIEW_RESULTS = ("linked", "buy", "returned")
 
+# Material: se compra (o ya esta en el almacen). Renta: maquinaria por un periodo.
+NEED_KINDS = ("material", "rental")
+
 
 def _valor(value):
     if isinstance(value, (datetime, date)):
@@ -79,6 +92,14 @@ class ProyectMaterialNeed(Base):
             "id_material IS NOT NULL OR (description IS NOT NULL AND description <> '')",
             name="ck_proyect_material_need_what",
         ),
+        CheckConstraint(
+            "need_kind IN ('material', 'rental')", name="ck_proyect_material_need_kind"),
+        # Una renta dice desde y hasta cuando; una compra no lleva periodo.
+        CheckConstraint(
+            "(need_kind = 'rental' AND rental_start IS NOT NULL AND rental_end IS NOT NULL "
+            "AND rental_end >= rental_start) OR "
+            "(need_kind = 'material' AND rental_start IS NULL AND rental_end IS NULL)",
+            name="ck_proyect_material_need_rental_period"),
     )
 
     id_proyect_material_need: Mapped[int] = mapped_column(
@@ -96,6 +117,11 @@ class ProyectMaterialNeed(Base):
     # Para cuando hace falta. Opcional: no todo se pide con fecha.
     needed_by: Mapped[date | None] = mapped_column(Date, nullable=True)
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    need_kind: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="material", server_default=text("'material'"))
+    # Solo en una renta: el periodo en que la obra ocupa la maquinaria.
+    rental_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rental_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     need_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="open", server_default=text("'open'"))
     # La revision de un renglon de texto libre: quien, cuando y que decidio.

@@ -2,8 +2,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
-import DashboardPreviewPage from "./pages/DashboardPreviewPage.jsx";
-import ErrorBoundaryPreview from "./components/kpi-widgets/ErrorBoundaryPreview.jsx";
 import MfaSetupPage from "./pages/MfaSetupPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage.jsx";
 import RolePermissionManagerPage from "./pages/RolePermissionManagerPage.jsx";
@@ -51,6 +49,11 @@ import PayrollMovementPage from "./pages/PayrollMovementPage.jsx";
 import PayrollPeriodPage from "./pages/PayrollPeriodPage.jsx";
 import PayrollSettingsPage from "./pages/PayrollSettingsPage.jsx";
 import WorkSchedulesPage from "./pages/WorkSchedulesPage.jsx";
+import PayrollGroupsPage from "./pages/PayrollGroupsPage.jsx";
+import TerminationsPage from "./pages/TerminationsPage.jsx";
+import PayrollSimulatorPage from "./pages/PayrollSimulatorPage.jsx";
+import AttendanceReportPage from "./pages/AttendanceReportPage.jsx";
+import RhSetupPage from "./pages/RhSetupPage.jsx";
 import EmployeeLeavesPage from "./pages/EmployeeLeavesPage.jsx";
 import MyLeavesPage from "./pages/MyLeavesPage.jsx";
 import PermissionPage from "./pages/PermissionPage.jsx";
@@ -177,18 +180,10 @@ export default function App() {
         <Route path="/calendar/:code" element={<PublicCalendarPage />} />
         <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
-          {/* Vista previa aislada del rediseno del Dashboard de KPIs (datos
-              fijos, no toca la API ni la base) -- ver docs de la tarea.
-              Cualquier usuario autenticado la puede abrir, sin gate de
-              modulo/rol: no es una pantalla real todavia. */}
-          <Route
-            path="/dashboard-preview"
-            element={<ErrorBoundaryPreview><DashboardPreviewPage /></ErrorBoundaryPreview>}
-          />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
-          {/* Como /change-password: cualquier usuario con sesion; el backend decide que ve. */}
-          <Route path="/my_leaves" element={<MyLeavesPage />} />
+          {/* Autoservicio de vacaciones: lo guarda la capacidad `my_leaves` del Gestor. */}
+          <Route path="/my_leaves" element={<RoleAccessRoute entityName="my_leaves"><MyLeavesPage /></RoleAccessRoute>} />
           <Route path="/role_permissions" element={<RoleAccessRoute entityName="entity_permission"><RolePermissionManagerPage /></RoleAccessRoute>} />
           <Route path="/kpi_permissions" element={<RoleAccessRoute entityName="nm_permission_kpi"><KpiPermissionManagerPage /></RoleAccessRoute>} />
           <Route path="/facturama-config" element={<RoleAccessRoute entityName="fiscal_stamp"><FacturamaConfigPage /></RoleAccessRoute>} />
@@ -233,6 +228,11 @@ export default function App() {
           <Route path="/payroll_period" element={<RoleAccessRoute entityName="payroll_period"><PayrollPeriodPage /></RoleAccessRoute>} />
           <Route path="/payroll_settings" element={<RoleAccessRoute entityName="payroll_parameter"><PayrollSettingsPage /></RoleAccessRoute>} />
           <Route path="/work_schedules" element={<RoleAccessRoute entityName="work_schedule"><WorkSchedulesPage /></RoleAccessRoute>} />
+          <Route path="/payroll_groups" element={<RoleAccessRoute entityName="payroll_group"><PayrollGroupsPage /></RoleAccessRoute>} />
+          <Route path="/terminations" element={<RoleAccessRoute entityName="employee_termination"><TerminationsPage /></RoleAccessRoute>} />
+          <Route path="/payroll_simulator" element={<RoleAccessRoute entityName="payroll_simulator"><PayrollSimulatorPage /></RoleAccessRoute>} />
+          <Route path="/attendance_report" element={<RoleAccessRoute entityName="attendance_report"><AttendanceReportPage /></RoleAccessRoute>} />
+          <Route path="/rh_setup" element={<RoleAccessRoute entityName="rh_setup"><RhSetupPage /></RoleAccessRoute>} />
           <Route path="/employee_leaves" element={<RoleAccessRoute entityName="employee_leave"><EmployeeLeavesPage /></RoleAccessRoute>} />
           <Route path="/kronos" element={<RoleAccessRoute entityName="payroll_period"><KronosPage /></RoleAccessRoute>} />
           <Route path="/kronos/device" element={<RoleAccessRoute entityName="kronos_device"><KronosDevicePage /></RoleAccessRoute>} />

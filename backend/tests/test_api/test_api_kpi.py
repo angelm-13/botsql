@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -123,6 +123,8 @@ class TestKpiApi(BackendTestCase):
         # migracion para exponerlos.
         self.assertEqual("alto_es_mejor", fila["direccion"])
         self.assertEqual("snapshot", fila["modo"])
+        # Como se combinan los dias: lo lee el dashboard para el total del centro de una dona.
+        self.assertEqual("suma", fila["agregacion"])
         self.assertIn(fila["grafica_default"], fila["graficas_permitidas"])
         self.assertIsNone(fila["colores_categoria"])
         # `grupo` (pestana del selector) viaja siempre, vacio para casi todos: no es del modulo.
@@ -157,6 +159,86 @@ class TestKpiApi(BackendTestCase):
                 EntityPermission.id_permission == 970,
                 EntityPermission.entity_name == "kpi_definition",
             ).update({"scope_read": valor})
+
+    def test_the_range_says_how_many_rows_it_had_and_whether_the_kpi_was_ever_calculated(self):
+        con_filas = self.json(self._request(ACTOR_CON_KPI, self._query_url()))["rango_a"]
+        # Solo las dos filas de PROYECTO_A: la de PROYECTO_B no cuenta para este actor.
+        self.assertEqual((2, True), (con_filas["n_filas"], con_filas["calculado"]))
+        self.assertIsNotNone(con_filas["computed_at"])
+
+        # Un rango sin filas devuelve total 0, pero el KPI si tiene filas en otras fechas: "Sin datos en el periodo".
+        sin_filas = self.json(self._request(
+            ACTOR_CON_KPI, self._query_url(fecha_inicio="2026-05-01", fecha_fin="2026-05-02")))["rango_a"]
+        self.assertEqual((0.0, 0, True), (sin_filas["total"], sin_filas["n_filas"], sin_filas["calculado"]))
+        self.assertIsNone(sin_filas["computed_at"])
+
+    def test_computed_at_is_the_latest_write_of_the_rows_in_the_range_without_a_time_zone(self):
+        with transaction_context() as db:
+            db.add_all([
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_A},
+                    periodo=date(2026, 6, 10), valor=Decimal("1.00"), computed_at=datetime(2026, 6, 11, 0, 5, 30),
+                ),
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 951, "id_proyect": PROYECTO_A},
+                    periodo=date(2026, 6, 10), valor=Decimal("2.00"), computed_at=datetime(2026, 6, 12, 22, 15),
+                ),
+                # Otro proyecto: no es del actor, no entra en el maximo aunque sea mas reciente.
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_B},
+                    periodo=date(2026, 6, 10), valor=Decimal("3.00"), computed_at=datetime(2026, 7, 1, 8, 0),
+                ),
+            ])
+        rango = self.json(self._request(
+            ACTOR_CON_KPI, self._query_url(fecha_inicio="2026-06-10", fecha_fin="2026-06-10")))["rango_a"]
+        # La base lo escribe en UTC: sale con zona explicita.
+        self.assertEqual("2026-06-12T22:15:00Z", rango["computed_at"])
+
+    def _fijar_computed_at(self, fecha_hora):
+        with transaction_context() as db:
+            db.execute(text("UPDATE kpi_snapshot SET computed_at = :f"), {"f": fecha_hora})
+
+    def test_the_catalog_carries_the_latest_calculation_of_the_actors_project_with_the_server_clock(self):
+        self._fijar_computed_at(datetime(2026, 6, 1, 3, 0))
+        with transaction_context() as db:
+            db.add_all([
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_A},
+                    periodo=date(2026, 6, 2), valor=Decimal("1.00"), computed_at=datetime(2026, 6, 2, 4, 30),
+                ),
+                # Otro proyecto: no es del actor, no cuenta aunque sea mas reciente.
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_B},
+                    periodo=date(2026, 6, 3), valor=Decimal("1.00"), computed_at=datetime(2026, 7, 1, 8, 0),
+                ),
+            ])
+        cuerpo = self.json(self._request(ACTOR_CON_KPI, "/kpi_definition/"))
+        self.assertEqual("2026-06-02T04:30:00Z", cuerpo["ultimo_calculo"])
+        self.assertTrue(cuerpo["ahora"].endswith("Z"))
+
+    def test_the_latest_calculation_ignores_live_kpis_and_is_none_without_snapshots(self):
+        self._fijar_computed_at(datetime(2026, 6, 1, 3, 0))
+        with transaction_context() as db:
+            id_vivo = db.scalar(select(KpiDefinition.id_kpi_definition)
+                                .where(KpiDefinition.clave == "material_prestado_actual"))
+            db.add(KpiSnapshot(
+                id_kpi_definition=id_vivo, dimension_key={"id_user": 950}, periodo=date(2026, 6, 3),
+                valor=Decimal("1.00"), computed_at=datetime(2030, 1, 1, 0, 0),
+            ))
+        self.assertEqual("2026-06-01T03:00:00Z", self.json(self._request(ADMIN, "/kpi_definition/"))["ultimo_calculo"])
+
+        with transaction_context() as db:
+            db.execute(text("DELETE FROM kpi_snapshot"))
+        self.assertIsNone(self.json(self._request(ADMIN, "/kpi_definition/"))["ultimo_calculo"])
+        self.assertIsNone(self.json(self._request(ACTOR_CON_KPI, "/kpi_definition/"))["ultimo_calculo"])
+
+    def test_a_kpi_without_any_snapshot_is_not_calculated_and_the_comparison_range_says_so_too(self):
+        with transaction_context() as db:
+            id_sin_filas = db.scalar(select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "ingresos_totales"))
+        payload = self.json(self._request(ADMIN, self._query_url(
+            id_kpi_definition=id_sin_filas, fecha_inicio_b="2026-03-01", fecha_fin_b="2026-03-02")))
+        for rango in ("rango_a", "rango_b"):
+            self.assertEqual((0.0, 0, False), (payload[rango]["total"], payload[rango]["n_filas"], payload[rango]["calculado"]), rango)
 
     def test_propios_only_covers_the_actors_own_figures(self):
         self._alcance_de_kpi(1)

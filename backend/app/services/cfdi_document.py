@@ -25,6 +25,8 @@ Reglas del Anexo 20 que aqui se respetan y que suelen provocar rechazos:
 
 from __future__ import annotations
 
+# Este modulo solo CONSTRUYE XML propio; no parsea entrada ajena, asi que defusedxml no aplica.
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
 import xml.etree.ElementTree as ET
 from decimal import Decimal, ROUND_HALF_UP
 

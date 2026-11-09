@@ -6,7 +6,7 @@ import test, { before } from "node:test";
 import { cargarRender } from "./bundleRender.mjs";
 import { datosDeEjemplo, rangoVacio } from "./datosDeEjemplo.js";
 import { agruparKpis } from "./kpiSelector.js";
-import { ofreceVerEjemplo } from "./vistaPreviaDeEjemplo.js";
+import { ofreceVerEjemplo, snapshotsDeEjemplo } from "./vistaPreviaDeEjemplo.js";
 
 let pintarMarcoEjemplo;
 
@@ -16,35 +16,45 @@ before(async () => {
 
 const REAL = { id_kpi_definition: 4, clave: "ingresos_totales", etiqueta: "Ingresos", unidad: "moneda", dimensiones: ["global"], modulo: "facturacion", modo: "snapshot" };
 
-test("«Ver ejemplo» solo se ofrece para un KPI REAL (permitido) cuya consulta del rango volvio vacia", () => {
+test("el ejemplo sale solo para indicadores REALES (permitidos) cuya consulta del rango volvio vacia, uno o varios", () => {
   const vacio = { rango_a: { total: 0, por_empleado: {}, por_periodo: {} } };
   const conDatos = { rango_a: { total: 3, por_empleado: { a: 3 }, por_periodo: {} } };
-  const listo = { kpiReal: REAL, esTablaVivo: false, loading: false, pendiente: false, error: null, snapshots: [vacio] };
-  assert.equal(ofreceVerEjemplo(listo), true, "permitido y sin datos: el boton");
+  const listo = { kpiInfos: [REAL], esTablaVivo: false, loading: false, pendiente: false, error: null, snapshots: [vacio] };
+  assert.equal(ofreceVerEjemplo(listo), true, "permitido y sin datos: el ejemplo");
   assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [conDatos] }), false, "con datos no hay nada que ejemplificar");
   assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [null] }), true, "una respuesta sin rango tambien es vacia");
-  assert.equal(ofreceVerEjemplo({ ...listo, kpiReal: null }), false, "sin KPI real (o con varios) no hay boton");
+  assert.equal(ofreceVerEjemplo({ ...listo, kpiInfos: [], snapshots: [] }), false, "sin indicador elegido no hay ejemplo");
+  assert.equal(ofreceVerEjemplo({ ...listo, kpiInfos: [undefined] }), false, "un indicador que no esta en el catalogo (sin permiso) no se ejemplifica");
   assert.equal(ofreceVerEjemplo({ ...listo, loading: true }), false, "mientras carga no");
   assert.equal(ofreceVerEjemplo({ ...listo, pendiente: true }), false, "ni con el borrador sin asentar");
   assert.equal(ofreceVerEjemplo({ ...listo, error: "x" }), false, "ni con un error");
   assert.equal(ofreceVerEjemplo({ ...listo, esTablaVivo: true }), false, "una tabla en vivo no tiene rango vacio");
-  assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [vacio, vacio] }), false, "solo con un KPI");
-  // El boton sigue cableado en la pantalla con esa decision y los textos de siempre.
+  assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [vacio, vacio] }), false, "una respuesta por indicador: si no cuadran, no");
+  const OTRO = { ...REAL, id_kpi_definition: 5, clave: "egresos_totales", etiqueta: "Egresos" };
+  const dos = { ...listo, kpiInfos: [REAL, OTRO] };
+  assert.equal(ofreceVerEjemplo({ ...dos, snapshots: [vacio, vacio] }), true, "varios indicadores, todos vacios: ejemplo");
+  assert.equal(ofreceVerEjemplo({ ...dos, snapshots: [vacio, conDatos] }), false, "si alguno trae datos se ve lo real");
+  const ejemplos = snapshotsDeEjemplo([REAL, OTRO], { hoy: new Date(2026, 9, 21) });
+  assert.equal(ejemplos.length, 2, "un snapshot de ejemplo por indicador");
+  assert.notDeepEqual(ejemplos[0], ejemplos[1], "cada indicador con sus propios numeros");
+  // La pantalla lo muestra SOLA (sin pulsar nada) y deja ocultarlo con los textos de siempre.
   const dashboard = readFileSync(new URL("../pages/Dashboard.jsx", import.meta.url), "utf8");
   assert.ok(dashboard.includes("const sinDatos = ofreceVerEjemplo("), "el editor decide con ofreceVerEjemplo");
-  assert.ok(dashboard.includes('tx("example_view", "Ver ejemplo")') && dashboard.includes("{sinDatos && ("));
+  assert.ok(dashboard.includes("const mostrandoEjemplo = sinDatos && !verReal;"), "el ejemplo sale por omision");
+  assert.ok(dashboard.includes("snapshotsDeEjemplo(datos.kpiInfos"), "uno por indicador");
+  assert.ok(dashboard.includes('tx("example_view", "Ver ejemplo")') && dashboard.includes('tx("example_hide", "Ocultar ejemplo")') && dashboard.includes("{sinDatos && ("));
 });
 
-test("«Ver ejemplo» dentro de Asistencias: un KPI de checadas permitido con el rango vacio lo ofrece, igual que cualquier otro", () => {
+test("el ejemplo dentro de Asistencias: un KPI de checadas permitido con el rango vacio lo muestra, igual que cualquier otro", () => {
   const catalogo = JSON.parse(readFileSync(new URL("./fixtures/catalogo_del_registry.json", import.meta.url), "utf8"));
   const kpi = catalogo.find((k) => k.clave === "checadas_en_turno_por_equipo"); // grupo asistencias, modulo operaciones
   assert.deepEqual([kpi.grupo, kpi.modulo], ["asistencias", "operaciones"]);
   const vacio = { rango_a: { total: 0, por_empleado: {}, por_periodo: {} } };
   const conDatos = { rango_a: { total: 3, por_empleado: { a: 3 }, por_periodo: {} } };
-  const listo = { kpiReal: kpi, esTablaVivo: false, loading: false, pendiente: false, error: null, snapshots: [vacio] };
+  const listo = { kpiInfos: [kpi], esTablaVivo: false, loading: false, pendiente: false, error: null, snapshots: [vacio] };
   assert.equal(ofreceVerEjemplo(listo), true, "permitido y sin datos: el boton");
   assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [conDatos] }), false, "con datos no hay nada que ejemplificar");
-  assert.equal(ofreceVerEjemplo({ ...listo, kpiReal: null }), false, "sin KPI real no hay boton");
+  assert.equal(ofreceVerEjemplo({ ...listo, kpiInfos: [], snapshots: [] }), false, "sin KPI real no hay ejemplo");
   // Solo de un KPI permitido: el editor toma el KPI real del catalogo que le llega al rol, y uno que no esta ahi no se puede elegir.
   const sinPermiso = catalogo.filter((k) => k.clave !== kpi.clave);
   assert.ok(!agruparKpis(sinPermiso).some((g) => g.kpis.some((k) => k.clave === kpi.clave)), "un KPI no permitido no sale en ninguna pestana");

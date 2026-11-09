@@ -245,3 +245,22 @@ label:has(:is(input,select,textarea):required)::before,label:has(+ :is(input,sel
 .bi-button{background:#1b7a60;color:#fff;border-color:#1b7a60;text-decoration:none;white-space:nowrap}
 .bi-button:hover{background:#15624d}
 .bi-button.primary{box-shadow:0 0 0 3px rgba(27,122,96,.25)}
+
+/* Hoja de nomina (HojaDeNomina.jsx) */
+.hoja-nomina table{min-width:760px}
+.hoja-nomina th.bloque{text-align:center;letter-spacing:.08em}
+.hoja-nomina th.bloque.ingresos,.hoja-nomina td.ingreso-total{background:#ecfdf5;color:#166534}
+.hoja-nomina .celda-guardada{display:block;color:#166534;font-weight:800;font-size:11px}
+.hoja-nomina .quitar-columna{border:0;background:transparent;color:#b91c1c;cursor:pointer;padding:0 0 0 4px;vertical-align:middle}
+.hoja-nomina th.bloque.egresos,.hoja-nomina td.egreso-total{background:#fef2f2;color:#991b1b}
+.hoja-nomina td.calculada{background:#f1f5f9;color:#475569}
+.hoja-nomina td.num,.hoja-nomina th.num{text-align:right}
+.hoja-nomina td.num{white-space:nowrap}
+.hoja-nomina th.num{min-width:90px;max-width:160px}
+.hoja-nomina td.celda-editable{padding:6px 8px}
+.hoja-nomina td.celda-editable input{width:100%;min-width:90px;border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px;text-align:right;font:inherit}
+.hoja-nomina td.celda-editable input:focus{outline:2px solid #1b7a60;border-color:#1b7a60}
+.hoja-nomina td.celda-editable.cambiada input{background:#fff7e6;border-color:#f0a000}
+.hoja-nomina tfoot td{font-weight:800;background:#f8fafc}
+.hoja-nomina .hoja-barra{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 16px}
+.hoja-nomina .hoja-barra .simulando{background:#fff7e6;color:#92400e;border:1px solid #f0a000;border-radius:999px;padding:4px 12px;font-weight:800;font-size:13px}

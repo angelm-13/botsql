@@ -11,6 +11,8 @@ import {
   COMPROBANTES_DE_COMPRA, METODOS_DE_PAGO, TIPOS_DE_COMPROBANTE, agruparPorProyecto, dinero,
   esXml, estadoDeOrden, excedeLoAutorizado, requiereReferencia,
 } from "../utils/ordenDeCompra";
+import { PasosDeOrden, PorQue, QueSigue } from "./GuiaDeCompras.jsx";
+import RentaDeMaquinaria from "./RentaDeMaquinaria.jsx";
 import { useI18n } from "../i18n";
 import "../styles/ordenes-de-compra.css";
 
@@ -29,7 +31,13 @@ const EVENTOS = {
   purchased: "Comprada",
   partially_received: "Recibida en parte",
   received: "Recibida completa",
+  closed: "Cerrada",
   cancelled: "Cancelada",
+  rental_arrived: "Maquinaria rentada: llegó a obra",
+  rental_returned: "Maquinaria rentada: devuelta al proveedor",
+  rental_extension_requested: "Prórroga de renta pedida",
+  rental_extension_approved: "Prórroga de renta aprobada",
+  rental_extension_rejected: "Prórroga de renta rechazada",
 };
 
 // Desde aqui ya hay material comprado: la tabla de renglones muestra cuanto ha llegado.
@@ -82,7 +90,6 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
   const traducir = useRef(t);
   traducir.current = t;
   const [error, setError] = useState("");
-  const [aviso, setAviso] = useState("");
   const [ocupado, setOcupado] = useState(false);
   // Una accion que pide un motivo: cual y que se lleva escrito.
   const [motivo, setMotivo] = useState({ accion: "", nota: "", id: null });
@@ -111,18 +118,36 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
   const conXml = esXml(comprobante.file?.name) && COMPROBANTES_DE_COMPRA.includes(tipoElegido);
   const pideDatos = COMPROBANTES_DE_COMPRA.includes(tipoElegido) && !conXml;
   const factura = (orden.vouchers || []).find((v) => COMPROBANTES_DE_COMPRA.includes(v.kind));
+  // Lo que se puede subir en esta etapa, dicho antes del selector.
+  const pistaDeComprobante = tiposPermitidos.some((k) => COMPROBANTES_DE_COMPRA.includes(k))
+    ? t("order.voucher_hint_invoice", "Sube la factura (el XML llena folio, monto y fecha solo) o el ticket de la compra.")
+    : ["draft", "pending_authorization", "rejected"].includes(orden.order_status)
+      ? t("order.voucher_hint_quote", "Antes de autorizarla solo se sube la cotización del proveedor.")
+      : t("order.voucher_hint_payment", "El comprobante de compra ya está; aquí puedes agregar el comprobante de pago.");
+  // Por que se pide ese papel, dicho para quien no esta acostumbrado al sistema.
+  const porqueDelComprobante = tiposPermitidos.some((k) => COMPROBANTES_DE_COMPRA.includes(k))
+    ? t("order.voucher_why_invoice", "Es la prueba de lo que se pagó: con ella se compara contra lo autorizado y contabilidad puede cerrar el gasto.")
+    : ["draft", "pending_authorization", "rejected"].includes(orden.order_status)
+      ? t("order.voucher_why_quote", "Con la cotización, quien autoriza ve el precio real del proveedor antes de aprobar.")
+      : t("order.voucher_why_payment", "El comprobante de pago confirma que al proveedor ya se le pagó.");
+  const porqueDelMotivo = {
+    autorizar: t("order.why_authorize_over", "Queda escrito por qué se aceptó gastar más de lo presupuestado."),
+    rechazar: t("order.why_reject", "Quien armó la orden lee el motivo para saber qué corregir."),
+    cancelar: t("order.why_cancel", "Queda en la bitácora para que todos sepan por qué se detuvo."),
+  };
   const pasaDeLoAutorizado = factura && orden.authorized_total
     && excedeLoAutorizado(orden.authorized_total, factura.amount, politica?.overrun_percent);
   const volvioPorExceso = orden.order_status === "pending_authorization"
     && (orden.events || []).some((e) => e.event_type === "reauthorization_required");
 
-  async function ejecutar(accion, mensajeError, despues) {
+  // `nombre` dice que accion fue: la pagina lo usa para el aviso de "que sigue"
+  // (`avisoTrasAccion`), con la orden ya cambiada que devuelve el servidor.
+  async function ejecutar(nombre, accion, mensajeError, despues) {
     setOcupado(true);
     setError("");
-    setAviso("");
     try {
       const respuesta = await accion();
-      onCambio(respuesta);
+      onCambio(respuesta, nombre);
       if (despues) despues(respuesta);
     } catch (e) {
       decirError(e, mensajeError);
@@ -131,22 +156,22 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
     }
   }
 
-  const enviar = () => ejecutar(() => submitPurchaseOrder(orden.id_purchase_order),
+  const enviar = () => ejecutar("enviar", () => submitPurchaseOrder(orden.id_purchase_order),
     "No se pudo enviar la orden.");
-  const autorizar = () => ejecutar(
+  const autorizar = () => ejecutar("autorizar",
     () => authorizePurchaseOrder(orden.id_purchase_order, motivo.nota.trim() || null),
     "No se pudo autorizar la orden.", () => setMotivo({ accion: "", nota: "", id: null }));
-  const rechazar = () => ejecutar(
+  const rechazar = () => ejecutar("rechazar",
     () => rejectPurchaseOrder(orden.id_purchase_order, motivo.nota.trim()),
     "No se pudo rechazar la orden.", () => setMotivo({ accion: "", nota: "", id: null }));
-  const cancelar = () => ejecutar(
+  const cancelar = () => ejecutar("cancelar",
     () => cancelPurchaseOrder(orden.id_purchase_order, motivo.nota.trim()),
     "No se pudo cancelar la orden.", () => setMotivo({ accion: "", nota: "", id: null }));
-  const quitar = () => ejecutar(
+  const quitar = () => ejecutar("quitar",
     () => removePurchaseVoucher(motivo.id, motivo.nota.trim()),
     "No se pudo quitar el comprobante.", () => setMotivo({ accion: "", nota: "", id: null }));
 
-  const subir = () => ejecutar(
+  const subir = () => ejecutar("subir",
     () => uploadPurchaseVoucher(orden.id_purchase_order, comprobante.file, {
       kind: tipoElegido,
       ...(pideDatos ? {
@@ -156,30 +181,27 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
     "No se pudo subir el comprobante.",
     () => setComprobante({ kind: "", file: null, folio: "", amount: "", issue_date: hoyISO() }));
 
-  const comprar = () => ejecutar(
+  // Si el comprobante sale mas caro de lo autorizado, la orden vuelve a autorizacion:
+  // lo dice el aviso de la pagina (`avisoTrasAccion("comprar")`) y la franja de abajo.
+  const comprar = () => ejecutar("comprar",
     () => buyPurchaseOrder(orden.id_purchase_order, {
       ...compra, paid_externally: compra.paid_externally ? "true" : "",
     }),
-    "No se pudo registrar la compra.",
-    (r) => {
-      if (r?.reauthorization_required) {
-        setAviso(traducir.current(
-          "order.reauthorization",
-          "El comprobante sale más caro de lo autorizado: la orden volvió a autorización con el monto real."));
-      }
-    });
+    "No se pudo registrar la compra.");
 
   // Cada recepcion SUMA a lo ya recibido: se manda solo lo que llego ahora.
   const llegado = (orden.lines || [])
     .map((l) => ({ id_purchase_order_line: l.id_purchase_order_line,
                    quantity: Number(recepcion.cantidades[l.id_purchase_order_line] || 0) }))
     .filter((l) => Number.isInteger(l.quantity) && l.quantity > 0);
-  const pendiente = (l) => Math.max(0, Number(l.quantity) - Number(l.quantity_received || 0));
+  // La maquinaria rentada no se recibe aqui: llega a la obra y lo marca quien la lleva.
+  const pendiente = (l) => (l.line_kind === "rental" ? 0
+    : Math.max(0, Number(l.quantity) - Number(l.quantity_received || 0)));
   const recepcionValida = llegado.length > 0 && (orden.lines || []).every((l) => {
     const n = Number(recepcion.cantidades[l.id_purchase_order_line] || 0);
     return Number.isInteger(n) && n >= 0 && n <= pendiente(l);
   });
-  const recibir = () => ejecutar(
+  const recibir = () => ejecutar("recibir",
     () => receivePurchaseOrder(orden.id_purchase_order, {
       lines: llegado, note: recepcion.nota.trim() || null,
     }),
@@ -223,8 +245,10 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
         <span className={`oc-estado oc-estado-${estado.clase}`}>{estado.etiqueta}</span>
       </header>
 
+      <PasosDeOrden estado={orden.order_status} />
+      <QueSigue orden={orden} />
+
       {error && <div className="alert error">{error}</div>}
-      {aviso && <div className="alert warning">{aviso}</div>}
       {volvioPorExceso && (
         <div className="alert warning oc-exceso">
           <AlertTriangle size={16} />
@@ -326,10 +350,14 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
                     </td>
                   </tr>
                   {g.renglones.map((l) => (
-                    <tr key={l.id_purchase_order_line}>
+                    <Fragment key={l.id_purchase_order_line}>
+                    <tr>
                       <td>
                         {l.description}
                         {l.unit && <span className="muted"> · {l.unit}</span>}
+                        {l.line_kind === "rental" && (
+                          <> <span className="renta-marca">{t("rental.badge", "Renta")}</span></>
+                        )}
                         {l.item_class && (
                           <span className="oc-etiqueta">{etiquetaDeClase(l.item_class, t)}</span>
                         )}
@@ -345,9 +373,27 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
                           {l.quantity_received || 0} / {l.quantity}
                         </td>
                       )}
-                      <td className="mono">{dinero(l.unit_cost, moneda)}</td>
+                      <td className="mono">
+                        {dinero(l.unit_cost, moneda)}
+                        {/* Solo la tarifa: tras una prorroga el periodo crece, pero el costo
+                            del renglon es lo que se autorizo; lo extra va en la factura final. */}
+                        {l.rental && l.rental.rate !== null && (
+                          <small className="muted" style={{ display: "block" }}>
+                            {t("rental.rate", "Tarifa")} {dinero(l.rental.rate, moneda)} {t(`rental.per_${l.rental.rate_unit}`, l.rental.rate_unit)}
+                          </small>
+                        )}
+                      </td>
                       <td className="mono">{dinero(l.line_total, moneda)}</td>
                     </tr>
+                    {l.rental && (
+                      <tr className="oc-renta-fila">
+                        <td colSpan={conRecepcion ? 5 : 4}>
+                          <RentaDeMaquinaria renta={l.rental} compacta
+                                             onCambio={(respuesta) => onCambio(respuesta, "renta")} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </Fragment>
               ))}
@@ -358,7 +404,9 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
 
       <h4>{t("order.vouchers", "Comprobantes")}</h4>
       {(orden.vouchers || []).length === 0 ? (
-        <p className="muted">{t("order.no_vouchers", "Todavía no hay comprobantes. Para comprar hace falta la factura o el ticket.")}</p>
+        <p className="muted">{["draft", "pending_authorization", "rejected"].includes(orden.order_status)
+          ? t("order.no_vouchers_yet", "Todavía no hay comprobantes. La factura o el ticket se suben cuando la orden ya está autorizada; antes solo la cotización.")
+          : t("order.no_vouchers", "Todavía no hay comprobantes. Para comprar hace falta la factura o el ticket.")}</p>
       ) : (
         <ul className="oc-comprobantes">
           {orden.vouchers.map((v) => (
@@ -404,6 +452,8 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
 
       {acciones.attach_voucher && tiposPermitidos.length > 0 && (
         <div className="oc-subir">
+          <p className="muted oc-ayuda-xml">{pistaDeComprobante}</p>
+          <PorQue>{porqueDelComprobante}</PorQue>
           <label>
             <span>{t("order.voucher_kind", "Tipo")}</span>
             <select value={tipoElegido} onChange={(e) => setComprobante({ ...comprobante, kind: e.target.value })}>
@@ -529,11 +579,6 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
           </div>
         </div>
       )}
-      {orden.order_status === "authorized" && !acciones.purchase && !factura && (
-        <p className="muted oc-ayuda">
-          {t("order.upload_first", "Sube la factura o el ticket para poder registrar la compra.")}
-        </p>
-      )}
 
       <div className="oc-acciones">
         {acciones.edit && (
@@ -565,17 +610,12 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
           </button>
         )}
       </div>
-      {acciones.authorize === false && orden.order_status === "pending_authorization" && acciones.reject === false && (
-        <p className="muted oc-ayuda">{t("order.waiting_authorization", "Espera a que la autorice quien tiene ese permiso.")}</p>
-      )}
-      {acciones.authorize === false && acciones.reject && (
-        <p className="muted oc-ayuda">
-          {t("order.cannot_authorize_own", "No puedes autorizar una orden que tú mismo pediste; puedes rechazarla.")}
-        </p>
-      )}
 
       {["autorizar", "rechazar", "cancelar"].includes(motivo.accion) && (
         <div className="oc-motivo">
+          {(motivo.accion !== "autorizar" || orden.exceeds_budget) && (
+            <PorQue>{porqueDelMotivo[motivo.accion]}</PorQue>
+          )}
           <label>
             <span>
               {motivo.accion === "autorizar"

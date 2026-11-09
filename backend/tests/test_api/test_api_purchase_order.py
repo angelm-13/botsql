@@ -249,10 +249,45 @@ class TestArmarLaOrden(BaseOrdenes):
         self.assertEqual("Ferreteria Norte", cuerpo["supplier"]["name"])
         self.assertEqual(["created"], [e["event_type"] for e in cuerpo["events"]])
 
-    def test_it_only_buys_from_a_registered_supplier(self):
+    def test_an_explicit_supplier_id_must_be_a_registered_supplier(self):
         self.assertEqual(409, self._crear(proveedor=UN_CLIENTE).status_code)
         self.assertEqual(404, self._crear(proveedor=999).status_code)
+        # Sin id ni nombre escrito no hay proveedor.
         self.assertEqual(400, self._crear(proveedor="").status_code)
+        self.assertEqual(400, self._crear(proveedor=None, supplier_name=" ").status_code)
+
+    def test_the_supplier_can_be_written_by_hand_without_registering_it(self):
+        respuesta = self._crear(proveedor=None, supplier_name="  Gruas  del Bajio ")
+        self.assertEqual(201, respuesta.status_code, respuesta.get_data(as_text=True))
+        proveedor = self.json(respuesta)["supplier"]
+        self.assertEqual("Gruas del Bajio", proveedor["name"])
+        self.assertIsNone(proveedor["id_customer_supplier"])
+        self.assertFalse(proveedor["registered"])
+        id_orden = self._id(respuesta)
+        self.assertEqual(200, self._accion(id_orden, "submit").status_code)
+        listado = self.json(self.client.get("/purchase-orders?q=bajio", headers=self._compras()))
+        self.assertEqual(["Gruas del Bajio"], [o["supplier_name"] for o in listado["items"]])
+
+    def test_a_written_name_that_matches_a_registered_supplier_links_the_order(self):
+        cuerpo = self.json(self._crear(proveedor=None, supplier_name="ferreteria  NORTE"))
+        self.assertEqual(PROVEEDOR, cuerpo["supplier"]["id_customer_supplier"])
+        self.assertEqual("Ferreteria Norte", cuerpo["supplier"]["name"])
+        self.assertTrue(cuerpo["supplier"]["registered"])
+        # Un cliente con ese nombre no cuenta: solo se liga a un proveedor.
+        cliente = self.json(self._crear(proveedor=None, supplier_name="Constructora Cliente",
+                                        lineas=[{"description": "Guantes de carnaza",
+                                                 "quantity": 1, "unit_cost": 100}]))
+        self.assertIsNone(cliente["supplier"]["id_customer_supplier"])
+
+    def test_changing_the_written_supplier_is_logged(self):
+        id_orden = self._id(self._crear(proveedor=None, supplier_name="Gruas del Bajio"))
+        respuesta = self.client.put("/purchase-orders/%s" % id_orden,
+                                    json={"supplier_name": "Gruas del Norte"},
+                                    headers=self._compras())
+        self.assertEqual(200, respuesta.status_code, respuesta.get_data(as_text=True))
+        cuerpo = self.json(respuesta)
+        self.assertEqual("Gruas del Norte", cuerpo["supplier"]["name"])
+        self.assertEqual(["created", "updated"], [e["event_type"] for e in cuerpo["events"]])
 
     def test_a_line_from_a_need_carries_its_project_and_what_was_asked(self):
         cuerpo = self.json(self._crear())
@@ -627,6 +662,22 @@ class TestLosComprobantes(BaseOrdenes):
         self.assertEqual(409, respuesta.status_code)
         self.assertEqual("folio", self.json(respuesta)["meta"]["matched_on"])
 
+    def test_the_same_folio_from_the_same_written_supplier_is_a_duplicate(self):
+        mano = {"proveedor": None, "supplier_name": "Gruas del Bajio"}
+        primera = self._autorizada(**mano)
+        self._factura(primera, folio="G-1", semilla="uno")
+        segunda = self._autorizada(**mano, lineas=[{"description": "Guantes de carnaza",
+                                                    "quantity": 10, "unit_cost": 1000}])
+        respuesta = self._subir(segunda, "invoice", _pdf("dos"), folio="G-1",
+                                amount="10000", issue_date=_hoy().isoformat())
+        self.assertEqual(409, respuesta.status_code)
+        # Otro proveedor escrito a mano con el mismo folio es otra factura.
+        otra = self._autorizada(proveedor=None, supplier_name="Pipas Lopez", lineas=[
+            {"description": "Guantes de carnaza", "quantity": 10, "unit_cost": 1000}])
+        self.assertEqual(201, self._subir(
+            otra, "invoice", _pdf("tres"), folio="G-1", amount="10000",
+            issue_date=_hoy().isoformat()).status_code)
+
     def test_the_same_folio_from_another_supplier_is_a_different_invoice(self):
         primera = self._autorizada()
         self._factura(primera, folio="F-100", semilla="uno")
@@ -713,6 +764,11 @@ class TestElCfdi(BaseOrdenes):
         respuesta = self._xml(id_orden, _cfdi(rfc="XXX010101AA1"))
         self.assertEqual(409, respuesta.status_code)
         self.assertEqual("errors.voucher_supplier_mismatch", self._error(respuesta))
+
+    def test_a_written_supplier_has_no_tax_id_to_compare_the_invoice_against(self):
+        id_orden = self._autorizada(proveedor=None, supplier_name="Gruas del Bajio")
+        respuesta = self._xml(id_orden, _cfdi(rfc="XXX010101AA1"))
+        self.assertEqual(201, respuesta.status_code, respuesta.get_data(as_text=True))
 
     def test_the_same_cfdi_cannot_justify_two_orders_even_with_a_different_file(self):
         primera = self._autorizada()

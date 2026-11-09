@@ -43,29 +43,28 @@ spec:
             - containerPort: 15672
           resources:
             requests:
-              cpu: 100m
+              cpu: 25m
               memory: 150Mi
             limits:
               cpu: 400m
               memory: 320Mi
+          # Probes por puerto TCP (AMQP), no con rabbitmq-diagnostics. Medido el
+          # 2026-11-02 en tyakxa-dev: cada `rabbitmq-diagnostics` arranca su propio nodo
+          # Erlang y cuesta ~0.85 s de CPU; con readiness cada 15 s y liveness cada 20 s
+          # son ~100m de CPU permanentes (de los 112m que gastaba el pod en reposo),
+          # en cada ambiente. Un tcpSocket cuesta casi cero. Se pierde que el check valide
+          # alarmas/plugins, pero el broker escucha en 5672 solo cuando ya arranco, y si
+          # el proceso muere el puerto se cierra y el liveness lo reinicia.
           readinessProbe:
-            exec:
-              command: ["rabbitmq-diagnostics", "check_running"]
-            # rabbitmq-diagnostics arranca su propio nodo Erlang de corta
-            # vida para consultar al broker — con timeoutSeconds: 1 (el
-            # default de Kubernetes) casi siempre truena por timeout antes
-            # de terminar, sobre todo con solo 100m de CPU. No es que el
-            # check falle, es que nunca lo dejamos terminar.
-            timeoutSeconds: 10
-            periodSeconds: 15
+            tcpSocket:
+              port: 5672
+            timeoutSeconds: 5
+            periodSeconds: 10
             initialDelaySeconds: 20
           livenessProbe:
-            # "ping" es más liviano que "check_running" (no valida que las
-            # colas/plugins estén operativos, solo que el nodo responde) —
-            # suficiente para decidir si hay que reiniciar el contenedor.
-            exec:
-              command: ["rabbitmq-diagnostics", "ping"]
-            timeoutSeconds: 10
+            tcpSocket:
+              port: 5672
+            timeoutSeconds: 5
             periodSeconds: 20
             failureThreshold: 3
             initialDelaySeconds: 30

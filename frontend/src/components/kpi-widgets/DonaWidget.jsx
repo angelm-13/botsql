@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import PropTypes from "prop-types";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { MuestraDePatron } from "./PatronesSvg";
+import { patronesDeRelleno } from "./patronesDeRelleno";
+import { rellenoConPatron } from "../../kpi/kpiAccesibilidad";
 
 function TooltipDona({ active, payload, formatearValor }) {
   if (!active || !payload || !payload.length) return null;
@@ -23,13 +26,16 @@ TooltipDona.defaultProps = { active: false, payload: null };
  * dimension abierta a una dona de estado con catalogo cerrado. El color
  * nunca es la unica senal: la leyenda siempre trae el nombre de la
  * categoria en texto junto al punto de color. */
-export default function DonaWidget({ datos, animar, formatearValor }) {
+export default function DonaWidget({ datos, animar, formatearValor, conPatrones, descripcion, totalCentro, recorte, textoRecorte }) {
   const [resaltado, setResaltado] = useState(null);
+  const idBase = useId().replace(/:/g, "");
 
   return (
-    <div className="kpi-preview-dona-wrap">
+    <div className="kpi-preview-dona-wrap" role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
+      <div className="kpi-preview-dona-grafica">
       <ResponsiveContainer width="100%" height={190}>
         <PieChart>
+          {conPatrones && <defs>{patronesDeRelleno(idBase, datos.map((entrada) => entrada.color))}</defs>}
           <Pie
             data={datos}
             dataKey="valor"
@@ -45,7 +51,7 @@ export default function DonaWidget({ datos, animar, formatearValor }) {
             {datos.map((entrada, indice) => (
               <Cell
                 key={entrada.categoria}
-                fill={entrada.color}
+                fill={conPatrones ? rellenoConPatron(idBase, indice) : entrada.color}
                 fillOpacity={resaltado === null || resaltado === indice ? 1 : 0.35}
               />
             ))}
@@ -53,6 +59,13 @@ export default function DonaWidget({ datos, animar, formatearValor }) {
           <Tooltip content={<TooltipDona formatearValor={formatearValor} />} />
         </PieChart>
       </ResponsiveContainer>
+      {totalCentro && (
+        <div className="kpi-preview-dona-total" aria-hidden="true">
+          <strong style={{ fontSize: `${totalCentro.fuente}px` }}>{totalCentro.texto}</strong>
+          <span>{totalCentro.detalle}</span>
+        </div>
+      )}
+      </div>
       <ul className="kpi-preview-dona-leyenda">
         {datos.map((entrada, indice) => (
           <li
@@ -61,12 +74,15 @@ export default function DonaWidget({ datos, animar, formatearValor }) {
             onMouseEnter={() => setResaltado(indice)}
             onMouseLeave={() => setResaltado(null)}
           >
-            <span className="kpi-preview-tooltip-dot" style={{ background: entrada.color }} />
-            <span>{entrada.categoria}</span>
+            {conPatrones
+              ? <MuestraDePatron idBase={idBase} color={entrada.color} indice={indice} />
+              : <span className="kpi-preview-tooltip-dot" style={{ background: entrada.color }} />}
+            <span title={entrada.etiqueta && entrada.etiqueta !== entrada.categoria ? entrada.categoria : undefined}>{entrada.etiqueta ?? entrada.categoria}</span>
             <strong>{formatearValor(entrada.valor)}</strong>
           </li>
         ))}
       </ul>
+      {recorte && <p className="kpi-barras-recorte">{textoRecorte(recorte.mostradas, recorte.total)}</p>}
     </div>
   );
 }
@@ -74,10 +90,20 @@ export default function DonaWidget({ datos, animar, formatearValor }) {
 DonaWidget.propTypes = {
   datos: PropTypes.arrayOf(PropTypes.shape({
     categoria: PropTypes.string.isRequired,
+    etiqueta: PropTypes.string,
     valor: PropTypes.number.isRequired,
     color: PropTypes.string.isRequired,
   })).isRequired,
   animar: PropTypes.bool,
   formatearValor: PropTypes.func,
+  // Un patron por rebanada y en la leyenda (segundo canal ademas del color).
+  conPatrones: PropTypes.bool,
+  descripcion: PropTypes.string,
+  // El total al centro (`totalCentroDeDona`): solo cuando las rebanadas suman un total con sentido.
+  totalCentro: PropTypes.shape({ texto: PropTypes.string.isRequired, detalle: PropTypes.string.isRequired, fuente: PropTypes.number.isRequired }),
+  // Un KPI que no se suma (porcentaje, promedio) no agrupa "Otros": `recorte` = { mostradas, total } cuando hay mas rebanadas de las que caben.
+  recorte: PropTypes.shape({ mostradas: PropTypes.number.isRequired, total: PropTypes.number.isRequired }),
+  // (mostradas, total) -> "Mostrando 12 de 15"; lo pone la pantalla para poder traducirlo.
+  textoRecorte: PropTypes.func,
 };
-DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor) };
+DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor), conPatrones: false, descripcion: "", totalCentro: null, recorte: null, textoRecorte: (mostradas, total) => `Mostrando ${mostradas} de ${total}` };

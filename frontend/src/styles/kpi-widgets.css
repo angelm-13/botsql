@@ -1,8 +1,6 @@
-/* Tokens y clases de widget compartidos entre el Dashboard real
-   (.kpi-dashboard) y la vista previa (.dashboard-preview-page): lo que pinta
-   un numero, una tabla, una dona o un skeleton se ve igual en los dos.
-   Lo propio de la vista previa (barra superior, cuadricula demo, editor de
-   demostracion) vive aparte en dashboard-preview.css. El tema oscuro es
+/* Tokens y clases de widget del Dashboard de KPIs (.kpi-dashboard): lo que pinta
+   un numero, una tabla, una dona o un skeleton. El selector .dashboard-preview-page
+   quedo sin uso al retirar esa pantalla. El tema oscuro es
    [data-theme="dark"] en el contenedor -- el resto de TYAKXA no tiene modo
    oscuro todavia y no debe heredar nada de aqui. */
 
@@ -19,7 +17,7 @@
   --kpi-ink-suave: #526273;
   --kpi-texto-suave: #64748b;
   --kpi-acento: #1b7a60;
-  --kpi-grid: #e5e9f0;
+  --kpi-grid: #eef1f6;
   --kpi-hover-barra: rgba(42, 120, 214, .08);
   --kpi-sombra: 0 12px 30px rgba(15, 23, 42, .06);
   --kpi-sombra-hover: 0 18px 40px rgba(15, 23, 42, .12);
@@ -30,9 +28,14 @@
   --kpi-bueno: #12a06a;
   --kpi-malo: #e5484d;
   --kpi-neutral: #8a96a5;
-  /* Ambar vivo: SOLO para "atrasado" en la tabla de material prestado. */
+  /* Ambar vivo: SOLO para "atrasado" (tabla de material prestado, aviso global de datos atrasados). */
   --kpi-atrasado: #f08a00;
   --kpi-atrasado-fondo: #fff3dc;
+  /* Linea global y chip de datos: verde = al dia (texto sobre fondo >= 7:1), ambar = atrasado (fondo ambar, texto de tinta: no hay ambar de texto que no sea marron), gris = neutro. */
+  --kpi-estado-ok-texto: #166534;
+  --kpi-estado-ok-fondo: #dcfce7;
+  --kpi-estado-atrasado-fondo: #fef3c7;
+  --kpi-chip-texto: #475569;
   /* Gravedad de un prestamo por dias: hasta 30 verde, 31 a 90 ambar, mas de 90 coral.
      Siempre con icono y texto ademas del color. Nada oscuro ni cafe. */
   --kpi-nivel-ok: #12a06a;
@@ -65,6 +68,10 @@
   --kpi-neutral: #94a3b8;
   --kpi-atrasado: #ffb020;
   --kpi-atrasado-fondo: rgba(255, 176, 32, .14);
+  --kpi-estado-ok-texto: #6ee7b7;
+  --kpi-estado-ok-fondo: rgba(52, 211, 153, .16);
+  --kpi-estado-atrasado-fondo: rgba(255, 176, 32, .18);
+  --kpi-chip-texto: #cbd5e1;
   --kpi-nivel-ok: #34d399;
   --kpi-nivel-atencion: #ffb020;
   --kpi-nivel-critico: #ff8a7a;
@@ -219,6 +226,11 @@
 
 /* --- dona ---------------------------------------------------------------- */
 .kpi-preview-dona-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+/* El total va en un div encima del hueco de la dona (190 px de alto, igual que el grafico), sin tapar el tooltip. */
+.kpi-preview-dona-grafica { position: relative; width: 100%; }
+.kpi-preview-dona-total { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; pointer-events: none; text-align: center; }
+.kpi-preview-dona-total strong { color: var(--kpi-ink); font-weight: 800; line-height: 1.05; max-width: 88px; white-space: nowrap; }
+.kpi-preview-dona-total span { color: var(--kpi-texto-suave); font-size: 11px; font-weight: 700; line-height: 1.1; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kpi-preview-dona-leyenda { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; }
 .kpi-preview-dona-leyenda li { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; transition: opacity .15s ease; }
 .kpi-preview-leyenda-atenuada { opacity: .4; }

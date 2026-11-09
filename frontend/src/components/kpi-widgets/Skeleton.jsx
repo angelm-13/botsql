@@ -1,7 +1,7 @@
 import PropTypes from "prop-types";
 
-/** Bloque animado (shimmer) en vez de un spinner -- ver dashboard-preview.css
- * para el keyframe y el apagado bajo prefers-reduced-motion. */
+/** Bloque animado (shimmer) en vez de un spinner -- la animacion y su apagado
+ * bajo prefers-reduced-motion estan en kpi-widgets.css. */
 export default function Skeleton({ tipo, className }) {
   return <div className={`kpi-skeleton kpi-skeleton-${tipo} ${className}`.trim()} aria-hidden="true" />;
 }

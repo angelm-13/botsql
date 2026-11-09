@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import Integer, cast, func, select
+from sqlalchemy import Integer, and_, cast, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.kpis.dimensiones import (
@@ -25,9 +25,11 @@ from app.modules.plan import limite
 from app.services.invoice_service import InvoiceService
 from app.services.kpi_dashboard_service import KpiDashboardService
 from app.services.kpi_dashboard_widget_service import KpiDashboardWidgetService
+from app.services.kpi_recalculo_service import KpiRecalculoService
 from app.utils.auth import has_kpi_permission, require_entity_permission, token_required
 from app.utils.errors import AppError
 from app.utils.scope import owner_ids, scope_bits
+from app.utils.tiempo import a_iso_utc, ahora_utc
 
 # Salvo que el plan del cliente declare otro valor en `limites.kpi_rango_dias_max`
 # (ver `app/modules/plan.py`), una consulta no puede pedir mas de un anio de
@@ -124,6 +126,67 @@ def _dimension_entity_expr(campo_json):
     return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
+def _condiciones_del_rango(id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, condiciones_extra=None):
+    """Las condiciones de `kpi_snapshot` que comparten `_totales` y `_estado_de_datos`: el KPI, el rango, el alcance
+    de proyecto, las entidades pedidas y las condiciones extra (equipos)."""
+    condiciones = [
+        KpiSnapshot.id_kpi_definition == id_kpi_definition,
+        KpiSnapshot.periodo >= fecha_inicio,
+        KpiSnapshot.periodo <= fecha_fin,
+    ]
+    if actor_project is not None:
+        condiciones.append(cast(KpiSnapshot.dimension_key, JSONB).contains({'id_proyect': actor_project}))
+
+    entidad_expr = _dimension_entity_expr(campo_json) if campo_json else None
+    # `is not None`, no truthy: una lista vacia (departamento sin empleados,
+    # ver `_empleados_de_departamentos`) tiene que filtrar a "nadie", no
+    # saltarse el filtro por completo. SQLAlchemy compila `IN (())` como una
+    # condicion siempre falsa, asi que es seguro.
+    if entidad_expr is not None and entidades is not None:
+        condiciones.append(entidad_expr.in_([str(entidad) for entidad in entidades]))
+    condiciones.extend(condiciones_extra or [])
+    return condiciones
+
+
+def _estado_de_datos(db, id_kpi_definition, condiciones):
+    """Lo que `_totales` no distingue: un `total` de 0 puede ser un cero calculado o la ausencia de filas.
+
+    * `n_filas`: cuantas filas de `kpi_snapshot` cumplen las condiciones del rango. 0 = "Sin datos en el periodo".
+    * `calculado`: el KPI tiene alguna fila en cualquier fecha. False = nunca se calculo ("No calculado").
+    * `computed_at`: la ultima vez que se escribio una de esas filas (None sin filas). La base la escribe en UTC
+      (`func.now()` con la sesion en UTC), asi que sale con zona explicita (`...Z`) y el frontend la convierte a la
+      hora del negocio al mostrarla.
+
+    Un KPI que solo escribe cuando hay un evento (ver `tasks_kpis.py`) deja dias sin fila aunque el job corra: su
+    `computed_at` puede ser viejo sin que nada falle, y "Sin datos en el periodo" no quiere decir que el job haya fallado.
+    """
+    n_filas, computed_at = db.execute(
+        select(func.count(), func.max(KpiSnapshot.computed_at)).select_from(KpiSnapshot).where(*condiciones)
+    ).one()
+    calculado = bool(n_filas) or bool(db.execute(
+        select(exists().where(KpiSnapshot.id_kpi_definition == id_kpi_definition))
+    ).scalar())
+    return {
+        'n_filas': int(n_filas or 0),
+        'calculado': calculado,
+        # Con zona explicita (`...Z`): la base escribe `computed_at` en UTC (ver `app/utils/tiempo.py`).
+        'computed_at': a_iso_utc(computed_at),
+    }
+
+
+def _orden_de_desempate(entidad):
+    """Llave de orden para empatar entidades con el mismo valor: el id MENOR primero, comparado como numero.
+
+    Las llaves de `por_entidad` llegan como texto (`.astext` del JSON del snapshot): ordenarlas como texto pone el "10" antes
+    que el "9". Un id numerico va antes que una etiqueta (la fila "Sin asignar" y las categorias de texto), y las etiquetas se
+    ordenan entre si como texto.
+    """
+    texto = str(entidad)
+    if texto.isascii() and texto.lstrip('-').isdigit():
+        return (0, int(texto), '')
+    return (1, 0, texto)
+
+
 def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False, ocultar_ceros=False, condiciones_extra=None):
     """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
@@ -161,22 +224,10 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     El corte va DESPUES de combinar el rango -- el top depende del rango pedido -- y el
     `total` sigue siendo el de TODAS las entidades, no el de las que se muestran.
     """
-    condiciones = [
-        KpiSnapshot.id_kpi_definition == id_kpi_definition,
-        KpiSnapshot.periodo >= fecha_inicio,
-        KpiSnapshot.periodo <= fecha_fin,
-    ]
-    if actor_project is not None:
-        condiciones.append(cast(KpiSnapshot.dimension_key, JSONB).contains({'id_proyect': actor_project}))
-
+    condiciones = _condiciones_del_rango(
+        id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, condiciones_extra,
+    )
     entidad_expr = _dimension_entity_expr(campo_json) if campo_json else None
-    # `is not None`, no truthy: una lista vacia (departamento sin empleados,
-    # ver `_empleados_de_departamentos`) tiene que filtrar a "nadie", no
-    # saltarse el filtro por completo. SQLAlchemy compila `IN (())` como una
-    # condicion siempre falsa, asi que es seguro.
-    if entidad_expr is not None and entidades is not None:
-        condiciones.append(entidad_expr.in_([str(entidad) for entidad in entidades]))
-    condiciones.extend(condiciones_extra or [])
 
     base = {'inicio': fecha_inicio.isoformat(), 'fin': fecha_fin.isoformat()}
 
@@ -254,7 +305,7 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     if ocultar_ceros:
         por_entidad = {entidad: valor for entidad, valor in por_entidad.items() if valor}
     if limite is not None:
-        mayores = sorted(por_entidad.items(), key=lambda par: (-par[1], str(par[0])))[:limite]
+        mayores = sorted(por_entidad.items(), key=lambda par: (-par[1], _orden_de_desempate(par[0])))[:limite]
         por_entidad = dict(mayores)
     return {**base, 'total': total, 'por_empleado': por_entidad, 'por_periodo': {}}
 
@@ -294,6 +345,9 @@ def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
         'graficas_permitidas': list(definicion.graficas_permitidas) if definicion else [],
         'grafica_default': definicion.grafica_default if definicion else None,
         'modo': definicion.modo if definicion else 'snapshot',
+        # Como se combinan varios dias en un numero ('suma', 'ultimo', 'promedio_ponderado'); None en un KPI en vivo o sin
+        # registro. El dashboard lo usa para decidir si el total de una dona tiene sentido (solo con 'suma').
+        'agregacion': definicion.agregacion if definicion else None,
         'colores_categoria': definicion.colores_categoria if definicion else None,
         'orden_categorias': list(definicion.orden_categorias) if definicion and definicion.orden_categorias else None,
         'etiquetas_categoria': definicion.etiquetas_categoria if definicion else None,
@@ -323,6 +377,33 @@ def list_kpi_dimensions(user_data):
     return jsonify({'items': [dimension.serializar() for dimension in CATALOGO_DE_DIMENSIONES]})
 
 
+def _ultimo_calculo(db, user_data, kpis):
+    """La ultima vez que el job escribio un `kpi_snapshot` de los KPIs que el actor ve (UTC con `Z`), o None.
+
+    Es lo que decide el aviso global de datos atrasados del dashboard. Se ignoran los KPIs en vivo (`modo='vivo'`):
+    se consultan "ahora" y no escriben snapshots, asi que no dicen nada de la salud del job. Mismo alcance de
+    proyecto que `/kpi_snapshot/query` (`ALCANCE_PROYECTO_POR_CLAVE`): un KPI sin alcance de proyecto cuenta entero.
+    """
+    con_alcance, sin_alcance = [], []
+    for kpi in kpis:
+        definicion = KPI_POR_CLAVE.get(kpi.clave)
+        if definicion is not None and definicion.modo == 'vivo':
+            continue
+        (con_alcance if ALCANCE_PROYECTO_POR_CLAVE.get(kpi.clave, True) else sin_alcance).append(kpi.id_kpi_definition)
+    condiciones = []
+    if sin_alcance:
+        condiciones.append(KpiSnapshot.id_kpi_definition.in_(sin_alcance))
+    if con_alcance:
+        actor_project = InvoiceService.actor_project(user_data)
+        condicion = KpiSnapshot.id_kpi_definition.in_(con_alcance)
+        if actor_project is not None:
+            condicion = and_(condicion, cast(KpiSnapshot.dimension_key, JSONB).contains({'id_proyect': actor_project}))
+        condiciones.append(condicion)
+    if not condiciones:
+        return None
+    return a_iso_utc(db.scalar(select(func.max(KpiSnapshot.computed_at)).where(or_(*condiciones))))
+
+
 @bp_kpi.route('/kpi_definition/', methods=['GET'])
 @token_required
 @require_entity_permission('kpi_definition', 'read')
@@ -331,12 +412,12 @@ def list_kpi_definitions(user_data):
         kpis = db.scalars(
             select(KpiDefinition).where(KpiDefinition.deletion_date.is_(None))
         ).all()
-        items = [
-            _con_metadatos_del_registry(kpi)
-            for kpi in kpis
-            if has_kpi_permission(db, user_data, kpi.id_kpi_definition)
-        ]
-    return jsonify({'items': items})
+        visibles = [kpi for kpi in kpis if has_kpi_permission(db, user_data, kpi.id_kpi_definition)]
+        items = [_con_metadatos_del_registry(kpi) for kpi in visibles]
+        ultimo_calculo = _ultimo_calculo(db, user_data, visibles)
+    # `ultimo_calculo` y `ahora` (ambos UTC con `Z`) van juntos: el frontend resta uno del otro y no depende del
+    # reloj del navegador.
+    return jsonify({'items': items, 'ultimo_calculo': ultimo_calculo, 'ahora': a_iso_utc(ahora_utc())})
 
 
 @bp_kpi.route('/kpi_definition/all', methods=['GET'])
@@ -479,6 +560,12 @@ def query_kpi_snapshot(user_data):
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
             rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros, condiciones_extra)
+        # `total` 0 no distingue "0 calculado" de "sin filas": `n_filas` y `calculado` lo dicen (ver `_estado_de_datos`).
+        rango_a.update(_estado_de_datos(db, id_kpi_definition, _condiciones_del_rango(
+            id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, condiciones_extra)))
+        if rango_b:
+            rango_b.update(_estado_de_datos(db, id_kpi_definition, _condiciones_del_rango(
+                id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, condiciones_extra)))
         # El snapshot guarda ids; los nombres viajan aparte (`etiquetas`) para que el Dashboard no tenga
         # que cargar catalogos enteros solo para ponerlos. Cada dimension declara quien los resuelve
         # (`app/kpis/dimensiones.py`); estado y global no llevan.
@@ -615,6 +702,15 @@ def update_kpi_dashboard(user_data, id_kpi_dashboard):
 @require_entity_permission('kpi_dashboard', 'delete')
 def delete_kpi_dashboard(user_data, id_kpi_dashboard):
     return jsonify(KpiDashboardService.delete_own(user_data, id_kpi_dashboard))
+
+
+@bp_kpi_dashboard.route('/<id_kpi_dashboard>/recalcular', methods=['POST'])
+@token_required
+@require_entity_permission('kpi_dashboard', 'read')
+def recalculate_kpi_dashboard(user_data, id_kpi_dashboard):
+    """Recalcula los indicadores pedidos (uno o varios) del tablero del actor: ver `KpiRecalculoService`."""
+    payload = request.get_json(silent=True) or {}
+    return jsonify(KpiRecalculoService.recalcular(user_data, id_kpi_dashboard, payload.get('items')))
 
 
 @bp_kpi_dashboard.route('/<id_kpi_dashboard>/widgets/', methods=['GET'])

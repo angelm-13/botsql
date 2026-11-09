@@ -161,12 +161,13 @@ class TestProjectWorkflowApi(BackendTestCase):
             self.assertEqual(403, response.status_code)
             self.assertEqual("errors.permission_denied", self.json(response)["error_key"])
 
-    def test_project_supply_gives_the_material_steps_without_editing_projects(self):
-        """Compras da los dos pasos de material con `project_supply` y `proyect` en consulta.
+    def test_project_supply_gives_the_material_step_without_editing_projects(self):
+        """Compras marca "Material en camino" con `project_supply` y `proyect` en consulta.
 
         Antes la ruta exigia `proyect` + actualizar, asi que la capacidad no
         servia de nada para un rol que solo consulta: 403 aunque el servicio la
-        reconociera.
+        reconociera. "Material recibido, iniciar" ya no es suyo (2026-11-04): es
+        del encargado de la obra.
         """
         project_id = self._create_project()["id_proyect"]
         for status in ("submitted", "authorized"):
@@ -177,8 +178,8 @@ class TestProjectWorkflowApi(BackendTestCase):
         sin_capacidad = self._request(self.reader, "POST", ruta, {"status": "waiting_material"})
         self.assertEqual(403, sin_capacidad.status_code)
 
-        for status in ("waiting_material", "in_progress"):
-            self.assertEqual(200, self._request(self.buyer, "POST", ruta, {"status": status}).status_code)
+        self.assertEqual(200, self._request(self.buyer, "POST", ruta, {"status": "waiting_material"}).status_code)
+        self.assertEqual(403, self._request(self.buyer, "POST", ruta, {"status": "in_progress"}).status_code)
 
         # Y nada mas: ni detiene el proyecto ni lo edita.
         self.assertEqual(403, self._request(

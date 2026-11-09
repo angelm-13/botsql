@@ -7,6 +7,7 @@ import {
 } from "../api";
 import "../styles/laboratory.css";
 import { useDialogo } from "../dialogo/useDialogo.js";
+import { errorDeVencimiento, reglaDeVencimiento } from "../utils/vencimientoDeDocumento.js";
 
 const PER_PAGE = 20;
 const EMPTY_FILTERS = { search: "", status: "", id_document_category: "", person: "", created_by: "", issue_date_from: "", issue_date_to: "" };
@@ -14,14 +15,20 @@ const SIMPLE_FILTERS = ["search", "status", "id_document_category", "created_by"
 const FULL_ACCESS = { scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 };
 const STATUS_LABELS = { draft: "Borrador", issued: "Emitido", signed: "Firmado", rejected: "Rechazado", cancelled: "Cancelado" };
 const TARGET_LABELS = { employee: "Empleado", customer_supplier: "Cliente o proveedor", equipment: "Equipo", service_order: "Orden" };
+const ERROR_VENCIMIENTO = {
+  obligatoria: "Este tipo de documento necesita fecha de vencimiento (en empleado y proveedor tambien puedes marcar \"Sin vencimiento\").",
+  contradiccion: "Marcaste \"Sin vencimiento\" y tambien pusiste una fecha: deja solo una.",
+  orden: "La fecha de vencimiento no puede ser anterior a la de emision.",
+};
 const ERROR_TEXT = {
   "documents.system_generated_not_deletable": "Este documento lo genero el sistema (vale o reporte de diagnostico) y no se puede borrar.",
   "documents.invalid_file_type": "Tipo de archivo no permitido.",
   "documents.mime_mismatch": "El contenido del archivo no corresponde a su extension.",
   "documents.invalid_file_size": "El archivo esta vacio o pasa del tamano permitido.",
-  "documents.single_relation_required": "Indica a quien esta ligado el documento.",
-  "errors.permission_denied": "Tu rol no tiene permiso para esta accion.",
-  "errors.resource_not_found": "El documento ya no existe o no esta disponible para ti.",
+  "documents.single_relation_required": "Indica a quién está ligado el documento.",
+  "documents.expiration_required": "Este tipo de documento necesita fecha de vencimiento (en empleado y proveedor también puedes marcar \"Sin vencimiento\").",
+  "errors.permission_denied": "Tu rol no tiene permiso para esta acción.",
+  "errors.resource_not_found": "El documento ya no existe o no está disponible para ti.",
 };
 
 function errorText(caught) {
@@ -62,7 +69,7 @@ export default function DocumentManagementPage() {
   const [viewer, setViewer] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ title: "", description: "", id_document_category: "", id_customer_supplier: "", id_employee: "", relation_type: "customer", status: "draft" });
+  const [form, setForm] = useState({ title: "", description: "", id_document_category: "", id_customer_supplier: "", id_employee: "", relation_type: "customer", status: "draft", issue_date: "", expiration_date: "", no_expiration: false });
   const [file, setFile] = useState(null);
 
   const listRequest = useRef(0);
@@ -186,9 +193,15 @@ export default function DocumentManagementPage() {
     event.preventDefault(); setError("");
     const formElement = event.currentTarget;
     if (!file) { setError("Selecciona un archivo PDF, JPEG o PNG."); return; }
+    // La misma regla que aplica el servidor (400 `documents.expiration_required`), para no hacer el viaje en balde.
+    const falla = errorDeVencimiento({
+      codigoDeCategoria: selectedCategory?.code, emision: form.issue_date,
+      vencimiento: form.expiration_date, sinVencimiento: form.no_expiration,
+    });
+    if (falla) { setError(ERROR_VENCIMIENTO[falla]); return; }
     try {
-      await uploadDocument(form, file);
-      setForm({ ...form, title: "", description: "" }); setFile(null); formElement.reset();
+      await uploadDocument({ ...form, no_expiration: form.no_expiration ? "true" : undefined }, file);
+      setForm({ ...form, title: "", description: "", issue_date: "", expiration_date: "", no_expiration: false }); setFile(null); formElement.reset();
       setPage(1); setReloadKey((key) => key + 1);
     } catch (caught) { setError(errorText(caught)); }
   }
@@ -205,6 +218,8 @@ export default function DocumentManagementPage() {
     setDraft(EMPTY_FILTERS); setApplied({ ...EMPTY_FILTERS }); setPage(1);
   }
 
+  const selectedCategory = categories.find((item) => String(item.id_document_category) === String(form.id_document_category));
+  const expirationRule = reglaDeVencimiento(selectedCategory?.code);
   const setFilter = (key) => (event) => setDraft({ ...draft, [key]: event.target.value });
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
   const hasFilters = Object.values(applied).some(Boolean);
@@ -216,9 +231,12 @@ export default function DocumentManagementPage() {
       {canCreate && <form className="lab-panel lab-form" onSubmit={submit}>
         <h2><FilePlus2 size={18} /> Cargar documento</h2>
         <label>Titulo<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required /></label>
-        <label>Categoria<select value={form.id_document_category} onChange={(event) => setForm({ ...form, id_document_category: event.target.value })} required><option value="">Seleccionar</option>{categories.map((item) => <option key={item.id_document_category} value={item.id_document_category}>{item.name}</option>)}</select></label>
+        <label>Categoria<select value={form.id_document_category} onChange={(event) => setForm({ ...form, id_document_category: event.target.value, no_expiration: false })} required><option value="">Seleccionar</option>{categories.map((item) => <option key={item.id_document_category} value={item.id_document_category}>{item.name}</option>)}</select></label>
         <label>Relacionado con<select value={form.relation_type} onChange={(event) => setForm({ ...form, relation_type: event.target.value, id_customer_supplier: "", id_employee: "" })}><option value="customer">Cliente o proveedor</option><option value="employee">Empleado</option></select></label>
         {form.relation_type === "employee" ? <label>Empleado<select value={form.id_employee} onChange={(event) => setForm({ ...form, id_employee: event.target.value })} required><option value="">{employees.length ? "Seleccionar" : "No hay empleados activos"}</option>{employees.map((item) => <option key={item.id_user} value={item.id_user}>{item.full_name}</option>)}</select></label> : <label>Cliente o proveedor<select value={form.id_customer_supplier} onChange={(event) => setForm({ ...form, id_customer_supplier: event.target.value })} required><option value="">Seleccionar</option>{customers.map((item) => <option key={item.id_customer_supplier} value={item.id_customer_supplier}>{item.name}</option>)}</select></label>}
+        <label>Fecha de emision<input type="date" value={form.issue_date} onChange={(event) => setForm({ ...form, issue_date: event.target.value })} /></label>
+        <label>Fecha de vencimiento{expirationRule === "opcional" ? "" : " *"}<input type="date" value={form.expiration_date} min={form.issue_date || undefined} disabled={form.no_expiration} required={expirationRule === "obligatorio"} onChange={(event) => setForm({ ...form, expiration_date: event.target.value })} /></label>
+        {expirationRule === "o_sin_vencimiento" && <label className="doc-no-expiration"><input type="checkbox" checked={form.no_expiration} onChange={(event) => setForm({ ...form, no_expiration: event.target.checked, expiration_date: event.target.checked ? "" : form.expiration_date })} /> Sin vencimiento</label>}
         <label>Descripcion<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
         <label>Archivo<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setFile(event.target.files?.[0] || null)} required /></label>
         <button className="primary-command" type="submit">Cargar</button>

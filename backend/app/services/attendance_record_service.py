@@ -317,14 +317,16 @@ def asistencia_por_empleado(db, desde: date, hasta: date, ids=None, con_checadas
         .where(PayrollHoliday.holiday_date <= hasta)
     ))
     marcas: dict[int, dict[date, list]] = {}
-    for id_user, hora in (db.execute(
-        select(AttendanceRecord.id_user, AttendanceRecord.check_time)
+    ids_de: dict[int, dict[date, list]] = {}
+    for id_user, hora, ident in (db.execute(
+        select(AttendanceRecord.id_user, AttendanceRecord.check_time, AttendanceRecord.id_attendance_record)
         .where(AttendanceRecord.id_user.isnot(None))
         .where(AttendanceRecord.deletion_date.is_(None))
         .where(AttendanceRecord.check_time >= datetime.combine(desde, datetime.min.time()))
         .where(AttendanceRecord.check_time < datetime.combine(hasta + timedelta(days=1), datetime.min.time()))
     ) if con_checadas else ()):
         marcas.setdefault(id_user, {}).setdefault(hora.date(), []).append(hora)
+        ids_de.setdefault(id_user, {}).setdefault(hora.date(), []).append((hora.time(), ident))
 
     ausencias: dict[int, list] = {}
     # Solo lo aprobado: una solicitud pendiente o rechazada no justifica el dia.
@@ -347,10 +349,12 @@ def asistencia_por_empleado(db, desde: date, hasta: date, ids=None, con_checadas
             horario = horarios.get(asignada.id_work_schedule) if asignada else None
             ausencia = next((a.leave_type for a in ausencias.get(id_user, [])
                              if a.start_date <= fecha <= a.end_date), None)
-            dias.append(reglas.clasificar_dia(
+            dia = reglas.clasificar_dia(
                 fecha, marcas.get(id_user, {}).get(fecha, []),
                 dias_de_horario.get(asignada.id_work_schedule, {}).get(fecha.weekday()) if asignada else None,
-                fecha in festivos, horario.tolerance_minutes if horario else 0, asignada is not None, ausencia))
+                fecha in festivos, horario.tolerance_minutes if horario else 0, asignada is not None, ausencia)
+            dia.checadas = sorted(ids_de.get(id_user, {}).get(fecha, []))
+            dias.append(dia)
         resultado[id_user] = dias
     return resultado
 

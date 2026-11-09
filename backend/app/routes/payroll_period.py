@@ -6,7 +6,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_payroll_period = Blueprint('payroll_period', __name__, url_prefix='/payroll_period')
-ALLOWED_FIELDS = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'period_state', 'closed_at', 'closed_by', 'reopened_at', 'reopened_by', 'includes_aguinaldo']
+ALLOWED_FIELDS = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'period_state', 'closed_at', 'closed_by', 'reopened_at', 'reopened_by', 'includes_aguinaldo', 'id_payroll_group']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_payroll_period'}
 FIELD_READ_BIT = 2
@@ -108,7 +108,19 @@ def _jsonify_projected_record(user_data: dict, record: dict | None, status: int 
 
 
 def _jsonify_projected_list(user_data: dict, payload: dict):
-    return jsonify(_project_list_payload(payload, _visible_response_fields_for_actor(user_data)))
+    visibles = _visible_response_fields_for_actor(user_data)
+    result = _project_list_payload(payload, visibles)
+    # La tabla mostraba "Creado por: 1"; se agrega el nombre sin quitar el id.
+    if 'created_by' in visibles and result.get('items'):
+        from sqlalchemy import select
+        from app.models import User
+        from app.models.session import transaction_context
+        ids = {i.get('created_by') for i in result['items'] if i.get('created_by')}
+        with transaction_context() as db:
+            nombres = dict(db.execute(select(User.id_user, User.full_name).where(User.id_user.in_(ids or {0}))).all())
+        for i in result['items']:
+            i['created_by_name'] = nombres.get(i.get('created_by')) or ''
+    return jsonify(result)
 
 
 
@@ -166,9 +178,12 @@ def calculate_payroll_period(user_data, id_payroll_period):
 @token_required
 @require_entity_permission('payroll_period', 'update')
 def close_payroll_period(user_data, id_payroll_period):
-    """Congela un periodo ya calculado (ver payroll_calculation_service)."""
+    """Congela un periodo ya calculado (ver payroll_calculation_service). Si quedan
+    dias pendientes de justificar responde 409 con la lista; con
+    {"confirm_pending": true} se cierra de todos modos."""
     from app.services.payroll_calculation_service import cerrar_periodo
-    return jsonify(cerrar_periodo(id_payroll_period, user_data.get('id_user')))
+    confirmar = bool((request.get_json(silent=True) or {}).get('confirm_pending'))
+    return jsonify(cerrar_periodo(id_payroll_period, user_data.get('id_user'), confirmar))
 
 
 @bp_payroll_period.route('/<id_payroll_period>/reopen', methods=['POST'])
@@ -200,3 +215,48 @@ def receipt_payroll_period(user_data, id_payroll_period, id_user):
     pdf, nombre = pdf_del_recibo(id_payroll_period, id_user)
     return Response(pdf, mimetype='application/pdf',
                     headers={'Content-Disposition': f'inline; filename="{nombre}"'})
+
+
+# Hoja de nomina tipo Excel (services/payroll_sheet_service.py).
+@bp_payroll_period.route('/<id_payroll_period>/sheet', methods=['GET'])
+@token_required
+@require_entity_permission('payroll_detail', 'read')
+def sheet_payroll_period(user_data, id_payroll_period):
+    from app.services.payroll_sheet_service import hoja
+    return jsonify(hoja(id_payroll_period))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/sheet', methods=['POST'])
+@token_required
+# Escribir una celda es escribir un movimiento y recalcular el periodo.
+@require_entity_permission('payroll_movement', 'create')
+@require_entity_permission('payroll_movement', 'update')
+@require_entity_permission('payroll_detail', 'create')
+def save_sheet_payroll_period(user_data, id_payroll_period):
+    from app.services.payroll_sheet_service import guardar
+    cuerpo = request.get_json(silent=True) or {}
+    return jsonify(guardar(id_payroll_period, cuerpo.get('changes'), user_data.get('id_user')))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/sheet/simulate', methods=['POST'])
+@token_required
+@require_entity_permission('payroll_detail', 'read')
+def simulate_sheet_payroll_period(user_data, id_payroll_period):
+    """Como quedaria la nomina con esas celdas; no guarda nada."""
+    from app.services.payroll_sheet_service import simular
+    cuerpo = request.get_json(silent=True) or {}
+    return jsonify(simular(id_payroll_period, cuerpo.get('changes'), user_data.get('id_user')))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/sheet.xlsx', methods=['GET'])
+@token_required
+@require_entity_permission('payroll_detail', 'read')
+def xlsx_sheet_payroll_period(user_data, id_payroll_period):
+    from flask import Response
+    from app.services.payroll_sheet_service import xlsx
+    from app.utils.xlsx_simple import MIME
+    titulos = {"employee": "Empleado", "days": "Días", "earnings": "Total ingresos",
+               "deductions": "Total egresos", "net": "Neto", "totals": "TOTALES"}
+    contenido, nombre = xlsx(id_payroll_period, titulos)
+    return Response(contenido, mimetype=MIME,
+                    headers={'Content-Disposition': f'attachment; filename="{nombre}"'})

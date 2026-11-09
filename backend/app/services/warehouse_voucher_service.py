@@ -49,6 +49,7 @@ un vale que dice que salio algo que el libro no vio salir.
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime
 
 from sqlalchemy import func, or_, select
@@ -2938,19 +2939,31 @@ def _rango_de_fechas(fecha_inicio, fecha_fin):
     return (inicio.date() if inicio else None, fin.date() if fin else None)
 
 
+# Las LLAVES de los tipos de vale que pisan a Entrada/Salida. Son tambien la llave de `material_por_estado`
+# (`colores_categoria`, snapshots y esperados), asi que NO se cambian: "Dañado" con enie y "Destruccion" sin acento.
+LLAVE_DE_TIPO_ESPECIAL = {"danado": "Dañado", "destruccion": "Destruccion", "extraviado": "Extraviado"}
+
+
+def _sin_acentos_ni_mayusculas(texto) -> str:
+    descompuesto = unicodedata.normalize("NFD", str(texto or "").strip())
+    return "".join(c for c in descompuesto if not unicodedata.combining(c)).lower()
+
+
 def _estado_del_renglon(direction, tipo_descripcion) -> str:
     """Danado/Destruccion/Extraviado pisan a Entrada/Salida cuando el VALE es
     de ese tipo: ahi lo que importa no es si el material entro o salio, es lo
-    que le paso. El catalogo real trae "Destruccion" y "Dañado" (`incident_type`,
-    ids 8 y 9 en lo migrado de Adser) -- se usa la descripcion tal como esta
-    en la base, no una constante propia, para no desincronizarse del catalogo.
-    "Extraviado" se agrega para `material_por_estado_query`
-    (app/kpis/registry.py): mismo tratamiento, sin cambiar el criterio de los
-    dos casos que ya existian.
+    que le paso.
+
+    Se compara sin acentos ni mayusculas ("Danado", "Dañado", "Destruccion" y
+    "Destrucción" son el mismo tipo) y se devuelve SIEMPRE la misma llave
+    (`LLAVE_DE_TIPO_ESPECIAL`): esa etiqueta es la categoria de
+    `material_por_estado_query` (app/kpis/registry.py), asi que normalizar la
+    entrada no debe cambiar la salida. Antes "Danado" y "Destrucción" caian en
+    "Salida" y el KPI contradecia a `perdidas_por_familia`.
     """
-    especial = str(tipo_descripcion or "").strip().lower()
-    if especial in ("destruccion", "dañado", "extraviado"):
-        return str(tipo_descripcion).strip()
+    llave = LLAVE_DE_TIPO_ESPECIAL.get(_sin_acentos_ni_mayusculas(tipo_descripcion))
+    if llave:
+        return llave
     return "Entrada" if str(direction or "").lower() == ENTRADA else "Salida"
 
 

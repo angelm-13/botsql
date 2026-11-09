@@ -118,6 +118,8 @@ class Api:
         if self.token:
             req.add_header("Authorization", f"Bearer {self.token}")
         try:
+            # Script de siembra de demo contra una URL que pasa quien lo corre; no corre en produccion.
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read() or b"null")
         except urllib.error.HTTPError as err:

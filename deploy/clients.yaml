@@ -51,3 +51,21 @@ clients:
     # Un solo origen (nissi.torredigital.mx con /api) -- mismo patron que
     # aai/prod.
     api_base_url: ""
+  - name: halcones
+    env: prod
+    # Un solo origen (halcones.torredigital.mx con /api) -- mismo patron que
+    # nissi/prod.
+    api_base_url: ""
+
+  - name: sumac
+    env: prod
+    # Un solo origen (sumac.torredigital.mx con /api) -- mismo patron que
+    # halcones/prod.
+    api_base_url: ""
+
+  - name: integraws
+    env: prod
+    # Un solo origen (integraws.torredigital.mx con /api) -- mismo patron que
+    # halcones/prod.
+    api_base_url: ""
+

@@ -64,9 +64,10 @@ const ROLE_TARGETS = {
     draft: ["submitted", "denied", "blocked"],
     submitted: ["authorized", "denied", "blocked"],
     blocked: ["authorized", "denied", "blocked"],
-    // La espera de material es obligatoria y la abre quien confirma el
-    // material, no el taller: Gerente de respaldo y, desde 2026-10-16, quien
-    // tenga `project_supply` (Compras; ver `puedeDarMaterial` en actionTargets).
+    // La espera de material es obligatoria y la abre quien consigue el
+    // material (Compras con `project_supply`, ver `puedeDarMaterial`); la cierra
+    // el encargado de la obra (ver `encargadoDeLaObra`). Gerente, de respaldo,
+    // puede dar los dos pasos.
     authorized: ["waiting_material"],
     waiting_material: ["in_progress"],
     // Completar lo recolectado es del responsable o de Gerencia.
@@ -120,9 +121,10 @@ const EMPTY_FORM = {
 
 const PROJECT_PRIORITIES = ["baja", "media", "alta"];
 
-// Los dos pasos del material, por estatus de partida. Quien los da (Compras)
-// los ve como un boton en la fila, con el texto de la accion y no el del
-// estatus; el resto de los cambios siguen en el desplegable.
+// Los dos pasos del material, por estatus de partida, como boton en la fila (con
+// el texto de la accion y no el del estatus); el resto de los cambios siguen en
+// el desplegable. "Material en camino" lo da Compras; "Material recibido,
+// iniciar", el encargado de la obra (2026-11-04).
 const PASO_DE_MATERIAL = { authorized: "waiting_material", waiting_material: "in_progress" };
 
 // Cuanto material falta de un proyecto con control (la lista lo trae solo de los
@@ -150,6 +152,19 @@ function transitionNoteKey(transition) {
   if (transition.target === "in_progress" && transition.project.proyect_status === "stopped") return "resume_note";
   return "observation";
 }
+
+// Evento del historial -> clave de traduccion de su titulo. Lo que no este aqui
+// cae en "created_event" (Proyecto creado).
+const EVENT_TITLE_KEYS = {
+  message: "message",
+  taken: "event_taken",
+  released: "event_released",
+  management_transition: "event_management_transition",
+  document_attached: "event_document_attached",
+  document_removed: "event_document_removed",
+  payment_agreed: "event_payment_agreed",
+  payment_settled: "event_payment_settled",
+};
 
 function listOf(payload) {
   return Array.isArray(payload) ? payload : payload?.items || [];
@@ -207,8 +222,12 @@ export default function ProjectManagementPage() {
     if (event.event_type === "status_changed") return `${statusLabel(event.previous_status)} → ${statusLabel(event.new_status)}`;
     if (event.event_type === "task_status_changed") return `${projectText("task")}: ${taskStatusLabel(event.previous_status)} → ${taskStatusLabel(event.new_status)}`;
     if (event.event_type === "task_note") return projectText("task_note_event");
-    return projectText(event.event_type === "message" ? "message" : "created_event");
+    return projectText(EVENT_TITLE_KEYS[event.event_type] || "created_event");
   }
+  const eventAuthor = (event) => {
+    const name = userLabel(userById[event.created_by], event.created_by, projectText("user"));
+    return event.author_role ? `${name} · ${event.author_role}` : name;
+  };
   const actor = useMemo(storedUser, []);
   const privileged = Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
   const [permissions, setPermissions] = useState([]);
@@ -277,10 +296,18 @@ export default function ProjectManagementPage() {
   const mode = privileged ? "unrestricted" : hasRead(permissions, "project_authorization") ? "manager" : hasRead(permissions, "project_execution") ? "workshop" : "supervisor";
   // Las capacidades suman: quien tiene autorizar Y ejecutar en el Gestor es "manager" para la
   // pantalla, pero tambien puede ejecutar (tomar el proyecto). El servidor decide igual.
-  // Los dos pasos de material (a "en espera" y de ahi a "en proceso"): quien
-  // tiene `project_supply` (Compras) o, de respaldo, quien autoriza -- igual
-  // que `_puede_dar_el_material` en el servidor.
+  // "Material en camino" (a "en espera"): quien tiene `project_supply` (Compras)
+  // o, de respaldo, quien autoriza -- igual que `_puede_dar_el_material` en el servidor.
   const puedeDarMaterial = privileged || hasRead(permissions, "project_supply") || hasRead(permissions, "project_authorization");
+  // "Material recibido, iniciar" (de "en espera" a "en proceso"): quien tiene esta
+  // obra en la mano -el Jefe de taller asignado si lleva maquila, el supervisor que
+  // la lidera si no- o, de respaldo, quien autoriza. Igual que `_encargado_de_la_obra`.
+  const encargadoDeLaObra = (project) => (project.requires_maquila
+    ? Number(project.id_supervisor) === Number(actor.id_user) && hasRead(permissions, "project_execution")
+    : Number(project.leader) === Number(actor.id_user));
+  const puedeIniciar = (project) => privileged || hasRead(permissions, "project_authorization") || encargadoDeLaObra(project);
+  const puedeDarElPaso = (project) => (project.proyect_status === "authorized" ? puedeDarMaterial
+    : project.proyect_status === "waiting_material" ? puedeIniciar(project) : false);
   const statusCodes = useMemo(() => orderedStatuses(catalog?.proyect?.statuses, STATUS_ORDER), [catalog]);
   const needsReason = (target) => (catalog?.proyect?.reason_required || []).includes(target);
   const taskNeedsReason = (target) => (catalog?.task?.reason_required || []).includes(target);
@@ -311,13 +338,13 @@ export default function ProjectManagementPage() {
       setBusyId(null);
     }
   }
-  // Cambiar el estatus de una tarea (taller) es capacidad de Gerente/Jefe de
-  // taller/administrador -- ver seed de `entity_permission` para "task"
-  // (`scope_update`): Supervisor solo tiene lectura. El backend ya lo exige
-  // (`require_entity_permission('task', 'update')` en /task/<id>/transition),
-  // esto solo evita ofrecerle el control a quien de todas formas recibiria
-  // un 403.
-  const canChangeTaskStatus = mode !== "supervisor";
+  // Cambiar el estatus de una tarea lo decide el Gestor: `task` -> Actualizar
+  // (`scope_update`) distinto de "Sin acceso". El backend ya lo exige
+  // (`require_entity_permission('task', 'update')` en /task/<id>/transition); esto solo
+  // evita ofrecerle el control a quien de todas formas recibiria un 403. Ya no depende
+  // del modo de la pantalla (antes `mode !== "supervisor"` lo ocultaba a Supervisores).
+  const taskPermission = permissions.find((item) => item.entity_name === "task");
+  const canChangeTaskStatus = privileged || Number(taskPermission?.scope_update || 0) !== 0;
   const filtered = items;
 
   async function loadData(nextPage = page, nextPerPage = perPage) {
@@ -514,11 +541,11 @@ export default function ProjectManagementPage() {
     if (leadsIt && project.proyect_status === "collected" && !resultado.includes("completed")) {
       resultado = [...resultado, "completed"];
     }
-    // Los pasos de material los da quien tiene `project_supply` aunque su rol
-    // no sea "manager" (Compras cae en el modo "supervisor", sin acciones por
-    // papel). Lo mismo con o sin maquila: los dos pasan por Compras.
+    // Los pasos de material no van por papel (Compras cae en el modo
+    // "supervisor", sin acciones por papel): "en camino" es de Compras y
+    // "recibido, iniciar" del encargado de ESTA obra, sea Jefe de taller o supervisor.
     const pasoDeMaterial = PASO_DE_MATERIAL[project.proyect_status];
-    if (puedeDarMaterial && pasoDeMaterial && desdeElServidor.includes(pasoDeMaterial)
+    if (pasoDeMaterial && puedeDarElPaso(project) && desdeElServidor.includes(pasoDeMaterial)
         && !resultado.includes(pasoDeMaterial)) {
       resultado = [...resultado, pasoDeMaterial];
     }
@@ -617,7 +644,7 @@ export default function ProjectManagementPage() {
     const todos = actionTargets(project);
     // El paso del material sale como boton a la vista ("Material en camino" /
     // "Material recibido, iniciar"); el desplegable queda con lo demas.
-    const pasoDeMaterial = puedeDarMaterial && todos.includes(PASO_DE_MATERIAL[project.proyect_status])
+    const pasoDeMaterial = puedeDarElPaso(project) && todos.includes(PASO_DE_MATERIAL[project.proyect_status])
       ? PASO_DE_MATERIAL[project.proyect_status] : null;
     const targets = todos.filter((target) => target !== pasoDeMaterial);
     return <div className="project-actions">
@@ -672,7 +699,7 @@ export default function ProjectManagementPage() {
 
     {transition && <div className="project-modal-backdrop" role="presentation"><form className="project-modal compact" onSubmit={applyTransition}><header><div><p className="eyebrow">{projectText("status_change")}</p><h3>{statusLabel(transition.target)}</h3></div><button className="icon-button" type="button" onClick={() => setTransition(null)} aria-label={projectText("close")}><X size={18} /></button></header><p>{transition.project.title || `${projectText("project")} #${transition.project.id_proyect}`}</p>{transition.materialReason && <p className="alert error">{t("errors.project_material_pending")}</p>}{(needsReason(transition.target) || transition.materialReason) && <label className="field"><span>{projectText("reason")}</span><textarea required rows={3} value={transition.reason} onChange={(event) => setTransition({ ...transition, reason: event.target.value })} /></label>}<label className="field"><span>{projectText(transitionNoteKey(transition))}</span><textarea rows={3} value={transition.content} onChange={(event) => setTransition({ ...transition, content: event.target.value })} /></label>{transition.target === "blocked" && <label className="field"><span>{projectText("review_date")}</span><input type="datetime-local" value={transition.reviewDate} onChange={(event) => setTransition({ ...transition, reviewDate: event.target.value })} /></label>}<footer><button className="button" type="button" onClick={() => setTransition(null)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("confirm_change")}</button></footer></form></div>}
 
-    {detail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("record")} #{detail.id_proyect}</p><h3>{detail.title || projectText("project")}</h3></div><button className="icon-button" type="button" onClick={() => setDetail(null)} aria-label={projectText("close")}><X size={18} /></button></header><span className={`project-status status-${detail.proyect_status}`}>{statusLabel(detail.proyect_status)}</span>{!detail.requires_maquila && <span className="project-status no-maquila">{projectText("no_maquila_badge")}</span>}<p>{detail.proyect_description}</p><div className="project-progress">{detail.task_progress && <label><span>{projectText("progress_tasks")}: {detail.task_progress.done}/{detail.task_progress.total}</span><progress max={detail.task_progress.total || 1} value={detail.task_progress.done} /></label>}{detail.material_readiness?.total > 0 && <label><span>{projectText("progress_material")}: {detail.material_readiness.received}/{detail.material_readiness.total}{detail.material_readiness.not_ordered > 0 && ` · ${detail.material_readiness.not_ordered} ${projectText("progress_not_ordered")}`}</span><progress max={detail.material_readiness.total} value={detail.material_readiness.received} /></label>}</div><ProyectoExpediente detalle={detail} catalogo={catalog} modo={mode} onCambio={async () => setDetail(await getProyect(detail.id_proyect))} /><MaterialNecesario idProyect={detail.id_proyect} estatus={detail.proyect_status} /><h4>{projectText("tasks")}</h4>{detail.tasks?.length ? detail.tasks.map((task) => <button className="project-detail-row project-task-row" type="button" key={task.id_task} onClick={() => openTask(task)} disabled={busyId !== null}><strong>{taskLabel(task)}</strong><span className="project-task-row-end"><span className={`project-status status-${task.task_status || "unknown"}`}>{taskStatusLabel(task.task_status)}</span><ChevronRight size={16} /></span></button>) : <p className="muted">{projectText("no_tasks")}</p>}<h4>{projectText("history")}</h4><div className="project-timeline">{detail.events?.slice().reverse().map((event) => <div key={event.id_proyect_event}><span>{formatearFechaHora(event.creation_date, document.documentElement.lang || "es")}</span><strong>{eventTitle(event)}</strong>{(event.reason || event.content) && <p>{event.reason || event.content}</p>}</div>)}</div><form className="project-message" onSubmit={sendMessage}><label className="field"><span>{projectText("new_message")}</span><textarea rows={2} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={projectText("message_placeholder")} /></label><button className="button primary" disabled={!message.trim() || busyId !== null}><MessageSquare size={16} />{projectText("publish")}</button></form></aside></div>}
+    {detail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("record")} #{detail.id_proyect}</p><h3>{detail.title || projectText("project")}</h3></div><button className="icon-button" type="button" onClick={() => setDetail(null)} aria-label={projectText("close")}><X size={18} /></button></header><span className={`project-status status-${detail.proyect_status}`}>{statusLabel(detail.proyect_status)}</span>{!detail.requires_maquila && <span className="project-status no-maquila">{projectText("no_maquila_badge")}</span>}<p>{detail.proyect_description}</p><div className="project-progress">{detail.task_progress && <label><span>{projectText("progress_tasks")}: {detail.task_progress.done}/{detail.task_progress.total}</span><progress max={detail.task_progress.total || 1} value={detail.task_progress.done} /></label>}{detail.material_readiness?.total > 0 && <label><span>{projectText("progress_material")}: {detail.material_readiness.received}/{detail.material_readiness.total}{detail.material_readiness.not_ordered > 0 && ` · ${detail.material_readiness.not_ordered} ${projectText("progress_not_ordered")}`}</span><progress max={detail.material_readiness.total} value={detail.material_readiness.received} /></label>}</div><ProyectoExpediente detalle={detail} catalogo={catalog} modo={mode} idUsuario={actor.id_user} puedeSubirAjenos={privileged || hasRead(permissions, "project_document_upload")} puedeBorrarAdjuntos={privileged || hasRead(permissions, "project_document_delete")} onCambio={async () => setDetail(await getProyect(detail.id_proyect))} /><MaterialNecesario idProyect={detail.id_proyect} estatus={detail.proyect_status} /><h4>{projectText("tasks")}</h4>{detail.tasks?.length ? detail.tasks.map((task) => <button className="project-detail-row project-task-row" type="button" key={task.id_task} onClick={() => openTask(task)} disabled={busyId !== null}><strong>{taskLabel(task)}</strong><span className="project-task-row-end"><span className={`project-status status-${task.task_status || "unknown"}`}>{taskStatusLabel(task.task_status)}</span><ChevronRight size={16} /></span></button>) : <p className="muted">{projectText("no_tasks")}</p>}<h4>{projectText("history")}</h4><div className="project-timeline">{detail.events?.slice().reverse().map((event) => <div key={event.id_proyect_event}><span>{formatearFechaHora(event.creation_date, document.documentElement.lang || "es")}</span><strong>{eventTitle(event)}</strong><small className="muted">{projectText("by")} {eventAuthor(event)}</small>{(event.reason || event.content) && <p>{event.reason || event.content}</p>}</div>)}</div><form className="project-message" onSubmit={sendMessage}><label className="field"><span>{projectText("new_message")}</span><textarea rows={2} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={projectText("message_placeholder")} /></label><button className="button primary" disabled={!message.trim() || busyId !== null}><MessageSquare size={16} />{projectText("publish")}</button></form></aside></div>}
 
     {taskDetail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("task")} #{taskDetail.task.id_task}</p><h3>{taskLabel(taskDetail.task)}</h3></div><button className="icon-button" type="button" onClick={closeTask} aria-label={projectText("close")}><X size={18} /></button></header>
       <div className="project-task-status"><span className={`project-status status-${taskDetail.task.task_status || "unknown"}`}>{taskStatusLabel(taskDetail.task.task_status)}</span>{canChangeTaskStatus && taskActionTargets(taskDetail.task).length > 0 && <label className="project-transition"><ArrowRight size={15} /><select value="" disabled={busyId !== null} onChange={(event) => event.target.value && setTaskTransition({ task: taskDetail.task, target: event.target.value, reason: "", content: "" })} aria-label={projectText("change_status")}><option value="">{projectText("change_status")}</option>{taskActionTargets(taskDetail.task).map((target) => <option value={target} key={target}>{taskStatusLabel(target)}</option>)}</select></label>}</div>

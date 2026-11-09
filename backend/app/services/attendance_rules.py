@@ -14,7 +14,10 @@ Por cada empleado y dia:
   de entrada. Es SOLO informativo: no afecta la nomina (decision de RH,
   2026-10-20).
 * Checada incompleta: una sola checada en un dia laboral (falta la entrada o la
-  salida).
+  salida). Queda "pendiente de justificar" y NO se paga mientras no se corrija
+  (revision contable, 2026-10-28): sin la otra checada no se sabe si trabajo el
+  dia completo. Se corrige con una correccion de checada
+  (services/attendance_correction_service.py) y al cerrar la nomina se avisa.
 * Trabajo en descanso o festivo: checadas en un dia que no le tocaba.
 * Ausencia justificada (employee_leave): vacaciones, permiso con o sin goce o
   incapacidad. Ese dia nunca es falta ni retardo; si de todos modos checo, se
@@ -22,7 +25,7 @@ Por cada empleado y dia:
 
 Dias pagados (nomina):
 * Dia cubierto por un horario asignado: se paga siempre (laboral, descanso o
-  festivo), salvo que sea falta.
+  festivo), salvo que sea falta o este pendiente de justificar.
 * Dia sin horario asignado: se paga solo si tiene checada (como antes de que
   existieran los horarios).
 * Ausencias (decisiones de RH, 2026-10-21):
@@ -54,6 +57,13 @@ class Dia:
     trabajo_en_descanso: bool = False
     ausencia: str | None = None
     checo_en_ausencia: bool = False
+    # (hora, id_attendance_record) de cada checada, para poder corregirla.
+    checadas: list = field(default_factory=list)
+
+    @property
+    def pendiente(self) -> bool:
+        """Dia laboral con una sola checada: no se paga hasta que se corrija."""
+        return self.incompleta and self.ausencia is None
 
     @property
     def pagado(self) -> bool:
@@ -63,7 +73,7 @@ class Dia:
             return False
         if self.ausencia == "unpaid_leave":
             return self.con_horario and not self.laboral
-        return (not self.falta) if self.con_horario else bool(self.marcas)
+        return (not self.falta and not self.pendiente) if self.con_horario else bool(self.marcas)
 
     @property
     def cuenta_como_ausencia(self) -> bool:
@@ -83,9 +93,11 @@ class Dia:
             "last": self.marcas[-1].strftime("%H:%M") if self.marcas else None,
             "marks": len(self.marcas),
             "absence": self.falta, "late": self.retardo, "late_minutes": self.minutos_retardo,
-            "incomplete": self.incompleta, "worked_on_rest_day": self.trabajo_en_descanso,
+            "incomplete": self.incompleta, "pending_justification": self.pendiente,
+            "worked_on_rest_day": self.trabajo_en_descanso,
             "leave": self.ausencia, "checked_during_leave": self.checo_en_ausencia,
             "paid": self.pagado,
+            "checks": [{"id": ident, "time": hora.strftime("%H:%M")} for hora, ident in self.checadas],
         }
 
 
@@ -138,6 +150,7 @@ def resumen(dias) -> dict:
         "late": sum(d.retardo for d in dias),
         "late_minutes": sum(d.minutos_retardo for d in dias),
         "incomplete": sum(d.incompleta for d in dias),
+        "pending_justification": sum(d.pendiente for d in dias),
         "worked_on_rest_days": sum(d.trabajo_en_descanso for d in dias),
         "paid_days": sum(d.pagado for d in dias),
         "vacation_days": sum(d.ausencia == "vacation" and d.cuenta_como_ausencia for d in dias),

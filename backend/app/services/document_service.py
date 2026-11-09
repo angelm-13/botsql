@@ -86,6 +86,33 @@ def _date_value(value, field: str):
         raise AppError("errors.invalid_field", 400, {"field": field})
 
 
+# Vencimiento por categoria (el `code` de `document_category`) al CARGAR un documento por la API (`POST /document/`).
+# El dashboard de KPIs cuenta los documentos vencidos por `expiration_date`: uno que vence y se carga sin fecha
+# nunca aparece. Espejo en el frontend: `frontend/src/pages/DocumentManagementPage.jsx` (`VENCIMIENTO_POR_CATEGORIA`).
+#   * OBLIGATORIO: la fecha de vencimiento siempre (una certificacion sin vigencia no tiene sentido).
+#   * O_SIN_VENCIMIENTO: la fecha, o declarar que no vence (`no_expiration`): hay documentos de empleado o de
+#     proveedor permanentes (actas, identificaciones) y obligar una fecha inventada ensucia el KPI.
+# Las demas categorias (cliente, recibo, proceso interno) la dejan opcional.
+CATEGORIAS_VENCIMIENTO_OBLIGATORIO = frozenset({"certification"})
+CATEGORIAS_VENCIMIENTO_O_SIN_VENCIMIENTO = frozenset({"employee", "supplier"})
+_VERDADERO = {"1", "true", "on", "yes", "si"}
+
+
+def _validar_vencimiento(category_code: str, fecha_vencimiento, metadata) -> None:
+    """400 `documents.expiration_required` si la categoria exige vencimiento y no llega (ni se declara que no vence)."""
+    sin_vencimiento = str(metadata.get("no_expiration") or "").strip().lower() in _VERDADERO
+    if sin_vencimiento and fecha_vencimiento:
+        raise AppError("errors.invalid_field", 400, {"field": "no_expiration"})
+    if fecha_vencimiento:
+        return
+    if category_code in CATEGORIAS_VENCIMIENTO_OBLIGATORIO or (
+            category_code in CATEGORIAS_VENCIMIENTO_O_SIN_VENCIMIENTO and not sin_vencimiento):
+        raise AppError("documents.expiration_required", 400, {
+            "field": "expiration_date", "category": category_code,
+            "can_declare_no_expiration": category_code in CATEGORIAS_VENCIMIENTO_O_SIN_VENCIMIENTO,
+        })
+
+
 class SecureDocumentStorage:
     def __init__(self, root: str | Path):
         self.root = Path(root).resolve()
@@ -194,11 +221,33 @@ class DocumentManagementService:
         return stmt.where(or_(~es_vale, ver))
 
     @staticmethod
+    def _sin_incapacidades_ajenas(stmt, user_data: dict):
+        """La hoja de incapacidad es un dato medico: en Documentos solo la ven RH
+        y el propio empleado (ver employee_leave_document_service). El permiso de
+        documentos no basta, igual que con los vales."""
+        from sqlalchemy import String, cast
+
+        from app.models import EmployeeLeave
+        from app.services.employee_leave_document_service import CATEGORIA, REFERENCIA, puede_ver_todas
+
+        if puede_ver_todas(user_data):
+            return stmt
+        propias = select(cast(EmployeeLeave.id_employee_leave, String)).where(
+            EmployeeLeave.id_user == _actor_id(user_data))
+        es_hoja = exists().where(and_(
+            DocumentCategory.id_document_category == Document.id_document_category,
+            DocumentCategory.code == CATEGORIA,
+        ))
+        return stmt.where(or_(~es_hoja, and_(Document.business_reference_type == REFERENCIA,
+                                             Document.business_reference_value.in_(propias))))
+
+    @staticmethod
     def _scope(stmt, user_data: dict):
         if _is_unrestricted(user_data):
             return stmt
         stmt = stmt.where(Document.id_proyect == _actor_project(user_data))
         stmt = DocumentManagementService._sin_vales_ajenos(stmt, user_data)
+        stmt = DocumentManagementService._sin_incapacidades_ajenas(stmt, user_data)
         if _actor_type(user_data) in {"client", "supplier"}:
             customer_relation = exists().where(
                 and_(
@@ -416,6 +465,7 @@ class DocumentManagementService:
             fecha_vencimiento = _date_value(metadata.get("expiration_date"), "expiration_date")
             if fecha_emision and fecha_vencimiento and fecha_vencimiento < fecha_emision:
                 raise AppError("errors.invalid_field", 400, {"field": "expiration_date"})
+            _validar_vencimiento(category.code, fecha_vencimiento, metadata)
             document = Document(
                 id_proyect=project_id, id_document_category=category_id,
                 title=str(metadata.get("title") or original_filename).strip()[:200],
@@ -482,6 +532,14 @@ class DocumentManagementService:
                     if key == "status" and value not in DOCUMENT_STATUSES:
                         raise AppError("errors.invalid_field", 400, {"field": "status"})
                     setattr(document, key, _date_value(value, key) if key in {"issue_date", "expiration_date"} else value or None)
+            # Una categoria de vencimiento obligatorio no se puede dejar sin fecha editando (los que ya estaban sin
+            # ella, de antes de la regla, se siguen pudiendo editar mientras no toquen ese campo).
+            if "expiration_date" in payload and document.expiration_date is None:
+                categoria = db.get(DocumentCategory, document.id_document_category)
+                if categoria is not None and categoria.code in CATEGORIAS_VENCIMIENTO_OBLIGATORIO:
+                    raise AppError("documents.expiration_required", 400, {
+                        "field": "expiration_date", "category": categoria.code, "can_declare_no_expiration": False,
+                    })
             db.flush()
             return document.serialize()
 

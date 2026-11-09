@@ -6,10 +6,12 @@ import OrdenDeCompraDetalle from "../components/OrdenDeCompraDetalle.jsx";
 import OrdenDeCompraEditor from "../components/OrdenDeCompraEditor.jsx";
 import PoliticaDeCompra from "../components/PoliticaDeCompra.jsx";
 import PresupuestosDeCompra from "../components/PresupuestosDeCompra.jsx";
+import RentasActivas from "../components/RentasActivas.jsx";
+import { AvisoFlotante, GuiaDelModulo } from "../components/GuiaDeCompras.jsx";
 import {
   getMyPermissions, getPurchaseOrder, getPurchaseOrders, getPurchasePolicy,
 } from "../api";
-import { dinero, estadoDeOrden } from "../utils/ordenDeCompra";
+import { PASOS_DE_ORDEN, avisoTrasAccion, dinero, estadoDeOrden } from "../utils/ordenDeCompra";
 import { idAAbrir } from "../notifications/destino";
 import { useI18n } from "../i18n";
 import "../styles/ordenes-de-compra.css";
@@ -152,18 +154,40 @@ export default function OrdenesDeCompraPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idPorAbrir]);
 
+  // El aviso pequeño de "que paso y que sigue" tras cada accion (se va solo).
+  const [avisoFlotante, setAvisoFlotante] = useState(null);
+  const cerrarAviso = useCallback(() => setAvisoFlotante(null), []);
+
   // Una accion del detalle devuelve la orden ya cambiada: se pinta tal cual y se
   // refresca la lista, que es donde se ve el estado nuevo.
-  function alCambiar(actualizada) {
+  function alCambiar(actualizada, accion) {
     setOrden(actualizada);
     setModo("ver");
+    if (accion) setAvisoFlotante(avisoTrasAccion(accion, actualizada));
+    setVersionRentas((v) => v + 1);
     cargar();
   }
+  const [versionRentas, setVersionRentas] = useState(0);
 
   function alGuardar(guardada) {
     setPrecarga([]);
-    alCambiar(guardada);
+    alCambiar(guardada, "guardar");
   }
+
+  // La guia de entrada se dice segun lo que el Gestor le da a quien mira: arma
+  // ordenes (Compras), autoriza, recibe (almacen) o solo consulta.
+  const tieneCapacidad = (entidad) => esPrivilegiado(actor) || permisos.some((p) => p.entity_name === entidad
+    && ["scope_read", "scope_update", "scope_create"].some((c) => Number(p[c] || 0) !== 0));
+  const puntosDeGuia = [
+    puede("purchase_order", "scope_create")
+      && t("guide.orders.buyer", "Tú armas la orden: desde Por comprar elige lo que vas a comprar, o usa \"Nueva orden\". Luego la envías a autorización, subes la factura y registras la compra."),
+    tieneCapacidad("purchase_authorize")
+      && t("guide.orders.authorizer", "Tú autorizas: abre las órdenes \"Por autorizar\", revisa monto y presupuesto, y autorízalas o recházalas con un motivo."),
+    tieneCapacidad("purchase_receive")
+      && t("guide.orders.receiver", "Tú recibes: cuando llegue el material, abre las órdenes \"Por recibir\" y anota cuánto llegó de cada renglón."),
+    t("guide.orders.next", "Al abrir una orden, el recuadro \"Qué sigue\" te dice en qué paso va y qué te toca."),
+    t("guide.orders.rental", "La maquinaria rentada no se recibe en el almacén: quien lleva la obra marca \"Llegó a obra\" y \"Devuelta al proveedor\". En \"Rentas de maquinaria\" ves lo que está en obra y cuándo vence."),
+  ];
 
   const items = lista.items || [];
   const porEstado = lista.by_status || {};
@@ -191,9 +215,22 @@ export default function OrdenesDeCompraPage() {
         )}
       </PageHeader>
 
+      <GuiaDelModulo id="ordenes-de-compra" titulo={t("guide.orders.title", "Así avanza una orden de compra")}
+                     pasos={PASOS_DE_ORDEN} prefijo="order.step"
+                     puntos={puntosDeGuia.filter(Boolean)} />
+      <AvisoFlotante aviso={avisoFlotante} onCerrar={cerrarAviso} />
+
       <PoliticaDeCompra politica={politica} puedeEditar={puede("purchase_policy", "scope_update")}
                         onCambio={setPolitica} />
       <PresupuestosDeCompra puedeEditar={puede("purchase_policy", "scope_update")} />
+      <RentasActivas version={versionRentas} onAbrirOrden={abrir}
+                     onCambio={(actualizada) => {
+                       // Si la orden que cambio esta abierta, se pinta la nueva; y la lista se refresca.
+                       if (actualizada && orden?.id_purchase_order === actualizada.id_purchase_order) {
+                         setOrden(actualizada);
+                       }
+                       cargar();
+                     }} />
 
       {error && <div className="alert error">{error}</div>}
       {noSeAbrio && <div className="alert error">{noSeAbrio}</div>}
@@ -235,7 +272,14 @@ export default function OrdenesDeCompraPage() {
 
           {!cargando && items.length === 0 && (
             <div className="empty">
-              <strong>{t("order.empty", "No hay órdenes con ese filtro.")}</strong>
+              <strong>{filtro
+                ? t("order.empty", "No hay órdenes con ese filtro.")
+                : t("order.empty_all", "Todavía no hay órdenes de compra.")}</strong>
+              {!filtro && (
+                <p className="muted">{puede("purchase_order", "scope_create")
+                  ? t("order.empty_all_buyer", "Empieza en Por comprar: elige lo que piden los proyectos y arma la orden, o usa \"Nueva orden\".")
+                  : t("order.empty_all_reader", "Las órdenes las arma Compras con lo que piden los proyectos.")}</p>
+              )}
             </div>
           )}
 

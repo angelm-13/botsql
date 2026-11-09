@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || "/api";
 
 /**
  * La URL con la que el navegador pide un archivo servido por el backend.
@@ -48,6 +48,21 @@ function buildUrl(path, params = {}) {
   }
 }
 
+/**
+ * `fetch` que, si la red falla (sin conexion, servidor caido, CORS), lanza un error con la clave `errors.network` en vez del
+ * TypeError del navegador ("Failed to fetch", "Load failed"...), que sale en ingles y no dice que hacer.
+ */
+async function enviar(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (causa) {
+    const error = new Error("errors.network");
+    error.status = 0;
+    error.cause = causa;
+    throw error;
+  }
+}
+
 export async function request(path, options = {}) {
   const token = options.skipAuth ? null : localStorage.getItem("token");
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
@@ -56,7 +71,7 @@ export async function request(path, options = {}) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {})
   };
-  const response = await fetch(buildUrl(path, options.params), {
+  const response = await enviar(buildUrl(path, options.params), {
     method: options.method || "GET",
     headers,
     body: options.body ? (isFormData ? options.body : JSON.stringify(options.body)) : undefined
@@ -79,9 +94,12 @@ export async function request(path, options = {}) {
 
 export async function requestBlob(path, options = {}) {
   const token = localStorage.getItem("token");
-  const response = await fetch(buildUrl(path, options.params), {
+  // `body` opcional: un PDF que se arma con lo que manda la pantalla (simulador de nomina).
+  const conCuerpo = options.body !== undefined;
+  const response = await enviar(buildUrl(path, options.params), {
     method: options.method || "GET",
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) }
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(conCuerpo ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) },
+    ...(conCuerpo ? { body: JSON.stringify(options.body) } : {})
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));

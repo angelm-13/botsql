@@ -87,17 +87,12 @@ export default function PresupuestosDeCompra({ puedeEditar }) {
                     <>
                       <input type="number" min="0" step="0.01" autoFocus value={edicion.amount}
                              onChange={(e) => setEdicion({ ...edicion, amount: e.target.value })} />
-                      <select value={edicion.currency}
-                              onChange={(e) => setEdicion({ ...edicion, currency: e.target.value })}>
-                        <option value="MXN">MXN</option>
-                        <option value="USD">USD</option>
-                      </select>
                       <input type="text" maxLength={300} value={edicion.note}
                              placeholder={t("budget.note", "Nota (opcional)")}
                              onChange={(e) => setEdicion({ ...edicion, note: e.target.value })} />
                     </>
                   ) : (f.budget === null ? <span className="muted">{t("budget.none", "Sin tope")}</span>
-                    : `${dinero(f.budget)} ${f.currency}`)}
+                    : dinero(f.budget, f.currency || "MXN"))}
                 </td>
                 <td>{dinero(f.committed)}</td>
                 <td>{f.available === null ? "—" : dinero(f.available)}</td>
