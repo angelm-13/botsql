@@ -800,7 +800,7 @@ def _responder(
     )
 
     desde_cache = False
-    receta = recetas.buscar(pregunta)
+    receta = recetas.buscar(pregunta, esquema)
     cacheado = (cache_preguntas.obtener(pregunta, esquema.huella)
                 if (cache_preguntas and receta is None) else None)
     if receta is not None:

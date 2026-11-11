@@ -278,7 +278,15 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                   "Producto con codigo %s" % m.group("c").upper(), "table",
                   explicacion="Producto que tiene ese codigo.")),
 
-    (re.compile(r"^(?:existencias?|cuantos hay|cuanto hay|ubicacion|donde esta(?:n)?) (?:de |del |de la |de los )?(?:producto |herramienta |articulo )?(?P<t>[a-z0-9 ]{3,40})$"),
+    # "existencias por ubicacion" es un desglose, no el nombre de un producto: se resuelve aqui, antes que la de abajo.
+    (re.compile(r"^(?:cuantas )?existencias por ubicacion$|^(?:cuanto|que) (?:hay|existencias hay) por ubicacion$"),
+     lambda m: _d("SELECT COALESCE(l.location_description, '(sin ubicacion)') AS ubicacion, SUM(s.quantity) AS existencias "
+                  "FROM inventory_stock s LEFT JOIN location l ON l.id_location = s.id_location "
+                  "GROUP BY l.location_description ORDER BY existencias DESC",
+                  "Existencias por ubicacion", "bar", "ubicacion", "existencias",
+                  explicacion="Suma del saldo por sitio (inventory_stock); el saldo se lleva por ubicacion.")),
+
+    (re.compile(r"^(?:existencias?|cuantos hay|cuanto hay|ubicacion|donde esta(?:n)?) (?:de |del |de la |de los )?(?:producto |herramienta |articulo )?(?!por )(?P<t>[a-z0-9 ]{3,40})$"),
      lambda m: _d("SELECT product_code AS codigo, descripcion AS producto, cantidad AS existencias "
                   "FROM product WHERE deletion_date IS NULL AND descripcion ILIKE '%%%s%%' "
                   "ORDER BY descripcion LIMIT 30" % re.sub(r"[^a-z0-9 ]", "", m.group("t")).strip().upper(),
@@ -543,8 +551,91 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
 ]
 
 
-def buscar(pregunta: str) -> str | None:
-    """El JSON de la directiva si la pregunta coincide con una receta, o None."""
+# --- Recetas derivadas del ESQUEMA: "X por Y" y "X de este mes" para cualquier par que el esquema relacione.
+# Las recetas fijas de arriba solo cubren lo que alguien escribio a mano (9 % de preguntas nuevas); estas
+# salen de lo que el esquema ya sabe -- que FK une cada par y que columna lleva el nombre -- y se activan
+# solo si TODO es inequivoco; ante cualquier duda se declinan y la pregunta sigue al modelo.
+# Lo que dice el usuario -> tabla. Los identificadores del SQL salen de aqui y del esquema, nunca del texto.
+_ENTIDADES = {
+    "productos": "product", "materiales": "material", "vales": "incident", "incidencias": "incident",
+    "proyectos": "proyect", "tareas": "task", "facturas": "invoice", "ordenes de compra": "purchase_order",
+    "documentos": "document", "citas": "appointment", "tickets": "ticket", "contactos": "customer_contact",
+    "renglones de vale": "nm_incident_product", "movimientos": "movement",
+}
+# Por que se agrupa: singular -> (tabla destino, pistas del nombre de la FK, en orden de preferencia).
+_DIMENSIONES_ESQ = {
+    "ubicacion": ("location", ()), "cliente": ("customer_supplier", ()), "proveedor": ("customer_supplier", ("proveedor", "supplier")),
+    "proyecto": ("proyect", ()), "marca": ("brand", ()), "familia": ("product_family", ()),
+    "departamento": ("department", ()), "material": ("material", ()),
+    "responsable": ("user", ("id_user",)), "supervisor": ("user", ("supervisor",)), "lider": ("user", ("lider", "leader")),
+    "usuario": ("user", ("id_user",)),
+}
+# Columna de fecha de cada tabla; si no esta aqui se usa creation_date (todas las tablas la traen).
+_FECHA = {"incident": "incident_date", "invoice": "date_emision"}
+_ENT_RE = "|".join(sorted(_ENTIDADES, key=len, reverse=True))
+_X_POR_Y = re.compile(rf"^(?:cuantos |cuantas )?(?P<ent>{_ENT_RE}) (?:hay )?por (?P<dim>{'|'.join(_DIMENSIONES_ESQ)})$")
+_X_PERIODO = re.compile(rf"^cuant[oa]s (?P<ent>{_ENT_RE}) (?:se )?(?:crearon|registraron|hay|hubo|se han creado|se han registrado) (?P<per>{'|'.join(_PERIODO)})$")
+
+
+def _comillas(tabla):
+    return f'"{tabla}"' if tabla == "user" else tabla     # `user` es palabra reservada
+
+
+def _fk_hacia(relacion, destino, pistas):
+    """La unica columna de `relacion` que apunta a `destino`, o None si hay cero o varias sin forma de elegir."""
+    candidatas = [c for c in relacion.columnas if c.fk and str(c.fk).replace('"', "").split(".")[0].lower() == destino]
+    if pistas:                                             # la pista manda: "supervisor" -> id_supervisor
+        for pista in pistas:
+            elegidas = [c for c in candidatas if pista in c.nombre.lower()]
+            if len(elegidas) == 1:
+                return elegidas[0]
+        return None                                        # con pista y sin una unica coincidencia: duda, se declina
+    exacta = [c for c in candidatas if c.nombre.lower() == f"id_{destino}"]
+    if len(exacta) == 1:
+        return exacta[0]
+    return candidatas[0] if len(candidatas) == 1 else None
+
+
+def _generica(texto: str, esquema) -> dict | None:
+    from .schema_linking import _columna_nombre
+    por_nombre = {r.nombre.lower(): r for r in esquema.relaciones}
+
+    m = _X_POR_Y.search(texto)
+    if m:
+        ent = por_nombre.get(_ENTIDADES[m.group("ent")])
+        destino_nombre, pistas = _DIMENSIONES_ESQ[m.group("dim")]
+        destino = por_nombre.get(destino_nombre)
+        fk = _fk_hacia(ent, destino_nombre, pistas) if ent and destino else None
+        nombre = _columna_nombre(destino) if fk else None
+        if fk is None or nombre is None:
+            return None
+        llave = str(fk.fk).replace('"', "").split(".")[-1] if "." in str(fk.fk) else f"id_{destino_nombre}"
+        baja = " WHERE e.deletion_date IS NULL" if any(c.nombre.lower() == "deletion_date" for c in ent.columnas) else ""
+        tot = f"total_{_alias(m.group('ent'))}"
+        return _d(f"SELECT COALESCE(CAST(d.{nombre} AS TEXT), '(sin asignar)') AS {m.group('dim')}, COUNT(*) AS {tot} "
+                  f"FROM {_comillas(ent.nombre)} e LEFT JOIN {_comillas(destino.nombre)} d ON d.{llave} = e.{fk.nombre}{baja} "
+                  f"GROUP BY d.{nombre} ORDER BY {tot} DESC",
+                  f"{m.group('ent').capitalize()} por {m.group('dim')}", "bar", m.group("dim"), tot,
+                  explicacion=f"Cuenta de {m.group('ent')} agrupada por el {m.group('dim')} (campo {fk.nombre}).")
+
+    m = _X_PERIODO.search(texto)
+    if m:
+        ent = por_nombre.get(_ENTIDADES[m.group("ent")])
+        columnas = {c.nombre.lower() for c in ent.columnas} if ent else set()
+        fecha = _FECHA.get(ent.nombre.lower(), "creation_date") if ent else None
+        if ent is None or fecha not in columnas or "deletion_date" not in columnas:
+            return None
+        return _d(f"SELECT COUNT(*) AS total_periodo FROM {_comillas(ent.nombre)} WHERE deletion_date IS NULL "
+                  f"AND {fecha} >= date_trunc('{_PERIODO[m.group('per')]}', now())",
+                  f"{m.group('ent').capitalize()} {m.group('per')}", "kpi_card", y="total_periodo", etiqueta=m.group("ent").capitalize())
+    return None
+
+
+def buscar(pregunta: str, esquema=None) -> str | None:
+    """El JSON de la directiva si la pregunta coincide con una receta, o None.
+
+    Con `esquema`, si ninguna receta fija coincide, se prueba la receta derivada del esquema.
+    """
     texto = _norm(pregunta)
     # "grafica de ...", "en barras", "en pastel": el tipo de grafica lo decide el
     # servicio; aqui solo importa QUE se pregunta.
@@ -557,4 +648,8 @@ def buscar(pregunta: str) -> str | None:
                 return json.dumps(fabrica(m), ensure_ascii=False)
             except _SinReceta:
                 continue
+    if esquema is not None:
+        directiva = _generica(texto, esquema)
+        if directiva:
+            return json.dumps(directiva, ensure_ascii=False)
     return None
