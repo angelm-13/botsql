@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from dataclasses import replace
 from typing import Callable
 
 
@@ -570,6 +571,8 @@ _DIMENSIONES_ESQ = {
     "responsable": ("user", ("id_user",)), "supervisor": ("user", ("supervisor",)), "lider": ("user", ("lider", "leader")),
     "usuario": ("user", ("id_user",)),
 }
+# (tabla, destino) -> columna que las une aunque no haya FK real: product.id_marca / id_familia.
+_FK_LOGICAS = {("product", "brand"): "id_marca", ("product", "product_family"): "id_familia"}
 # Columna de fecha de cada tabla; si no esta aqui se usa creation_date (todas las tablas la traen).
 _FECHA = {"incident": "incident_date", "invoice": "date_emision"}
 _ENT_RE = "|".join(sorted(_ENTIDADES, key=len, reverse=True))
@@ -584,6 +587,12 @@ def _comillas(tabla):
 def _fk_hacia(relacion, destino, pistas):
     """La unica columna de `relacion` que apunta a `destino`, o None si hay cero o varias sin forma de elegir."""
     candidatas = [c for c in relacion.columnas if c.fk and str(c.fk).replace('"', "").split(".")[0].lower() == destino]
+    if not candidatas and not pistas:
+        # Relaciones que el modelo de datos usa sin llave foranea real (documentadas en el glosario del prompt).
+        logica = _FK_LOGICAS.get((relacion.nombre.lower(), destino))
+        columna = next((c for c in relacion.columnas if c.nombre.lower() == logica), None) if logica else None
+        if columna is not None:
+            return replace(columna, fk=f"{destino}.id_{destino}")
     if pistas:                                             # la pista manda: "supervisor" -> id_supervisor
         for pista in pistas:
             elegidas = [c for c in candidatas if pista in c.nombre.lower()]
@@ -631,6 +640,115 @@ def _generica(texto: str, esquema) -> dict | None:
     return None
 
 
+# --- Mas formas de pregunta, tambien derivadas del esquema ---------------------------------------------------
+# Fuera a proposito: "productos sin marca/ubicacion" y "cuantos tienen marca". En los datos reales "sin marca" NO
+# es NULL sino una fila centinela ("Sin marca específica", "Sin ubicación asignada"): un IS NULL daria 0 y seria
+# una respuesta enganosa. Esas siguen al modelo hasta que alguien defina que es "sin".
+_SINGULARES = {"vale": "incident", "proyecto": "proyect", "factura": "invoice", "orden de compra": "purchase_order",
+               "tarea": "task", "ticket": "ticket", "cita": "appointment", "documento": "document",
+               "producto": "product", "material": "material"}
+_PLURAL_DIM = {"clientes": "cliente", "supervisores": "supervisor", "ubicaciones": "ubicacion", "marcas": "marca",
+               "familias": "familia", "responsables": "responsable", "proveedores": "proveedor", "lideres": "lider",
+               "usuarios": "usuario", "departamentos": "departamento", "materiales": "material"}
+_TIEMPO = {"mes": "month", "dia": "day", "semana": "week", "anio": "year", "ano": "year"}
+_PADRES = {**_ENTIDADES, "clientes": "customer_supplier"}
+_SING_RE = "|".join(sorted(_SINGULARES, key=len, reverse=True))
+_PAD_RE = "|".join(sorted(_PADRES, key=len, reverse=True))
+_DIMP_RE = "|".join(_PLURAL_DIM)
+_DIMS_RE = "|".join(_DIMENSIONES_ESQ)
+_F_ESTATUS = re.compile(rf"^(?:cuantos |cuantas )?(?P<ent>{_ENT_RE}) (?:hay )?por (?:estatus|estado)$")
+_F_TIEMPO = re.compile(rf"^(?:cuantos |cuantas )?(?P<ent>{_ENT_RE}) (?:hay |se crearon |creados |creadas )?por (?P<g>{'|'.join(_TIEMPO)})$")
+_F_SIN = re.compile(rf"^(?P<cuantos>cuantos |cuantas )?(?P<padre>{_PAD_RE}) sin (?P<hijo>{_ENT_RE})$")
+_F_RECIENTE = re.compile(rf"^(?:cual es )?(?:el |la )?(?P<s>{_SING_RE}) mas reciente$|^(?:cual es )?(?:el |la )?ultim[oa] (?P<s2>{_SING_RE})$")
+_F_TOP = re.compile(rf"^(?:los |las )?(?:top )?(?P<n>\d{{1,2}}) (?P<dimp>{_DIMP_RE}) con mas (?P<ent>{_ENT_RE})$"
+                    rf"|^(?:cual es |que )(?:el |la )?(?P<dims>{_DIMS_RE}) (?:con|tiene) mas (?P<ent2>{_ENT_RE})$")
+
+
+def _baja(relacion):
+    return any(c.nombre.lower() == "deletion_date" for c in relacion.columnas)
+
+
+def _generica_forma(texto: str, esquema) -> dict | None:
+    from .schema_linking import _columna_nombre
+    por_nombre = {r.nombre.lower(): r for r in esquema.relaciones}
+
+    m = _F_ESTATUS.search(texto)
+    if m:
+        ent = por_nombre.get(_ENTIDADES[m.group("ent")])
+        cols = [c.nombre for c in ent.columnas if re.search(r"(^|_)status$|^estatus$|^estado$", c.nombre.lower())] if ent else []
+        if len(cols) != 1:
+            return None
+        tot = f"total_{_alias(m.group('ent'))}"
+        return _d(f"SELECT {cols[0]} AS estatus, COUNT(*) AS {tot} FROM {_comillas(ent.nombre)}"
+                  f"{' WHERE deletion_date IS NULL' if _baja(ent) else ''} GROUP BY {cols[0]} ORDER BY {tot} DESC",
+                  f"{m.group('ent').capitalize()} por estatus", "bar", "estatus", tot)
+
+    m = _F_TIEMPO.search(texto)
+    if m:
+        ent = por_nombre.get(_ENTIDADES[m.group("ent")])
+        fecha = _FECHA.get(ent.nombre.lower(), "creation_date") if ent else None
+        if ent is None or fecha not in {c.nombre.lower() for c in ent.columnas}:
+            return None
+        g, tot = m.group("g"), f"total_{_alias(m.group('ent'))}"
+        return _d(f"SELECT date_trunc('{_TIEMPO[g]}', {fecha}) AS {g}, COUNT(*) AS {tot} FROM {_comillas(ent.nombre)}"
+                  f"{' WHERE deletion_date IS NULL' if _baja(ent) else ''} GROUP BY 1 ORDER BY 1",
+                  f"{m.group('ent').capitalize()} por {g}", "line", g, tot)
+
+    m = _F_SIN.search(texto)                                # padres sin hijos: proyectos sin tareas
+    if m:
+        padre, hijo = por_nombre.get(_PADRES[m.group("padre")]), por_nombre.get(_ENTIDADES[m.group("hijo")])
+        fk = _fk_hacia(hijo, padre.nombre.lower(), ()) if padre and hijo else None
+        if fk is None:
+            return None
+        llave = str(fk.fk).replace('"', "").split(".")[-1] if "." in str(fk.fk) else f"id_{padre.nombre}"
+        nombre = _columna_nombre(padre)
+        hijo_baja = " AND h.deletion_date IS NULL" if _baja(hijo) else ""
+        donde = (f"{'p.deletion_date IS NULL AND ' if _baja(padre) else ''}NOT EXISTS (SELECT 1 FROM {_comillas(hijo.nombre)} h "
+                 f"WHERE h.{fk.nombre} = p.{llave}{hijo_baja})")
+        if m.group("cuantos"):
+            return _d(f"SELECT COUNT(*) AS total FROM {_comillas(padre.nombre)} p WHERE {donde}",
+                      f"{m.group('padre').capitalize()} sin {m.group('hijo')}", "kpi_card", y="total", etiqueta=m.group("padre").capitalize())
+        if nombre is None:
+            return None
+        return _d(f"SELECT p.{nombre} AS {_alias(m.group('padre'))} FROM {_comillas(padre.nombre)} p WHERE {donde} ORDER BY 1",
+                  f"{m.group('padre').capitalize()} sin {m.group('hijo')}", "table")
+
+    m = _F_RECIENTE.search(texto)
+    if m:
+        sing = m.group("s") or m.group("s2")
+        ent = por_nombre.get(_SINGULARES[sing])
+        fecha = _FECHA.get(ent.nombre.lower(), "creation_date") if ent else None
+        if ent is None or fecha not in {c.nombre.lower() for c in ent.columnas}:
+            return None
+        pk = next((c.nombre for c in ent.columnas if c.es_pk), None)
+        nombre = _columna_nombre(ent)
+        cols = [c for c in (pk, nombre, fecha) if c]
+        return _d(f"SELECT {', '.join(dict.fromkeys(cols))} FROM {_comillas(ent.nombre)}"
+                  f"{' WHERE deletion_date IS NULL' if _baja(ent) else ''} ORDER BY {fecha} DESC NULLS LAST LIMIT 1",
+                  f"{sing.capitalize()} mas reciente", "table")
+
+    m = _F_TOP.search(texto)                                # top N de una dimension: clientes con mas proyectos
+    if m:
+        ent_txt = m.group("ent") or m.group("ent2")
+        dim = _PLURAL_DIM[m.group("dimp")] if m.group("dimp") else m.group("dims")
+        n = int(m.group("n")) if m.group("n") else 1
+        ent = por_nombre.get(_ENTIDADES[ent_txt])
+        destino_nombre, pistas = _DIMENSIONES_ESQ[dim]
+        destino = por_nombre.get(destino_nombre)
+        fk = _fk_hacia(ent, destino_nombre, pistas) if ent and destino else None
+        nombre = _columna_nombre(destino) if fk else None
+        if fk is None or nombre is None or not 1 <= n <= 50:
+            return None
+        llave = str(fk.fk).replace('"', "").split(".")[-1] if "." in str(fk.fk) else f"id_{destino_nombre}"
+        tot = f"total_{_alias(ent_txt)}"
+        # JOIN y no LEFT JOIN: en un "top" los sin asignar no compiten.
+        return _d(f"SELECT d.{nombre} AS {dim}, COUNT(*) AS {tot} FROM {_comillas(ent.nombre)} e JOIN {_comillas(destino.nombre)} d "
+                  f"ON d.{llave} = e.{fk.nombre}{' WHERE e.deletion_date IS NULL' if _baja(ent) else ''} "
+                  f"GROUP BY d.{nombre} ORDER BY {tot} DESC LIMIT {n}",
+                  f"Top {n} de {m.group('dimp') or dim} con mas {ent_txt}", "bar", dim, tot)
+    return None
+
+
 def buscar(pregunta: str, esquema=None) -> str | None:
     """El JSON de la directiva si la pregunta coincide con una receta, o None.
 
@@ -649,7 +767,7 @@ def buscar(pregunta: str, esquema=None) -> str | None:
             except _SinReceta:
                 continue
     if esquema is not None:
-        directiva = _generica(texto, esquema)
+        directiva = _generica(texto, esquema) or _generica_forma(texto, esquema)
         if directiva:
             return json.dumps(directiva, ensure_ascii=False)
     return None
