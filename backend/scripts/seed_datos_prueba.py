@@ -331,6 +331,12 @@ class Generador:
                     self.motivo = f"padre vacio: {ft}"
                     return None
                 continue
+            if nom.startswith("external_") and col.nulo:
+                # Marcan filas importadas del sistema anterior y son unicas por origen; al azar chocaban
+                # (dos productos con el mismo external_id) y la migracion que abre el libro de inventario
+                # con 'import:...:apertura:<external_id>' fallaba con clave duplicada en CADA arranque.
+                valores[nom] = None
+                continue
             if nom == "deletion_date":
                 # ~4 % dadas de baja: lo justo para probar el filtro, no para esconder casi todo
                 # (antes se llenaba el 95 % y el BI veia 2 productos de 80).
